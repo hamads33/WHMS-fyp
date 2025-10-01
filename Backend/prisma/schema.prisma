@@ -1,0 +1,52 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  role      String   @default("admin") // admin, support, reseller, client
+  createdAt DateTime @default(now())
+}
+
+model Client {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  services  Service[]
+}
+
+model Service {
+  id        Int      @id @default(autoincrement())
+  clientId  Int
+  plan      String
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  client    Client   @relation(fields: [clientId], references: [id])
+}
+
+model Ticket {
+  id        Int      @id @default(autoincrement())
+  clientId  Int
+  subject   String
+  message   String
+  priority  String
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+}
