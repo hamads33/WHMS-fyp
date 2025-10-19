@@ -1,18 +1,23 @@
-const jwt = require('jsonwebtoken')
+// src/middleware/auth.middleware.js
+const { verifyAccessToken } = require('../utils/token')
+const userRepo = require('../db/user.repo')
 
-function authMiddleware(req, res, next) {
-  const auth = req.headers.authorization
-  if (!auth || !auth.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Missing token' })
-  }
-  const token = auth.split(' ')[1]
+module.exports = async (req, res, next) => {
+  const header = req.headers.authorization
+  if (!header) return res.status(401).json({ message: 'No Authorization header' })
+
+  const parts = header.split(' ')
+  if (parts.length !== 2 || parts[0] !== 'Bearer')
+    return res.status(401).json({ message: 'Bad Authorization header format' })
+
+  const token = parts[1]
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'dev_secret')
-    req.user = payload
+    const payload = verifyAccessToken(token)
+    const user = await userRepo.findById(payload.userId)
+    if (!user) return res.status(401).json({ message: 'User not found' })
+    req.user = { id: user.id, role: user.role }
     next()
   } catch (err) {
-    return res.status(401).json({ message: 'Invalid token' })
+    return res.status(401).json({ message: 'Invalid or expired token' })
   }
 }
-
-module.exports = authMiddleware

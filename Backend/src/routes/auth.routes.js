@@ -1,23 +1,15 @@
+// src/routes/auth.routes.js
 const express = require('express')
 const router = express.Router()
-const prisma = require('../db/prisma')
-const bcrypt = require('bcryptjs')
-const { signToken } = require('../utils/token')
+const authController = require('../controllers/auth.controller')
+const validate = require('../middleware/validate.middleware')
+const { registerSchema, loginSchema, refreshSchema } = require('../validations/auth.validation')
+const authMiddleware = require('../middleware/auth.middleware')
 
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body
-  try {
-    const user = await prisma.user.findUnique({ where: { email } })
-    if (!user) return res.status(401).json({ message: 'Invalid credentials' })
-    const ok = await bcrypt.compare(password, user.password)
-    if (!ok) return res.status(401).json({ message: 'Invalid credentials' })
-    const token = signToken({ userId: user.id, role: user.role }, '1h')
-    res.json({ token })
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: 'Server error' })
-  }
-})
-
+router.post('/signup', validate(registerSchema), authController.register)
+router.post('/signin', validate(loginSchema), authController.login)
+router.post('/refresh', validate(refreshSchema), authController.refresh)
+router.post('/signout', authMiddleware, authController.signout) // user can sign out (revoke all) or send refresh token in body
+// alternate: /signout-with-token that accepts refreshToken and does not require auth
 
 module.exports = router
