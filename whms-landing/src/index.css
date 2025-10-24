@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Inter", "Inter Fallback", system-ui, -apple-system, sans-serif;
+  --color-background: #0a0a0a;
+  --color-foreground: #ffffff;
+  --color-muted: #666666;
+  --color-muted-foreground: #a0a0a0;
+  --color-border: #1a1a1a;
+  --color-primary: #ffffff;
+  --color-primary-foreground: #000000;
+  --color-accent: #3b82f6;
+  --color-accent-foreground: #ffffff;
+  --radius: 0.5rem;
+}
+
+* {
+  @apply border-border;
+}
+
+body {
+  @apply bg-background text-foreground;
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+html {
+  scroll-behavior: smooth;
+}
