@@ -11,5 +11,6 @@ router.post('/signin', validate(loginSchema), authController.login)
 router.post('/refresh', validate(refreshSchema), authController.refresh)
 router.post('/signout', authMiddleware, authController.signout) // user can sign out (revoke all) or send refresh token in body
 // alternate: /signout-with-token that accepts refreshToken and does not require auth
+router.post('/signout-with-token', authController.signoutWithToken)
 
 module.exports = router
