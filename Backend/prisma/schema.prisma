@@ -32,48 +32,51 @@ model RefreshToken {
 }
 
 model EmailTemplate {
-  id         Int      @id @default(autoincrement())
-  name       String   @unique                      // e.g. "invoice.created"
-  subject    String
-  bodyHtml   String
-  bodyText   String?
-  language   String   @default("en")               // e.g. "en", "es"
-  isDefault  Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // e.g. "invoice.created"
+  subject   String
+  bodyHtml  String
+  bodyText  String?
+  language  String   @default("en") // e.g. "en", "es"
+  isDefault Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ✅ Reverse relation (missing earlier)
+  jobs EmailJob[]
 }
 
 model EmailJob {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  templateId    Int?
-  templateName  String?
-  toEmail       String
-  toName        String?
-  payload       Json?
-  status        String   @default("queued")        // queued, processing, sent, failed
-  attempts      Int      @default(0)
-  lastError     String?
-  priority      String   @default("normal")        // high/normal/low
-  provider      String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId   Int?
+  templateName String?
+  toEmail      String
+  toName       String?
+  payload      Json?
+  status       String   @default("queued") // queued, processing, sent, failed
+  attempts     Int      @default(0)
+  lastError    String?
+  priority     String   @default("normal") // high/normal/low
+  provider     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   template EmailTemplate? @relation(fields: [templateId], references: [id])
-  @@index([templateName])
+
+  @@index([templateId])
   @@index([status])
 }
 
 model EmailEvent {
   id         Int      @id @default(autoincrement())
   jobId      String?
-  eventType  String   // queued, sent, delivered, bounce, opened, failed
+  eventType  String // queued, sent, delivered, bounce, opened, failed
   providerId String?
   payload    Json?
   createdAt  DateTime @default(now())
 
   @@index([jobId])
 }
-
 
 model Client {
   id        Int       @id @default(autoincrement())
