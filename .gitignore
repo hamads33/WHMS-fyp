@@ -31,6 +31,7 @@ Backend/node_modules/
 frontend/.env
 Backend/.env
 
+
 # Ignore build artifacts
 frontend/dist/
 Backend/dist/

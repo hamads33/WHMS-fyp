@@ -1,8 +1,7 @@
-# docker-compose.yml
 services:
   postgres:
     image: postgres:15
-    container_name: whms_postgres
+    container_name: whms_postgres1
     restart: unless-stopped
     environment:
       POSTGRES_USER: whms
@@ -15,7 +14,7 @@ services:
 
   redis:
     image: redis:7
-    container_name: whms_redis
+    container_name: whms_redis1
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -25,13 +24,3 @@ services:
 volumes:
   pgdata:
   redisdata:
-
-  email-worker:
-    build:
-      context: .
-      dockerfile: ./Dockerfile  # or point to Backend Dockerfile
-    command: ["node", "src/worker/emailWorker.js"]
-    env_file: .env
-    depends_on:
-      - redis
-      - postgres
