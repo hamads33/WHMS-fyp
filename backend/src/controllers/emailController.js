@@ -1,7 +1,5 @@
 // src/controllers/emailController.js
-const express = require('express');
-const router = express.Router();
-const { enqueueEmail, getJobStatus } = require('../services/emailService'); // ensure these exist
+const { enqueueEmail, getJobStatus } = require('../services/emailService');
 
 // Helper: simple input validator
 function isString(s) {
@@ -9,18 +7,18 @@ function isString(s) {
 }
 
 /**
+ * Controller: send email
  * POST /api/v1/email/send
  * Body: { template, to, to_name, payload, priority }
  */
-router.post('/send', async (req, res) => {
+exports.sendEmail = async (req, res) => {
   try {
-    const { template, to, to_name: toName, payload, priority } = req.body;
+    const { template, to, to_name: toName, payload, priority } = req.body || {};
 
     if (!isString(template) || !isString(to)) {
       return res.status(400).json({ error: 'template and to are required and must be non-empty strings' });
     }
 
-    // Optionally validate payload shape if needed
     const jobId = await enqueueEmail({
       templateName: template,
       to,
@@ -29,19 +27,18 @@ router.post('/send', async (req, res) => {
       priority: priority || 'normal',
     });
 
-    // Return 202 Accepted — queued for processing
     return res.status(202).json({ success: true, jobId, status: 'queued' });
   } catch (err) {
     console.error('email send error', err);
     return res.status(500).json({ success: false, error: err.message });
   }
-});
+};
 
 /**
+ * Controller: get job status
  * GET /api/v1/email/job/:id
- * Returns job status and details
  */
-router.get('/job/:id', async (req, res) => {
+exports.getJob = async (req, res) => {
   try {
     const id = req.params.id;
     if (!isString(id)) return res.status(400).json({ error: 'invalid job id' });
@@ -54,17 +51,16 @@ router.get('/job/:id', async (req, res) => {
     console.error('get job error', err);
     return res.status(500).json({ success: false, error: err.message });
   }
-});
+};
 
 /**
+ * Controller: test email
  * GET /api/v1/email/test
- * Simple smoke test — queues a sample email using TEST_EMAIL env (or fallback).
- * Useful for Postman quick-checks.
  */
-router.get('/test', async (req, res) => {
+exports.testEmail = async (req, res) => {
   try {
     const testRecipient = process.env.TEST_EMAIL || 'test@example.com';
-    const job = await enqueueEmail({
+    const jobId = await enqueueEmail({
       templateName: 'invoice.created',
       to: testRecipient,
       toName: 'Test User',
@@ -72,11 +68,9 @@ router.get('/test', async (req, res) => {
       priority: 'high',
     });
 
-    return res.json({ success: true, message: 'Test email queued', jobId: job });
+    return res.json({ success: true, message: 'Test email queued', jobId });
   } catch (err) {
     console.error('test email error', err);
     return res.status(500).json({ success: false, error: err.message });
   }
-});
-
-module.exports = router;
+};

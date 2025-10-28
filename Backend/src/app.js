@@ -1,14 +1,37 @@
 // src/app.js
-const express = require('express')
-const app = express()
-app.use(express.json())
+const express = require('express');
+const cors = require('cors');            // <-- add
+const app = express();
 
-const authRoutes = require('./routes/auth.routes')
-app.use('/api/auth', authRoutes)
+const FRONTEND_ORIGIN = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+app.use(cors({
+  origin: FRONTEND_ORIGIN,              // or '*' for quick test
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  credentials: true                     // set true if you use cookies/auth
+}));
+
+app.use(express.json());
+
+const authRoutes = require('./routes/auth.routes');
+app.use('/api/auth', authRoutes);
 
 // global error logger or middleware as needed
 
-module.exports = app
+module.exports = app;
+
+
+// // src/app.js
+// const express = require('express')
+// const app = express()
+// app.use(express.json())
+
+// const authRoutes = require('./routes/auth.routes')
+// app.use('/api/auth', authRoutes)
+
+// // global error logger or middleware as needed
+
+// module.exports = app
 
 
 
