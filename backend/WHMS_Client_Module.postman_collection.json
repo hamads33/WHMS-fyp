@@ -1,0 +1,119 @@
+{
+  "info": {
+    "name": "WHMS Client Module",
+    "_postman_id": "b7f1c18e-4a22-4d5c-8bde-3a6f768f621c",
+    "description": "Postman collection for testing WHMS Client Module API endpoints (list, create, reset password, assign/remove service).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "List All Clients",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/v1/clients",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "v1", "clients"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Search Clients",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/v1/clients?search=john",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "v1", "clients"],
+          "query": [
+            { "key": "search", "value": "john" }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create Client",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"password123\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/v1/clients",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "v1", "clients"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Reset Client Password",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"newPassword\": \"newpass456\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/v1/clients/{{clientId}}/reset-password",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "v1", "clients", "{{clientId}}", "reset-password"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Assign Service to Client",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"serviceName\": \"Basic Hosting Plan\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/v1/clients/{{clientId}}/services",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "v1", "clients", "{{clientId}}", "services"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Remove Client Service",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/v1/clients/service/{{serviceId}}",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "v1", "clients", "service", "{{serviceId}}"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    { "key": "clientId", "value": "replace-with-client-id" },
+    { "key": "serviceId", "value": "replace-with-service-id" }
+  ]
+}

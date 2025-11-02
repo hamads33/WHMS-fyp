@@ -1,5 +1,5 @@
 // src/controllers/auth.controller.js
-const authService = require('../services/auth.service')
+const authService = require('./auth.service')
 
 exports.register = async (req, res) => {
   try {
@@ -58,15 +58,15 @@ exports.signoutWithToken = async (req, res) => {
 
     if (refreshToken) {
       // revoke specific refresh token
-      await require('../services/auth.service').signout({ refreshToken })
+      await require('./auth.service').signout({ refreshToken })
       return res.json({ message: 'Signed out (refresh token revoked)' })
     }
 
     // if accessToken provided, verify and revoke all for that user
-    const payload = require('../utils/token').verifyAccessToken(accessToken)
-    const user = await require('../db/user.repo').findById(payload.userId)
+    const payload = require('../../utils/token').verifyAccessToken(accessToken)
+    const user = await require('../../db/user.repo').findById(payload.userId)
     if (!user) return res.status(401).json({ message: 'User not found' })
-    await require('../db/token.repo').deleteAllForUser(user.id)
+    await require('../../db/token.repo').deleteAllForUser(user.id)
     return res.json({ message: 'Signed out from all sessions (by access token)' })
   } catch (err) {
     console.error('signoutWithToken ERROR', err)

@@ -31,6 +31,31 @@ model RefreshToken {
   @@index([userId])
 }
 
+model Client {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  password     String
+  status       String    @default("active")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  services     ClientService[]
+}
+
+model ClientService {
+  id          String   @id @default(uuid())
+  clientId    String
+  serviceName String
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client      Client   @relation(fields: [clientId], references: [id])
+}
+
+
+
 model EmailTemplate {
   id        Int      @id @default(autoincrement())
   name      String   @unique // e.g. "invoice.created"
@@ -78,7 +103,7 @@ model EmailEvent {
   @@index([jobId])
 }
 
-model Client {
+model xClient {
   id        Int       @id @default(autoincrement())
   name      String
   email     String    @unique
@@ -89,16 +114,16 @@ model Client {
 
 model Service {
   id        Int      @id @default(autoincrement())
-  clientId  Int
+  xclientId  Int
   plan      String
   status    String   @default("active")
   createdAt DateTime @default(now())
-  client    Client   @relation(fields: [clientId], references: [id])
+  xclient    xClient   @relation(fields: [xclientId], references: [id])
 }
 
 model Ticket {
   id        Int      @id @default(autoincrement())
-  clientId  Int
+  xclientId  Int
   subject   String
   message   String
   priority  String

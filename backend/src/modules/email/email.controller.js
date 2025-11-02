@@ -1,5 +1,5 @@
 // src/controllers/emailController.js
-const { enqueueEmail, getJobStatus } = require('../services/emailService');
+const { enqueueEmail, getJobStatus } = require('./email.service');
 
 // Helper: simple input validator
 function isString(s) {

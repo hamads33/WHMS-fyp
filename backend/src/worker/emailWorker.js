@@ -1,7 +1,7 @@
 const { Worker } = require('bullmq');
 const { PrismaClient } = require('@prisma/client');
 const { loadTemplate, renderTemplateString } = require('../utils/templateRenderer');
-const { sendMail, providerName } = require('../providers/emailProvider');
+const { sendMail, providerName } = require('../modules/email/emailProvider');
 
 const prisma = new PrismaClient();
 

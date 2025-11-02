@@ -13,8 +13,9 @@ app.use(cors({
 
 app.use(express.json());
 
-const authRoutes = require('./routes/auth.routes');
+const authRoutes = require('./modules/auth/auth.routes');
 app.use('/api/auth', authRoutes);
+app.use('/api/v1/clients', require('./modules/clients/clients.routes'));
 
 // global error logger or middleware as needed
 

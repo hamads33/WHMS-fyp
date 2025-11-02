@@ -1,8 +1,8 @@
 // src/services/auth.service.js
-const userRepo = require('../db/user.repo')
-const tokenRepo = require('../db/token.repo')
-const { hashPassword, comparePassword } = require('../utils/password')
-const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../utils/token')
+const userRepo = require('../../db/user.repo')
+const tokenRepo = require('../../db/token.repo')
+const { hashPassword, comparePassword } = require('../../utils/password')
+const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../../utils/token')
 const crypto = require('crypto')
 
 exports.register = async ({ username, email, password, role = 'client' }) => {

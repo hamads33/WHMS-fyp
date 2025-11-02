@@ -1,10 +1,10 @@
 // src/routes/auth.routes.js
 const express = require('express')
 const router = express.Router()
-const authController = require('../controllers/auth.controller')
-const validate = require('../middleware/validate.middleware')
-const { registerSchema, loginSchema, refreshSchema } = require('../validations/auth.validation')
-const authMiddleware = require('../middleware/auth.middleware')
+const authController = require('./auth.controller')
+const validate = require('../../middleware/validate.middleware')
+const { registerSchema, loginSchema, refreshSchema } = require('../../validation/auth.validation')
+const authMiddleware = require('../../middleware/auth.middleware')
 
 router.post('/signup', validate(registerSchema), authController.register)
 router.post('/signin', validate(loginSchema), authController.login)
