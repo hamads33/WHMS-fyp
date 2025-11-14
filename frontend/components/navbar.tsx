@@ -21,7 +21,7 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center">
-            <span className="text-xl font-bold text-primary">v0</span>
+            <span className="text-xl font-bold text-primary">WHMS</span>
           </Link>
 
           {/* Desktop Navigation */}

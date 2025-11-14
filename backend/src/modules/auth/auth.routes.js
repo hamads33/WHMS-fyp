@@ -13,4 +13,5 @@ router.post('/signout', authMiddleware, authController.signout) // user can sign
 // alternate: /signout-with-token that accepts refreshToken and does not require auth
 router.post('/signout-with-token', authController.signoutWithToken)
 
+router.post('/signin/google', authController.googleSignin)
 module.exports = router

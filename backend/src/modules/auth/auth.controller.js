@@ -75,3 +75,15 @@ exports.signoutWithToken = async (req, res) => {
 }
 
 
+exports.googleSignin = async (req, res) => {
+  try {
+    const { idToken } = req.body || {}
+    if (!idToken) return res.status(400).json({ message: 'idToken is required' })
+
+    const payload = await authService.loginWithGoogle(idToken)
+    res.json(payload)
+  } catch (err) {
+    console.error('GOOGLE SIGNIN ERROR', err)
+    res.status(err.status || 500).json({ message: err.message || 'Server error' })
+  }
+}

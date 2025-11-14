@@ -9,3 +9,11 @@ exports.findById = (id) =>
 
 exports.createUser = (data) =>
   prisma.user.create({ data })
+exports.findByGoogleId = async (googleId) => {
+  if (!googleId) return null
+  return prisma.user.findUnique({ where: { googleId } })
+}
+
+exports.updateUser = async (id, data) => {
+  return prisma.user.update({ where: { id }, data })
+}

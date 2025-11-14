@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');            // <-- add
 const app = express();
 
-const FRONTEND_ORIGIN = process.env.FRONTEND_URL || 'http://localhost:5173';
+const FRONTEND_ORIGIN = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 app.use(cors({
   origin: FRONTEND_ORIGIN,              // or '*' for quick test
@@ -18,6 +18,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/v1/clients', require('./modules/clients/clients.routes'));
 
 // global error logger or middleware as needed
+console.log("Google Client ID:", process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID)
+
 
 module.exports = app;
 

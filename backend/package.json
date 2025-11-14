@@ -13,6 +13,8 @@
   "dependencies": {
     "@prisma/client": "^6.18.0",
     "@sendgrid/mail": "^8.1.6",
+    "@simplewebauthn/server": "^13.2.2",
+    "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.63.0",
@@ -20,6 +22,7 @@
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "google-auth-library": "^10.5.0",
     "handlebars": "^4.7.8",
     "helmet": "^8.1.0",
     "ioredis": "^5.8.2",

@@ -9,10 +9,16 @@ generator client {
 
 model User {
   id            Int            @id @default(autoincrement())
-  username      String         @unique
+  username      String?        @unique
   email         String         @unique
-  password      String
+  password      String? // nullable for OAuth users
   role          String         @default("admin") // admin, support, reseller, client
+  provider      String         @default("local") // "local" | "google" | "github" etc.
+  googleId      String?        @unique // Google "sub"
+  displayName   String?
+  avatarUrl     String?
+  emailVerified Boolean        @default(false)
+  lastLoginAt   DateTime?
   refreshTokens RefreshToken[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -32,15 +38,20 @@ model RefreshToken {
 }
 
 model Client {
-  id           String    @id @default(uuid())
-  name         String
-  email        String    @unique
-  password     String
-  status       String    @default("active")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  services     ClientService[]
+  // keeps references to legacy client-typed services (previously ClientService[] named `services`)
+  clientServices ClientService[]
+
+  // new Service and Ticket relations (these refer to the Service and Ticket models)
+  services Service[]
+  tickets  Ticket[]
 }
 
 model ClientService {
@@ -51,10 +62,10 @@ model ClientService {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  client      Client   @relation(fields: [clientId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
 }
-
-
 
 model EmailTemplate {
   id        Int      @id @default(autoincrement())
@@ -67,7 +78,6 @@ model EmailTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // ✅ Reverse relation (missing earlier)
   jobs EmailJob[]
 }
 
@@ -103,32 +113,31 @@ model EmailEvent {
   @@index([jobId])
 }
 
-model xClient {
-  id        Int       @id @default(autoincrement())
-  name      String
-  email     String    @unique
-  status    String    @default("active")
-  createdAt DateTime  @default(now())
-  services  Service[]
-}
-
 model Service {
   id        Int      @id @default(autoincrement())
-  xclientId  Int
+  clientId  String
   plan      String
   status    String   @default("active")
   createdAt DateTime @default(now())
-  xclient    xClient   @relation(fields: [xclientId], references: [id])
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
 }
 
 model Ticket {
   id        Int      @id @default(autoincrement())
-  xclientId  Int
+  clientId  String
   subject   String
   message   String
   priority  String
   status    String   @default("open")
   createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
 }
 
 model AuditLog {
@@ -137,4 +146,6 @@ model AuditLog {
   action    String
   meta      Json?
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }

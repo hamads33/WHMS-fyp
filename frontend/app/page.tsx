@@ -8,9 +8,9 @@ export default function Home() {
       <main className="flex-1">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center">
-            <h1 className="text-4xl md:text-6xl font-bold text-balance mb-6">Welcome to v0</h1>
+            <h1 className="text-4xl md:text-6xl font-bold text-balance mb-6">WHMS</h1>
             <p className="text-lg text-foreground/70 text-balance mb-8 max-w-2xl mx-auto">
-              Build beautiful web experiences with cutting-edge tools and design patterns.
+              WEB HOSTING MANAGEMENT SYSTEM
             </p>
             <div className="flex gap-4 justify-center flex-wrap">
               <button className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity">

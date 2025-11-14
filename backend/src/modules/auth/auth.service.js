@@ -72,3 +72,56 @@ exports.signout = async ({ refreshToken, userId }) => {
   await tokenRepo.revokeRefreshToken(refreshToken)
   return { message: 'Signed out' }
 }
+// ----------------- GOOGLE PASSWORDLESS LOGIN -----------------
+const googleClient = require('../../config/googleAuth.config')
+
+exports.loginWithGoogle = async (idToken) => {
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  })
+
+  const payload = ticket.getPayload()
+  if (!payload?.email) throw { status: 400, message: 'Invalid Google token' }
+
+  const { email, sub: googleId, name, picture, email_verified } = payload
+
+  // find or create user
+  let user = await userRepo.findByGoogleId(googleId)
+  if (!user) {
+    user = await userRepo.findByEmail(email)
+    if (user) {
+      // link Google ID to existing account
+      user = await userRepo.updateUser(user.id, {
+        googleId,
+        provider: 'google',
+        displayName: name,
+        avatarUrl: picture,
+      })
+    } else {
+      // create a new passwordless account
+      user = await userRepo.createUser({
+        username: email.split('@')[0],
+        email,
+        password: null,
+        provider: 'google',
+        googleId,
+        displayName: name,
+        avatarUrl: picture,
+        role: 'client',
+      })
+    }
+  }
+
+  // sign tokens
+  const accessToken = signAccessToken({ userId: user.id, role: user.role })
+  const { token: refreshToken, expiresAt } = signRefreshToken({ userId: user.id, role: user.role })
+
+  await tokenRepo.createRefreshToken(user.id, refreshToken, expiresAt)
+
+  return {
+    user: { id: user.id, username: user.username, email: user.email, role: user.role },
+    accessToken,
+    refreshToken,
+  }
+}
