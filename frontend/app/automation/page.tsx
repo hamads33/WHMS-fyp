@@ -1,8 +1,9 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui";
-import { ChartAreaInteractive } from "@/components/chart-area-interactive";
+import { ChartAreaInteractive } from "@/components/custom-components/chart-area-interactive";
 import { ButtonGroupSplit } from "@/components/ui/split-button";
+import { ButtonGroupSelect } from "@/components/custom-components/button-group-select";
 
 export default function systemsettingspage(){
 return (
@@ -25,9 +26,11 @@ return (
                 
                 <ChartAreaInteractive /> 
               </div>
+                <ButtonGroupSelect/>
               <ButtonGroupSplit/>
               <ButtonGroupSplit/>
               <ButtonGroupSplit/>
+            
               {/* <DataTable data={data} /> */}
             </div>
           </div>

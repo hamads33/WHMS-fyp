@@ -136,21 +136,26 @@ const data = {
       icon: IconSearch,
     },
   ],
-  documents: [
+  Shortcuts: [
     {
-      name: "Data Library",
-      url: "#",
+      name: "WHOIS Lookup",
+      url: "/utilities/domains/whois-lookup",
       icon: IconDatabase,
     },
     {
-      name: "Reports",
-      url: "#",
+      name: "Manage Staff",
+      url: "/admin/staff-management",
       icon: IconReport,
     },
     {
-      name: "Word Assistant",
-      url: "#",
+      name: "Email Settings",
+      url: "/utilities/emails",
       icon: IconFileWord,
+    },
+    {
+      name: "Database Backup",
+      url: "/utilities/db-backups",
+      icon: IconDatabase,
     },
   ],
 }
@@ -175,7 +180,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavDocuments items={data.documents} />
+        <NavDocuments items={data.Shortcuts} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
