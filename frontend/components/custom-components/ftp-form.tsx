@@ -17,7 +17,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -25,6 +24,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { InfoBox } from "../ui/info-box";
 
 const formSchema = z.object({
   ftpHostname: z.string().min(1),
@@ -64,13 +64,18 @@ export default function FtpForm() {
             Enter your FTP credentials to continue.
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(onSubmit)}
-              className="form-main space-y-6"
-            >
-              <div className="card-ftp-fields grid grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+
+              {/* Info Box — clean spacing, no layout breaking */}
+              <InfoBox>
+                This backup option may fail to complete successfully with large databases due to system memory or time execution limits. For larger installations, we recommend using cPanel Backup or an alternative backup solution.
+                 </InfoBox>
+
+              {/* Hostname + Port */}
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="ftpHostname"
@@ -88,6 +93,7 @@ export default function FtpForm() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="ftpPort"
@@ -101,13 +107,15 @@ export default function FtpForm() {
                           {...field}
                         />
                       </FormControl>
-                      <FormDescription>Add 21 if you don't know</FormDescription>
+                      {/* FormDescription removed for perfect alignment */}
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-              <div className="card-ftp-fields grid grid-cols-2 gap-4">
+
+              {/* Username + Password */}
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="ftpUsername"
@@ -125,6 +133,7 @@ export default function FtpForm() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="ftpPassword"
@@ -143,6 +152,8 @@ export default function FtpForm() {
                   )}
                 />
               </div>
+
+              {/* Destination path */}
               <FormField
                 control={form.control}
                 name="ftpDestination"
@@ -156,7 +167,9 @@ export default function FtpForm() {
                   </FormItem>
                 )}
               />
-              <div className="card-ftp-checkbox-row grid grid-cols-2 gap-4">
+
+              {/* Checkbox Row */}
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="useSftp"
@@ -169,14 +182,13 @@ export default function FtpForm() {
                         />
                       </FormControl>
                       <div className="ml-2">
-                        <FormLabel>
-                          Use Secure FTP/SFTP (Recommended)
-                        </FormLabel>
+                        <FormLabel>Use Secure FTP/SFTP (Recommended)</FormLabel>
                         <FormMessage />
                       </div>
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="passiveMode"
@@ -196,11 +208,13 @@ export default function FtpForm() {
                   )}
                 />
               </div>
+
               <CardFooter className="card-ftp-footer">
                 <Button className="w-full" type="submit">
-                  Submit
+                  Test Connection
                 </Button>
               </CardFooter>
+
             </form>
           </Form>
         </CardContent>

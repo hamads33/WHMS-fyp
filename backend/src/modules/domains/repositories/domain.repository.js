@@ -49,12 +49,25 @@ async function softDelete(id) {
     }
   });
 }
+async function findTldByName(name) {
+  return prisma.tld.findUnique({ where: { name } });
+}
 
+async function createTld(data) {
+  return prisma.tld.create({ data });
+}
+
+async function updateTld(id, data) {
+  return prisma.tld.update({ where: { id }, data });
+}
 module.exports = {
   findAll,
   findById,
   findByName,
   create,
   update,
-  softDelete   // ✅ THE FIX
+  softDelete  , // ✅ THE FIX
+   findTldByName,
+  createTld,
+  updateTld,
 };

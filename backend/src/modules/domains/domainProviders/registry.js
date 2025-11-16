@@ -1,5 +1,5 @@
 const mock = require('./mock');
-const namecheap = require('./namecheap');
+const porkbun = require("./porkbun.provider");
 
 /**
  * Returns the correct provider object by name.

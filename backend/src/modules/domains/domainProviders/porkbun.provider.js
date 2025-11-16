@@ -1,132 +1,184 @@
 // src/modules/domains/providers/porkbun.provider.js
-const API_HOST = process.env.PORKBUN_API_HOST || "https://api.porkbun.com/api/json/v3";
+
+const API_HOST =
+  process.env.PORKBUN_API_ENDPOINT ||
+  "https://api.porkbun.com/api/json/v3";
+
 const API_KEY = process.env.PORKBUN_API_KEY;
 const SECRET_KEY = process.env.PORKBUN_SECRET_API_KEY;
 
 if (!API_KEY || !SECRET_KEY) {
-  console.warn("⚠️ Porkbun credentials missing (PORKBUN_API_KEY / PORKBUN_SECRET_API_KEY).");
+  console.warn("⚠️ Porkbun API credentials missing.");
 }
 
-async function porkbunRequest(path, body = {}, method = "POST") {
-  const url = `${API_HOST}${path}`;
-  const payload = {
+// ------------------------------------------------------
+// Helper: Auth block
+// ------------------------------------------------------
+function auth() {
+  return {
     apikey: API_KEY,
     secretapikey: SECRET_KEY,
-    ...body,
   };
-
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const json = await res.json().catch(() => ({ status: "ERROR", message: "Invalid JSON" }));
-
-  return json;
 }
 
-/**
- * Domain check availability
- * path: /domain/checkDomain/DOMAIN
- * returns Porkbun response (status/response/limits)
- */
+// ------------------------------------------------------
+// Helper: Generic POST wrapper
+// ------------------------------------------------------
+async function porkbunPOST(path, body = {}) {
+  try {
+    const url = `${API_HOST}${path}`;
+
+    const payload = {
+      ...auth(),
+      ...body,
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    return await res.json();
+  } catch (err) {
+    return { status: "ERROR", message: err.message };
+  }
+}
+
+// =====================================================================
+//  ✔ 1. CHECK DOMAIN AVAILABILITY (REAL ENDPOINT)
+// =====================================================================
+// POST /domain/checkDomain/{domain}
 async function checkDomain(domain) {
-  const path = `/domain/checkDomain/${encodeURIComponent(domain)}`;
-  return await porkbunRequest(path, {});
+  return porkbunPOST(`/domain/checkDomain/${encodeURIComponent(domain)}`);
 }
 
-/**
- * Get default Pricing (no auth required according to docs)
- * endpoint: /domain/getPricing
- */
-async function getPricing() {
-  const path = `/domain/getPricing`;
-  // docs indicate this requires no auth but their page uses POST JSON; keep apikey fields (no harm)
-  return await porkbunRequest(path, {});
-}
-
-/**
- * List domains owned on account
- * endpoint: /domain/listAll
- */
-async function listDomains() {
-  const path = `/domain/listAll`;
-  return await porkbunRequest(path, {});
-}
-
-/**
- * Get nameservers for a domain
- * endpoint: /domain/listNameServers/DOMAIN
- */
-async function getNameservers(domain) {
-  const path = `/domain/listNameServers/${encodeURIComponent(domain)}`;
-  return await porkbunRequest(path, {});
-}
-
-/**
- * Update nameservers
- * endpoint: /domain/updateNameServers/DOMAIN
- * body: { nameservers: ["ns1.example.com","ns2..."] }
- */
-async function updateNameservers(domain, nameservers = []) {
-  const path = `/domain/updateNameServers/${encodeURIComponent(domain)}`;
-  return await porkbunRequest(path, { nameservers });
-}
-
-/**
- * Register domain (create)
- * endpoint: /domain/create
- * payload per docs: domain, years, registrantContact (various fields)
- */
+// =====================================================================
+//  ✔ 2. REGISTER DOMAIN  (REAL ENDPOINT)
+// =====================================================================
+// POST /domain/create
 async function registerDomain(domain, years = 1, contact = {}) {
-  const path = `/domain/create`;
-  const body = {
+  return porkbunPOST(`/domain/create`, {
     domain,
     years: String(years),
-    ... (contact ? { registrantContact: contact } : {}),
-  };
-  return await porkbunRequest(path, body);
+
+    // Porkbun expects all contact types, but they may reuse same info
+    registrant: contact,
+    tech: contact,
+    admin: contact,
+    billing: contact,
+  });
 }
 
-/**
- * DNS functions
- * Retrieve records: /dns/retrieve/DOMAIN
- * Create record: /dns/create/DOMAIN
- * Edit record by ID: /dns/editByDomainAndID/DOMAIN/ID
- * Delete record by ID: /dns/deleteByDomainAndID/DOMAIN/ID
- */
+// =====================================================================
+//  ✔ 3. LIST DOMAINS (REAL ENDPOINT)
+// =====================================================================
+// POST /domain/listAll
+async function listDomains() {
+  return porkbunPOST(`/domain/listAll`);
+}
 
+// =====================================================================
+//  ✔ 4. GET NAMESERVERS (REAL ENDPOINT)
+// =====================================================================
+// POST /domain/listNameServers/{domain}
+async function getNameservers(domain) {
+  return porkbunPOST(`/domain/listNameServers/${encodeURIComponent(domain)}`);
+}
+
+// =====================================================================
+//  ✔ 5. UPDATE NAMESERVERS (REAL ENDPOINT)
+// =====================================================================
+// POST /domain/updateNameServers/{domain}
+async function updateNameservers(domain, nameservers = []) {
+  return porkbunPOST(
+    `/domain/updateNameServers/${encodeURIComponent(domain)}`,
+    { nameservers }
+  );
+}
+
+// =====================================================================
+//  ✔ 6. DNS — RETRIEVE RECORDS (REAL ENDPOINT)
+// =====================================================================
+// POST /dns/retrieve/{domain}
 async function dnsRetrieve(domain) {
-  const path = `/dns/retrieve/${encodeURIComponent(domain)}`;
-  return await porkbunRequest(path, {});
+  return porkbunPOST(`/dns/retrieve/${encodeURIComponent(domain)}`);
 }
 
+// =====================================================================
+//  ✔ 7. DNS — CREATE RECORD (REAL ENDPOINT)
+// =====================================================================
+// POST /dns/create/{domain}
 async function dnsCreate(domain, record) {
-  // record example: { type: "A", name: "www", content: "1.2.3.4", ttl: 3600 }
-  const path = `/dns/create/${encodeURIComponent(domain)}`;
-  return await porkbunRequest(path, record);
+  return porkbunPOST(`/dns/create/${encodeURIComponent(domain)}`, {
+    name: record.name,
+    type: record.type,
+    content: record.value,
+    ttl: record.ttl || 3600,
+  });
 }
 
+// =====================================================================
+//  ✔ 8. DNS — EDIT RECORD BY ID (REAL ENDPOINT)
+// =====================================================================
+// POST /dns/editByDomainAndID/{domain}/{id}
 async function dnsEditById(domain, id, record) {
-  const path = `/dns/editByDomainAndID/${encodeURIComponent(domain)}/${encodeURIComponent(id)}`;
-  return await porkbunRequest(path, record);
+  return porkbunPOST(
+    `/dns/editByDomainAndID/${encodeURIComponent(domain)}/${encodeURIComponent(id)}`,
+    {
+      name: record.name,
+      type: record.type,
+      content: record.value,
+      ttl: record.ttl || 3600,
+    }
+  );
 }
 
+// =====================================================================
+//  ✔ 9. DNS — DELETE RECORD BY ID (REAL ENDPOINT)
+// =====================================================================
+// POST /dns/deleteByDomainAndID/{domain}/{id}
 async function dnsDeleteById(domain, id) {
-  const path = `/dns/deleteByDomainAndID/${encodeURIComponent(domain)}/${encodeURIComponent(id)}`;
-  return await porkbunRequest(path, {});
+  return porkbunPOST(
+    `/dns/deleteByDomainAndID/${encodeURIComponent(domain)}/${encodeURIComponent(id)}`
+  );
 }
 
+// =====================================================================
+//  ✔ 10. GET PRICING (REAL ENDPOINT, NO AUTH REQUIRED)
+// =====================================================================
+// GET /domain/getPricing
+async function getPricing() {
+  try {
+    const url = `${API_HOST}/pricing/get`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "WHMS/1.0"     // REQUIRED!
+      }
+    });
+
+    const json = await res.json();
+    return json;
+
+  } catch (err) {
+    return { status: "ERROR", message: err.message };
+  }
+}
+
+
+// ------------------------------------------------------
 module.exports = {
   checkDomain,
-  getPricing,
+  registerDomain,
   listDomains,
   getNameservers,
   updateNameservers,
-  registerDomain,
   dnsRetrieve,
   dnsCreate,
   dnsEditById,
   dnsDeleteById,
+  getPricing,
 };

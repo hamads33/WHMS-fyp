@@ -153,13 +153,69 @@ model AuditLog {
 model Domain {
   id          Int       @id @default(autoincrement())
   name        String    @unique
-  status      String    @default("active")
   provider    String?
+  status      String    @default("active")
   expiryDate  DateTime?
   nameservers String[]  @default([])
   metadata    Json?
-  deleted     Boolean   @default(false)
-  deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  deleted     Boolean   @default(false)
+  deletedAt   DateTime?
+
+  // 🔥 Required back-relations
+  dnsRecords DNSRecord[]
+  logs       DomainLog[]
 }
+
+model DNSRecord {
+  id       Int    @id @default(autoincrement())
+  domainId Int
+  domain   Domain @relation(fields: [domainId], references: [id])
+
+  type       String
+  name       String
+  value      String
+  ttl        Int      @default(3600)
+  providerId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model DomainLog {
+  id       Int    @id @default(autoincrement())
+  domainId Int
+  domain   Domain @relation(fields: [domainId], references: [id])
+
+  action    String
+  message   String?
+  meta      Json?
+  createdAt DateTime @default(now())
+}
+
+model ProviderConfig {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  key       String?
+  secret    String?
+  endpoint  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+model Tld {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  registerPrice Int?     // stored in cents
+  renewPrice    Int?
+  transferPrice Int?
+  markupPercent Int?     // optional default markup percent
+  providerData  Json?    // raw porkbun response for this TLD
+  lastSynced    DateTime?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+

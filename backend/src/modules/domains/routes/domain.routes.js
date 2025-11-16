@@ -1,17 +1,42 @@
-const express = require('express');
+// src/modules/domains/routes/domain.routes.js
+
+const express = require("express");
 const router = express.Router();
-const controller = require('../controllers/domain.controller');
-// special GETs first
-router.get('/availability/check', controller.checkAvailability);
-router.get('/whois', controller.whoisLookup);
+const controller = require("../controllers/domain.controller");
 
-// CRUD
-router.get('/', controller.getAllDomains);
-router.get('/:id', controller.getDomainById);
-router.post('/register', controller.registerDomain);
-router.post('/:id/dns', controller.addDnsRecord);
+// ------------------------------------------------------
+// IMPORTANT: STATIC ROUTES FIRST (to avoid :id conflicts)
+// ------------------------------------------------------
 
-// DELETE (must be AFTER CRUD)
-router.delete('/:id', controller.deleteDomain);
+// Pricing
+router.get("/pricing", controller.getPricing);
+
+// Availability check
+router.get("/availability/check", controller.checkAvailability);
+
+// WHOIS lookup
+router.get("/whois", controller.whoisLookup);
+
+// Register domain
+router.post("/register", controller.registerDomain);
+
+// ------------------------------------------------------
+// DNS & Nameserver management — MUST come before :id
+// ------------------------------------------------------
+
+// Update nameservers
+router.post("/:id/nameservers", controller.updateNameservers);
+
+// Add DNS record
+router.post("/:id/dns", controller.addDnsRecord);
+//sync pricing with db
+router.post("/pricing/sync", controller.syncPricing);
+
+// ------------------------------------------------------
+// CRUD ROUTES — MUST come LAST
+// ------------------------------------------------------
+router.get("/", controller.getAllDomains);
+router.get("/:id", controller.getDomainById);
+router.delete("/:id", controller.deleteDomain);
 
 module.exports = router;

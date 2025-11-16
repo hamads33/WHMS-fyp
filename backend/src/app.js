@@ -1,4 +1,6 @@
 // src/app.js
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const ip = require("ip");     // for LAN support
@@ -56,6 +58,8 @@ console.log("Google Client ID:", process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 app.use("/api/auth", require("./modules/auth/auth.routes"));
 app.use("/api/v1/clients", require("./modules/clients/clients.routes"));
 app.use("/api/domains", require("./modules/domains"));
+
+app.use("/api/automation", require("./modules/automation/automations.routes"));
 
 /* ---------------------- HEALTH CHECK ---------------------- */
 app.get("/health", (req, res) => {
