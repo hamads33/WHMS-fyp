@@ -219,3 +219,57 @@ model Tld {
   updatedAt     DateTime @updatedAt
 }
 
+model Profile {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  cron        String    // cron expression
+  timezone    String    @default("UTC")
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tasks       Task[]
+}
+
+model Task {
+  id             Int      @id @default(autoincrement())
+  profile        Profile  @relation(fields: [profileId], references: [id])
+  profileId      Int
+  name           String
+  actionId       String
+  config         Json
+  order          Int      @default(0)
+  isActive       Boolean  @default(true)
+  retries        Int      @default(3)
+  backoffMs      Int      @default(2000)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // ❗ NO onDelete HERE (this is the parent side)
+  runs           Run[]
+}
+
+model Run {
+  id             Int      @id @default(autoincrement())
+
+  // ❗ Child side holds FK → cascade goes here
+  taskId         Int
+  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+  status         String
+  attempt        Int      @default(1)
+  log            Json?
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+}
+
+
+model Audit {
+  id        Int      @id @default(autoincrement())
+  actor     String?  // optional: user/system
+  action    String
+  payload   Json?
+  createdAt DateTime @default(now())
+}
