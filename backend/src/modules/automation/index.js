@@ -1,3 +1,5 @@
-// quick import helper: require('../modules/automation').init(app)
+// src/modules/automation/index.js
+// export initializer for convenience
+
 const mod = require('./automation.module');
 module.exports = mod;

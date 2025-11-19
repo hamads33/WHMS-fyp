@@ -1,126 +1,123 @@
-// src/modules/automation/controllers/task.controller.js
+const prisma = require("../../../lib/prisma");
+const registry = require("../pluginEngine/pluginRegistry");
+const profileRepo = require("../repositories/profile.repo");
+const taskRepo = require("../repositories/task.repo");
 
-const taskRepo = require('../repositories/task.repo');
-const profileRepo = require('../repositories/profile.repo');
-const automationService = require('../services/automation.service');
-
-// -----------------------------
-// Normalize config body/message
-// -----------------------------
-function normalizeConfig(config) {
-  if (!config) return {};
-
-  const c = { ...config };
-
-  // Allow old tasks using "message"
-  if (c.message && !c.body) c.body = c.message;
-
-  return c;
+// Normalize backward compatibility
+function normalizeConfig(c) {
+  if (!c) return {};
+  const cfg = { ...c };
+  if (cfg.message && !cfg.body) cfg.body = cfg.message;
+  return cfg;
 }
 
-// -----------------------------
-// Create Task
-// -----------------------------
+/* -----------------------------
+ * CREATE TASK
+ * -----------------------------*/
 async function createTask(req, res, next) {
   try {
     const { profileId, name, actionId, config = {}, order } = req.body;
-
     const pid = Number(profileId);
-    if (!pid) return res.status(400).json({ error: "Invalid profileId" });
 
     const profile = await profileRepo.getProfile(pid);
-    if (!profile) {
-      return res.status(404).json({ error: "Profile does not exist" });
+    if (!profile) return res.status(404).json({ error: "Profile does not exist" });
+
+    const plugin = registry.get(actionId);
+    if (!plugin) {
+      return res.status(404).json({ error: "Unknown plugin/actionId" });
     }
 
-    const data = {
+    // Check DB plugin state
+    const dbPlugin = await prisma.plugin.findUnique({ where: { id: plugin.id } });
+    if (dbPlugin && !dbPlugin.enabled) {
+      return res.status(400).json({ error: "Plugin is disabled" });
+    }
+
+    const task = await taskRepo.createTask({
       profileId: pid,
       name,
       actionId,
       config: normalizeConfig(config),
-      order: Number(order || 0),
-      isActive: req.body.isActive !== undefined ? !!req.body.isActive : true,
-      retries: req.body.retries !== undefined ? Number(req.body.retries) : 3,
-      backoffMs: req.body.backoffMs !== undefined ? Number(req.body.backoffMs) : 2000
-    };
+      order: order ? Number(order) : 0,
 
-    const task = await taskRepo.createTask(data);
+      // NEW FIELDS
+      pluginVersion: plugin.version || null,
+      pluginSource: dbPlugin?.source || "user",
+      pluginId: plugin.id
+    });
+
     res.json(task);
   } catch (err) {
     next(err);
   }
 }
 
-// -----------------------------
-// Get task
-// -----------------------------
+/* -----------------------------
+ * GET TASK
+ * -----------------------------*/
 async function getTask(req, res, next) {
   try {
     const id = Number(req.params.id);
     const task = await taskRepo.getTask(id);
 
     if (!task) return res.status(404).json({ error: "Task not found" });
-
     res.json(task);
   } catch (err) {
     next(err);
   }
 }
 
-// -----------------------------
-// Update task
-// -----------------------------
+/* -----------------------------
+ * UPDATE TASK
+ * -----------------------------*/
 async function updateTask(req, res, next) {
   try {
     const id = Number(req.params.id);
-    const { name, actionId, config = {}, order, isActive, retries, backoffMs } = req.body;
+    const payload = req.body;
 
-    const updateData = {
-      name,
-      actionId,
-      config: normalizeConfig(config),
-      order: order !== undefined ? Number(order) : undefined,
-      isActive: isActive !== undefined ? !!isActive : undefined,
-      retries: retries !== undefined ? Number(retries) : undefined,
-      backoffMs: backoffMs !== undefined ? Number(backoffMs) : undefined
-    };
+    if (payload.config) payload.config = normalizeConfig(payload.config);
 
-    // Remove "undefined" fields (very important!)
-    Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
+    const plugin = payload.actionId
+      ? registry.get(payload.actionId)
+      : null;
 
-    const updatedTask = await taskRepo.updateTask(id, updateData);
-    res.json(updatedTask);
+    if (plugin) {
+      payload.pluginVersion = plugin.version;
+      payload.pluginSource = "user";
+      payload.pluginId = plugin.id;
+    }
+
+    const updated = await taskRepo.updateTask(id, payload);
+    res.json(updated);
   } catch (err) {
     next(err);
   }
 }
 
-// -----------------------------
-// Delete task
-// -----------------------------
+/* -----------------------------
+ * DELETE TASK
+ * -----------------------------*/
 async function deleteTask(req, res, next) {
   try {
     const id = Number(req.params.id);
-
     await taskRepo.deleteTask(id);
-
     res.json({ ok: true });
   } catch (err) {
     next(err);
   }
 }
 
-// -----------------------------
-// Run now (manual)
-// -----------------------------
+/* -----------------------------
+ * RUN TASK NOW
+ * -----------------------------*/
 async function runTaskNow(req, res, next) {
   try {
     const id = Number(req.params.id);
     const task = await taskRepo.getTask(id);
-
     if (!task) return res.status(404).json({ error: "Task not found" });
 
-    const result = await automationService.executeTaskRun(task, { test: false });
+    const executor = require("../pluginEngine/executor");
+    const result = await executor.executeTask(task, { test: false });
 
     res.json({ ok: true, result });
   } catch (err) {
@@ -128,10 +125,29 @@ async function runTaskNow(req, res, next) {
   }
 }
 
+async function listTasks(req, res, next) {
+  try {
+    const { profileId } = req.query;
+
+    let tasks;
+
+    if (profileId) {
+      tasks = await taskRepo.getTasksByProfile(Number(profileId));
+    } else {
+      tasks = await taskRepo.getAllTasks();
+    }
+
+    res.json(tasks);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createTask,
-  getTask,
   updateTask,
+  runTaskNow,
+  getTask,
   deleteTask,
-  runTaskNow
+  listTasks,
 };

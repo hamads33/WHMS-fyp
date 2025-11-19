@@ -1,4 +1,5 @@
 // src/modules/automation/repositories/profile.repo.js
+// Prisma-backed Profile repository (keeps your existing implementation)
 
 const prisma = require('../../../lib/prisma');
 
@@ -27,7 +28,6 @@ async function listProfiles() {
 }
 
 async function deleteProfile(id) {
-  // If using CASCADE on Task.profileId, this is enough:
   return prisma.profile.delete({
     where: { id: Number(id) }
   });

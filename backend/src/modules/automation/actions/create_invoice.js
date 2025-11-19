@@ -1,4 +1,6 @@
-// Example action: create_invoice (mock)
+// src/modules/automation/actions/create_invoice.js
+// Built-in example action (keeps your original logic)
+
 module.exports = {
   id: 'create_invoice',
   name: 'Create Invoice (example)',

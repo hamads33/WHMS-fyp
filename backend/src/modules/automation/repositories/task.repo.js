@@ -38,7 +38,18 @@ async function getTask(id) {
 async function listTasksByProfile(profileId) {
   return prisma.task.findMany({
     where: { profileId: Number(profileId) },
-    orderBy: { order: 'asc' }
+    orderBy: { order: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      actionId: true,
+      isActive: true,
+      order: true,
+      config: true,       // 🔥 FIX: THIS IS REQUIRED
+      retries: true,
+      backoffMs: true,
+      profileId: true,
+    }
   });
 }
 
@@ -50,11 +61,25 @@ async function deleteTask(id) {
     where: { id: Number(id) }
   });
 }
+async function getTasksByProfile(profileId) {
+  return prisma.task.findMany({
+    where: { profileId },
+    orderBy: { order: "asc" },
+  });
+}
+
+async function getAllTasks() {
+  return prisma.task.findMany({
+    orderBy: [{ profileId: "asc" }, { order: "asc" }],
+  });
+}
 
 module.exports = {
   createTask,
   updateTask,
   getTask,
   listTasksByProfile,
-  deleteTask
+  deleteTask,
+  getTasksByProfile,
+  getAllTasks
 };

@@ -1,47 +1,81 @@
-const express = require('express');
-const profileController = require('./controllers/profile.controller');
-const taskController = require('./controllers/task.controller');
-const actionController = require('./controllers/action.controller');
-const testController = require('./controllers/test.controller');
+// src/modules/automation/routes.js
+// Main automation routes (profiles, tasks, actions, tests, plugins, cron)
 
+const express = require("express");
+const multer = require("multer");
+
+// Controllers
+const profileController = require("./controllers/profile.controller");
+const taskController = require("./controllers/task.controller");
+const actionController = require("./controllers/action.controller");
+const testController = require("./controllers/test.controller");
+const pluginController = require("./controllers/plugin.controller");
+const pluginUpload = require("./controllers/pluginUpload.controller");
+const cronController = require("./controllers/cron.controller"); // ✅ FIXED (missing)
+
+// at top along with other controllers
+const marketplaceController = require('./controllers/marketplace.controller');
 const router = express.Router();
 
-/* ------------------------------------
- * PROFILE ROUTES
- * ----------------------------------*/
-router.get('/profiles', profileController.listProfiles);
-router.post('/profiles', profileController.createProfile);
-router.get('/profiles/:id', profileController.getProfile);
-router.put('/profiles/:id', profileController.updateProfile);
-router.delete('/profiles/:id', profileController.deleteProfile);
+// ✅ Multer disk storage for plugin upload
+const upload = multer({
+  dest: "uploads/plugins/tmp", // safely uploaded here before extraction
+});
 
 /* ------------------------------------
- * TASK ROUTES
+ * PROFILES
  * ----------------------------------*/
+router.get("/profiles", profileController.listProfiles);
+router.post("/profiles", profileController.createProfile);
+router.get("/profiles/:id", profileController.getProfile);
+router.put("/profiles/:id", profileController.updateProfile);
+router.delete("/profiles/:id", profileController.deleteProfile);
 
-// Create task
+/* ------------------------------------
+ * TASKS
+ * ----------------------------------*/
+/* ------------------------------------
+ * TASKS
+ * ----------------------------------*/
+router.get('/tasks', taskController.listTasks);   // <-- NEW
 router.post('/tasks', taskController.createTask);
-
-// Get single task
 router.get('/tasks/:id', taskController.getTask);
-
-// Update task (THIS WAS MISSING)
 router.put('/tasks/:id', taskController.updateTask);
-
-// Delete task (THIS WAS MISSING)
 router.delete('/tasks/:id', taskController.deleteTask);
-
-// Run task manually
 router.post('/tasks/:id/run', taskController.runTaskNow);
 
 /* ------------------------------------
- * ACTION ROUTES (Plugins)
+ * ACTIONS
  * ----------------------------------*/
-router.get('/actions', actionController.listActions);
+router.get("/actions", actionController.listActions);
 
 /* ------------------------------------
- * TEST ACTION ROUTE
+ * PLUGIN MANAGEMENT
  * ----------------------------------*/
-router.post('/actions/:actionId/test', testController.testAction);
+router.get("/plugins", pluginController.listPlugins);
 
+router.post(
+  "/plugins/upload",
+  upload.single("plugin"),
+  pluginUpload.uploadPlugin
+);
+
+/* ------------------------------------
+ * CRON BUILDER
+ * ----------------------------------*/
+router.post("/cron/build", cronController.buildCron);
+router.post("/cron/validate", cronController.validateCron);
+
+/* ------------------------------------
+ * TEST ACTIONS
+ * ----------------------------------*/
+router.post("/actions/:actionId/test", testController.testAction);
+
+
+
+
+
+// add routes (under PLUGIN MANAGEMENT)
+router.get('/plugins/marketplace', marketplaceController.listMarketplace);
+router.post('/plugins/marketplace/install', marketplaceController.installFromUrl);
 module.exports = router;

@@ -1,4 +1,6 @@
 // src/modules/automation/controllers/profile.controller.js
+// CRUD for profiles — scheduling handled by workers/cron.runner
+
 const profileRepo = require('../repositories/profile.repo');
 const { scheduleProfile, unscheduleProfile } = require('../workers/cron.runner');
 
@@ -12,7 +14,7 @@ async function createProfile(req, res, next) {
 
     const created = await profileRepo.createProfile(data);
 
-    // schedule it immediately
+    // schedule immediately
     scheduleProfile(created);
 
     res.json(created);

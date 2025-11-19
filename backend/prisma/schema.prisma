@@ -7,14 +7,17 @@ generator client {
   provider = "prisma-client-js"
 }
 
+/////////////////////////////////////////
+// USERS
+/////////////////////////////////////////
 model User {
   id            Int            @id @default(autoincrement())
   username      String?        @unique
   email         String         @unique
-  password      String? // nullable for OAuth users
-  role          String         @default("admin") // admin, support, reseller, client
-  provider      String         @default("local") // "local" | "google" | "github" etc.
-  googleId      String?        @unique // Google "sub"
+  password      String?
+  role          String         @default("admin")
+  provider      String         @default("local")
+  googleId      String?        @unique
   displayName   String?
   avatarUrl     String?
   emailVerified Boolean        @default(false)
@@ -37,6 +40,9 @@ model RefreshToken {
   @@index([userId])
 }
 
+/////////////////////////////////////////
+// CLIENTS & SERVICES
+/////////////////////////////////////////
 model Client {
   id        String   @id @default(uuid())
   name      String
@@ -46,12 +52,9 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // keeps references to legacy client-typed services (previously ClientService[] named `services`)
   clientServices ClientService[]
-
-  // new Service and Ticket relations (these refer to the Service and Ticket models)
-  services Service[]
-  tickets  Ticket[]
+  services       Service[]
+  tickets        Ticket[]
 }
 
 model ClientService {
@@ -65,52 +68,6 @@ model ClientService {
   client Client @relation(fields: [clientId], references: [id])
 
   @@index([clientId])
-}
-
-model EmailTemplate {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique // e.g. "invoice.created"
-  subject   String
-  bodyHtml  String
-  bodyText  String?
-  language  String   @default("en") // e.g. "en", "es"
-  isDefault Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  jobs EmailJob[]
-}
-
-model EmailJob {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  templateId   Int?
-  templateName String?
-  toEmail      String
-  toName       String?
-  payload      Json?
-  status       String   @default("queued") // queued, processing, sent, failed
-  attempts     Int      @default(0)
-  lastError    String?
-  priority     String   @default("normal") // high/normal/low
-  provider     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  template EmailTemplate? @relation(fields: [templateId], references: [id])
-
-  @@index([templateId])
-  @@index([status])
-}
-
-model EmailEvent {
-  id         Int      @id @default(autoincrement())
-  jobId      String?
-  eventType  String // queued, sent, delivered, bounce, opened, failed
-  providerId String?
-  payload    Json?
-  createdAt  DateTime @default(now())
-
-  @@index([jobId])
 }
 
 model Service {
@@ -140,16 +97,58 @@ model Ticket {
   @@index([clientId])
 }
 
-model AuditLog {
+/////////////////////////////////////////
+// EMAIL SYSTEM
+/////////////////////////////////////////
+model EmailTemplate {
   id        Int      @id @default(autoincrement())
-  userId    Int?
-  action    String
-  meta      Json?
+  name      String   @unique
+  subject   String
+  bodyHtml  String
+  bodyText  String?
+  language  String   @default("en")
+  isDefault Boolean  @default(true)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([userId])
+  jobs EmailJob[]
 }
 
+model EmailJob {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId   Int?
+  templateName String?
+  toEmail      String
+  toName       String?
+  payload      Json?
+  status       String   @default("queued")
+  attempts     Int      @default(0)
+  lastError    String?
+  priority     String   @default("normal")
+  provider     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  template EmailTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+  @@index([status])
+}
+
+model EmailEvent {
+  id         Int      @id @default(autoincrement())
+  jobId      String?
+  eventType  String
+  providerId String?
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([jobId])
+}
+
+/////////////////////////////////////////
+// DOMAINS
+/////////////////////////////////////////
 model Domain {
   id          Int       @id @default(autoincrement())
   name        String    @unique
@@ -163,7 +162,6 @@ model Domain {
   deleted     Boolean   @default(false)
   deletedAt   DateTime?
 
-  // 🔥 Required back-relations
   dnsRecords DNSRecord[]
   logs       DomainLog[]
 }
@@ -193,6 +191,9 @@ model DomainLog {
   createdAt DateTime @default(now())
 }
 
+/////////////////////////////////////////
+// PROVIDER CONFIG
+/////////////////////////////////////////
 model ProviderConfig {
   id        Int      @id @default(autoincrement())
   name      String   @unique
@@ -204,37 +205,79 @@ model ProviderConfig {
   updatedAt DateTime @updatedAt
 }
 
-
+/////////////////////////////////////////
+// TLD PRICING
+/////////////////////////////////////////
 model Tld {
-  id           Int      @id @default(autoincrement())
-  name         String   @unique
-  registerPrice Int?     // stored in cents
+  id            Int      @id @default(autoincrement())
+  name          String   @unique
+  registerPrice Int?
   renewPrice    Int?
   transferPrice Int?
-  markupPercent Int?     // optional default markup percent
-  providerData  Json?    // raw porkbun response for this TLD
+  markupPercent Int?
+  providerData  Json?
   lastSynced    DateTime?
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
 
-model Profile {
-  id          Int       @id @default(autoincrement())
-  name        String
-  description String?
-  cron        String    // cron expression
-  timezone    String    @default("UTC")
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  tasks       Task[]
+/////////////////////////////////////////
+// PLUGIN REGISTRY (NEW)
+/////////////////////////////////////////
+model Plugin {
+  id             String    @id
+  name           String
+  version        String
+  description    String?
+  enabled        Boolean   @default(true)
+  source         String    @default("user") // builtin | user | marketplace
+
+  marketplaceUrl String?   // URL for ZIP install/update
+  author         String?   // optional developer name
+  homepage       String?   // docs / website
+  iconUrl        String?   // plugin icon
+  hash           String?   // SHA256 for integrity checking
+  lastCheckedAt  DateTime? // used for update-checking logic
+
+  installedAt    DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tasks          Task[]
+  auditLogs      AuditLog[]
 }
 
+
+/////////////////////////////////////////
+// PROFILES (CRON)
+/////////////////////////////////////////
+model Profile {
+  id            Int       @id @default(autoincrement())
+  name          String
+  description   String?
+  cron          String
+  timezone      String    @default("UTC")
+  isActive      Boolean   @default(true)
+
+  lastRunAt     DateTime?
+  lastSuccessAt DateTime?
+  lastError     String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tasks         Task[]
+}
+
+/////////////////////////////////////////
+// TASKS
+/////////////////////////////////////////
 model Task {
   id             Int      @id @default(autoincrement())
-  profile        Profile  @relation(fields: [profileId], references: [id])
+
   profileId      Int
+  profile        Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
   name           String
   actionId       String
   config         Json
@@ -242,22 +285,32 @@ model Task {
   isActive       Boolean  @default(true)
   retries        Int      @default(3)
   backoffMs      Int      @default(2000)
+
+  pluginVersion  String?
+  pluginSource   String?
+
+  pluginId       String?
+  plugin         Plugin?  @relation(fields: [pluginId], references: [id])
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  // ❗ NO onDelete HERE (this is the parent side)
   runs           Run[]
 }
 
+
+/////////////////////////////////////////
+// RUN LOGS
+/////////////////////////////////////////
 model Run {
   id             Int      @id @default(autoincrement())
-
-  // ❗ Child side holds FK → cascade goes here
   taskId         Int
   task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   startedAt      DateTime @default(now())
   finishedAt     DateTime?
+  durationMs     Int?
+
   status         String
   attempt        Int      @default(1)
   log            Json?
@@ -265,11 +318,27 @@ model Run {
   createdAt      DateTime @default(now())
 }
 
-
+/////////////////////////////////////////
+// AUDIT
+/////////////////////////////////////////
 model Audit {
   id        Int      @id @default(autoincrement())
-  actor     String?  // optional: user/system
+  actor     String?
   action    String
   payload   Json?
   createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  pluginId  String?
+  plugin    Plugin? @relation(fields: [pluginId], references: [id])
+
+  @@index([userId])
+  @@index([pluginId])
 }

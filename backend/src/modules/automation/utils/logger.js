@@ -1,9 +1,39 @@
+// src/modules/automation/utils/logger.js
 // module-local logger (simple, replaceable)
-const util = require('util');
-function log(...args) {
-  console.log(new Date().toISOString(), ...args.map(a => typeof a === 'object' ? util.inspect(a, { depth: 2 }) : a));
+
+// src/modules/automation/utils/logger.js
+const util = require("util");
+
+function timestamp() {
+  return new Date().toISOString();
 }
-function error(...args) {
-  console.error(new Date().toISOString(), ...args.map(a => typeof a === 'object' ? util.inspect(a, { depth: 2 }) : a));
+
+function formatMessage(level, msg, meta) {
+  const ctx = meta ? ` ${JSON.stringify(meta)}` : "";
+  return `[${timestamp()}] [${level.toUpperCase()}] ${msg}${ctx}`;
 }
-module.exports = { log, error };
+
+function log(msg, meta) {
+  console.log(formatMessage("info", msg, meta));
+}
+
+function warn(msg, meta) {
+  console.warn(formatMessage("warn", msg, meta));
+}
+
+function error(msg, meta) {
+  console.error(formatMessage("error", msg, meta));
+}
+
+function debug(msg, meta) {
+  if (process.env.DEBUG === "1") {
+    console.debug(formatMessage("debug", msg, meta));
+  }
+}
+
+module.exports = {
+  log,
+  warn,
+  error,
+  debug
+};

@@ -1,41 +1,53 @@
-"use client";
-
+// /frontend/app/automation/actions/page.tsx
+import React from "react";
 import Link from "next/link";
-import { useActions } from "@/app/automation/hooks/useActions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, Plug } from "lucide-react";
+import PageHeader from "@/app/automation/components/PageHeader";
+import { listActions } from "@/app/automation/utils/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-export default function ActionsPage() {
-  const { actions, isLoading } = useActions();
-
-  if (isLoading) return <div className="p-6">Loading...</div>;
+export default async function ActionsPage() {
+  const actions = await listActions();
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold flex items-center gap-2">
-        <Plug className="w-6 h-6" /> Installed Actions
-      </h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Actions"
+        description="Available built-in and plugin actions. Test actions with sample config."
+      >
+        <Link href="/automation/plugins">
+          <Button variant="ghost">Manage Plugins</Button>
+        </Link>
+      </PageHeader>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {actions.map((action: any) => (
-          <Link key={action.id} href={`/automation/actions/${action.id}/test`}>
-            <Card className="cursor-pointer hover:shadow-lg transition">
-              <CardHeader>
-                <CardTitle>{action.name}</CardTitle>
-              </CardHeader>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {actions.map((act: any) => (
+          <Card key={act.id} className="border">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>{act.name}</span>
+                <span className="text-xs text-slate-500">{act.version ?? "—"}</span>
+              </CardTitle>
+              <CardDescription className="text-sm text-slate-600">
+                {act.source ? `${act.source}` : "action"}
+              </CardDescription>
+            </CardHeader>
 
-              <CardContent className="text-sm space-y-2">
-                <p>{action.description}</p>
-                <p className="text-muted-foreground text-xs">
-                  v{action.version}
-                </p>
+            <CardContent>
+              <div className="text-sm text-slate-700 mb-4">
+                {act.description ?? "No description provided."}
+              </div>
 
-                <div className="flex justify-end pt-4">
-                  <ArrowRight className="w-5 h-5" />
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
+              <div className="flex items-center gap-2">
+                <Link href={`/automation/actions/${act.id}`}>
+                  <Button size="sm">Test Action</Button>
+                </Link>
+                <Link href={`/automation/actions/${act.id}`}>
+                  <Button variant="outline" size="sm">View Schema</Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </div>

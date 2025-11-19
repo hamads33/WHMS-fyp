@@ -1,3 +1,5 @@
+// src/modules/automation/utils/errors.js
+
 class AppError extends Error {
   constructor(message, status = 500, code = 'APP_ERROR', meta = {}) {
     super(message);
@@ -6,4 +8,5 @@ class AppError extends Error {
     this.meta = meta;
   }
 }
+
 module.exports = { AppError };

@@ -1,6 +1,7 @@
 // src/modules/automation/automation.controller.js
+// thin controller for manual crons (e.g. pricing sync)
 
-const { runSync } = require("./crons/sync-pricing.cron");
+const { runSync } = require('./crons/sync-pricing.cron');
 
 exports.triggerPricingSync = async (req, res) => {
   try {

@@ -1,27 +1,22 @@
 // src/modules/automation/automation.module.js
+// Module initializer: loads plugins and schedules profiles
 
-const registry = require('./utils/actionRegistry');
+const pluginLoader = require('./pluginEngine/pluginLoader');
 const cronRunner = require('./workers/cron.runner');
 
-/**
- * Initializes automation module:
- * - Loads all actions (already loaded at require time)
- * - Reloads actions on demand (if enabled later)
- * - Schedules all profiles
- */
 async function init() {
-  console.log('[Automation] Initializing automation module...');
+  console.log('[Automation] initializing...');
 
   try {
-    // reload ensures latest plugins are loaded (optional)
-    registry.reload();
-    console.log('[Automation] Actions loaded:', registry.listActions().map(a => a.id));
+    // load builtins + user plugins
+    await pluginLoader.loadAll();
 
-    // schedule all existing profiles
+    // schedule profiles (reads DB)
     await cronRunner.scheduleAll();
-    console.log('[Automation] All profiles scheduled.');
+
+    console.log('[Automation] initialized');
   } catch (err) {
-    console.error('Failed to initialize automation module:', err);
+    console.error('[Automation] initialization failed', err);
   }
 }
 
