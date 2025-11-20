@@ -1,0 +1,22 @@
+{
+  "id": "invoice_manager",
+  "name": "Invoice Manager Pro",
+  "version": "1.0.0",
+  "description": "Creates invoices, sends email, validates credentials, and logs workflow.",
+  "author": "FYP Test Plugin",
+  "jsonSchema": {
+    "type": "object",
+    "required": ["apiKey", "clientId", "amount", "currency", "sendEmail"],
+    "properties": {
+      "apiKey": { "type": "string", "minLength": 10 },
+      "clientId": { "type": "string" },
+      "amount": { "type": "number", "minimum": 1 },
+      "currency": {
+        "type": "string",
+        "enum": ["USD", "PKR", "EUR", "GBP"]
+      },
+      "description": { "type": "string" },
+      "sendEmail": { "type": "boolean", "default": true }
+    }
+  }
+}

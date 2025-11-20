@@ -11,7 +11,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@prisma/client": "^6.18.0",
+    "@prisma/client": "^6.19.0",
     "@sendgrid/mail": "^8.1.6",
     "@simplewebauthn/server": "^13.2.2",
     "adm-zip": "^0.5.16",
@@ -44,6 +44,7 @@
     "prisma": "^6.18.0",
     "redis": "^5.9.0",
     "ssh2-sftp-client": "^12.0.1",
+    "tar": "^7.5.2",
     "whois": "^2.15.0"
   },
   "devDependencies": {

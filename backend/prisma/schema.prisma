@@ -342,3 +342,32 @@ model AuditLog {
   @@index([userId])
   @@index([pluginId])
 }
+
+model StorageConfig {
+  id           Int       @id @default(autoincrement())
+  name         String
+  provider     String    // ftp | ftps | sftp | local | s3 ...
+  config       Json      // encrypted or plain JSON (we'll store encrypted blob if desired)
+  createdById  Int?      // optional user id
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  backups      Backup[]
+}
+
+model Backup {
+  id             Int       @id @default(autoincrement())
+  name           String
+  type           String    // db | files | full
+  storageConfig  StorageConfig? @relation(fields: [storageConfigId], references: [id])
+  storageConfigId Int?
+  filePath       String?   // remote path or local path
+  sizeBytes      Int?
+  status         String    @default("pending") // pending | running | success | failed
+  errorMessage   String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  retentionDays  Int       @default(30)
+  createdById    Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}

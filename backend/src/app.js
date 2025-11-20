@@ -8,6 +8,8 @@ const app = express();
 
 /* IMPORT AUTOMATION MODULE HERE */
 const automationModule = require("./modules/automation/automation.module");
+/* IMPORT BACKUP MODULE */
+const backupModule = require("./modules/backup/backup.module");
 
 /* ---------------------- DEBUG LOG ORIGIN ---------------------- */
 app.use((req, res, next) => {
@@ -60,6 +62,10 @@ app.use("/api/automation", require("./modules/automation/routes"));
 
 /* INIT AUTOMATION MODULE */
 automationModule.init(); // no "app" needed
+
+/* BACKUP ROUTES */
+app.use("/api/backups", require("./modules/backup/routes/backup.routes"));
+backupModule.init();   // starts bullmq worker
 
 /* ---------------------- HEALTH CHECK ---------------------- */
 app.get("/health", (req, res) => {

@@ -1,0 +1,29 @@
+{
+  "id": "invoice_pdf_generator",
+  "name": "Invoice PDF Generator",
+  "version": "1.0.0",
+  "description": "Generates a PDF invoice using pdf-lib",
+  "jsonSchema": {
+    "type": "object",
+    "properties": {
+      "invoiceNumber": { "type": "string" },
+      "clientName": { "type": "string" },
+      "clientEmail": { "type": "string" },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "qty": { "type": "number" },
+            "price": { "type": "number" }
+          },
+          "required": ["name", "qty", "price"]
+        }
+      },
+      "currency": { "type": "string", "default": "USD" }
+    },
+    "required": ["invoiceNumber", "clientName", "items"]
+  },
+  "signature": "dev-mode-no-signature"
+}
