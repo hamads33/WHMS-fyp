@@ -1,8 +1,0 @@
-{
-  "name": "invoice_pdf_generator",
-  "version": "1.0.0",
-  "type": "commonjs",
-  "dependencies": {
-    "pdf-lib": "^1.17.1"
-  }
-}

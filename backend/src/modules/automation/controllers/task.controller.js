@@ -1,153 +1,201 @@
-const prisma = require("../../../lib/prisma");
-const registry = require("../pluginEngine/pluginRegistry");
-const profileRepo = require("../repositories/profile.repo");
-const taskRepo = require("../repositories/task.repo");
+// src/modules/automation/controllers/task.controller.js
+const Ajv = require("ajv");
+const taskSchema = require("../validators/task.validator");
+const ajv = new Ajv();
 
-// Normalize backward compatibility
-function normalizeConfig(c) {
-  if (!c) return {};
-  const cfg = { ...c };
-  if (cfg.message && !cfg.body) cfg.body = cfg.message;
-  return cfg;
+const validateTask = ajv.compile(taskSchema);
+
+class TaskController {
+  constructor({ taskStore, profileStore, scheduler, executor, executionLogStore, audit, logger }) {
+    this.taskStore = taskStore;
+    this.profileStore = profileStore;
+    this.scheduler = scheduler;
+    this.executor = executor;
+    this.executionLogStore = executionLogStore;
+    this.audit = audit;
+    this.logger = logger;
+  }
+
+async listForProfile(req, res, next) {
+  try {
+    const profileId = Number(req.params.profileId);
+
+    console.log("DEBUG → req.params.profileId =", req.params.profileId);
+
+    const tasks = await this.taskStore.listForProfile(profileId);
+
+    return res.success(tasks);
+  } catch (err) {
+    next(err);
+  }
 }
 
-/* -----------------------------
- * CREATE TASK
- * -----------------------------*/
-async function createTask(req, res, next) {
-  try {
-    const { profileId, name, actionId, config = {}, order } = req.body;
-    const pid = Number(profileId);
 
-    const profile = await profileRepo.getProfile(pid);
-    if (!profile) return res.status(404).json({ error: "Profile does not exist" });
+  async createForProfile(req, res, next) {
+    try {
+const profileId = Number(req.params.profileId);
 
-    const plugin = registry.get(actionId);
-    if (!plugin) {
-      return res.status(404).json({ error: "Unknown plugin/actionId" });
+      const body = req.body;
+
+      if (!validateTask(body)) {
+        return res.fail("Invalid task data", 400, "validation_error", validateTask.errors);
+      }
+
+      const profile = await this.profileStore.getById(profileId);
+      if (!profile) {
+        const err2 = new Error("Profile not found");
+        err2.status = 404;
+        err2.code = "profile_not_found";
+        throw err2;
+      }
+
+      const created = await this.taskStore.create(profileId, body);
+
+      await this.audit.log("automation", "task.create", req.user?.username || "system", {
+        profileId, taskId: created.id
+      });
+
+      if (profile.enabled) this.scheduler.scheduleProfile(profile);
+
+      res.status(201);
+      return res.success(created);
+    } catch (err) {
+      next(err);
     }
+  }
 
-    // Check DB plugin state
-    const dbPlugin = await prisma.plugin.findUnique({ where: { id: plugin.id } });
-    if (dbPlugin && !dbPlugin.enabled) {
-      return res.status(400).json({ error: "Plugin is disabled" });
+  async get(req, res, next) {
+    try {
+      const id = Number(req.params.id);
+      const task = await this.taskStore.getById(id);
+
+      if (!task) {
+        const error = new Error("Task not found");
+        error.status = 404;
+        error.code = "task_not_found";
+        throw error;
+      }
+
+      return res.success(task);
+    } catch (err) {
+      next(err);
     }
-
-    const task = await taskRepo.createTask({
-      profileId: pid,
-      name,
-      actionId,
-      config: normalizeConfig(config),
-      order: order ? Number(order) : 0,
-
-      // NEW FIELDS
-      pluginVersion: plugin.version || null,
-      pluginSource: dbPlugin?.source || "user",
-      pluginId: plugin.id
-    });
-
-    res.json(task);
-  } catch (err) {
-    next(err);
   }
-}
 
-/* -----------------------------
- * GET TASK
- * -----------------------------*/
-async function getTask(req, res, next) {
-  try {
-    const id = Number(req.params.id);
-    const task = await taskRepo.getTask(id);
+  async update(req, res, next) {
+    try {
+      const id = Number(req.params.id);
+      const body = req.body;
 
-    if (!task) return res.status(404).json({ error: "Task not found" });
-    res.json(task);
-  } catch (err) {
-    next(err);
-  }
-}
+      if (!validateTask(body)) {
+        return res.fail("Invalid task data", 400, "validation_error", validateTask.errors);
+      }
 
-/* -----------------------------
- * UPDATE TASK
- * -----------------------------*/
-async function updateTask(req, res, next) {
-  try {
-    const id = Number(req.params.id);
-    const payload = req.body;
+      const existing = await this.taskStore.getById(id);
+      if (!existing) {
+        const error = new Error("Task not found");
+        error.status = 404;
+        error.code = "task_not_found";
+        throw error;
+      }
 
-    if (payload.config) payload.config = normalizeConfig(payload.config);
+      const updated = await this.taskStore.update(id, body);
 
-    const plugin = payload.actionId
-      ? registry.get(payload.actionId)
-      : null;
+      await this.audit.log("automation", "task.update", req.user?.username || "system", {
+        taskId: id
+      });
 
-    if (plugin) {
-      payload.pluginVersion = plugin.version;
-      payload.pluginSource = "user";
-      payload.pluginId = plugin.id;
+      const profile = await this.profileStore.getById(existing.profileId);
+      if (profile && profile.enabled) this.scheduler.scheduleProfile(profile);
+
+      return res.success(updated);
+    } catch (err) {
+      next(err);
     }
-
-    const updated = await taskRepo.updateTask(id, payload);
-    res.json(updated);
-  } catch (err) {
-    next(err);
   }
-}
 
-/* -----------------------------
- * DELETE TASK
- * -----------------------------*/
-async function deleteTask(req, res, next) {
-  try {
-    const id = Number(req.params.id);
-    await taskRepo.deleteTask(id);
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
-  }
-}
+  async delete(req, res, next) {
+    try {
+      const id = Number(req.params.id);
 
-/* -----------------------------
- * RUN TASK NOW
- * -----------------------------*/
-async function runTaskNow(req, res, next) {
-  try {
-    const id = Number(req.params.id);
-    const task = await taskRepo.getTask(id);
-    if (!task) return res.status(404).json({ error: "Task not found" });
+      const existing = await this.taskStore.getById(id);
+      if (!existing) {
+        const error = new Error("Task not found");
+        error.status = 404;
+        error.code = "task_not_found";
+        throw error;
+      }
 
-    const executor = require("../pluginEngine/executor");
-    const result = await executor.executeTask(task, { test: false });
+      await this.taskStore.delete(id);
 
-    res.json({ ok: true, result });
-  } catch (err) {
-    next(err);
-  }
-}
+      await this.audit.log("automation", "task.delete", req.user?.username || "system", {
+        taskId: id
+      });
 
-async function listTasks(req, res, next) {
-  try {
-    const { profileId } = req.query;
+      const profile = await this.profileStore.getById(existing.profileId);
+      if (profile.enabled) this.scheduler.scheduleProfile(profile);
 
-    let tasks;
-
-    if (profileId) {
-      tasks = await taskRepo.getTasksByProfile(Number(profileId));
-    } else {
-      tasks = await taskRepo.getAllTasks();
+      return res.success({ deleted: id });
+    } catch (err) {
+      next(err);
     }
+  }
 
-    res.json(tasks);
-  } catch (err) {
-    next(err);
+  async runNow(req, res, next) {
+    try {
+      const id = Number(req.params.id);
+      const task = await this.taskStore.getById(id);
+
+      if (!task) {
+        const error = new Error("Task not found");
+        error.status = 404;
+        error.code = "task_not_found";
+        throw error;
+      }
+
+      const profile = await this.profileStore.getById(task.profileId);
+
+      const runRecord = await this.executionLogStore.createPending(profile.id, task.id);
+
+      await this.audit.log("automation", "task.run", req.user?.username || "system", {
+        profileId: profile.id,
+        taskId: task.id,
+        runId: runRecord.id
+      });
+
+      (async () => {
+        try {
+          await this.executionLogStore.updateStatus(runRecord.id, "running", {
+            startedAt: new Date()
+          });
+
+          const result = await this.executor.run({
+            id: profile.id,
+            taskId: task.id,
+            actionType: task.actionType,
+            actionMeta: task.actionMeta || {}
+          });
+
+          await this.executionLogStore.complete(runRecord.id, "success", result);
+
+          await this.audit.log("automation", "task.run.complete", "system", {
+            runId: runRecord.id
+          });
+        } catch (err) {
+          await this.executionLogStore.complete(runRecord.id, "failed", null, err.message);
+
+          await this.audit.log("automation", "task.run.failed", "system", {
+            runId: runRecord.id,
+            error: err.message
+          });
+        }
+      })();
+
+      return res.success({ runId: runRecord.id });
+    } catch (err) {
+      next(err);
+    }
   }
 }
 
-module.exports = {
-  createTask,
-  updateTask,
-  runTaskNow,
-  getTask,
-  deleteTask,
-  listTasks,
-};
+module.exports = TaskController;

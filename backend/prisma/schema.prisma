@@ -226,97 +226,45 @@ model Tld {
 // PLUGIN REGISTRY (NEW)
 /////////////////////////////////////////
 model Plugin {
-  id             String    @id
-  name           String
-  version        String
-  description    String?
-  enabled        Boolean   @default(true)
-  source         String    @default("user") // builtin | user | marketplace
+  id        String   @id
+  name      String
+  version   String
+  folder    String
+  enabled   Boolean  @default(true)
+  installedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  marketplaceUrl String?   // URL for ZIP install/update
-  author         String?   // optional developer name
-  homepage       String?   // docs / website
-  iconUrl        String?   // plugin icon
-  hash           String?   // SHA256 for integrity checking
-  lastCheckedAt  DateTime? // used for update-checking logic
+  settings PluginSetting[]
+}
 
-  installedAt    DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+model PluginSetting {
+  id        Int     @id @default(autoincrement())
+  pluginId  String
+  key       String
+  value     Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  tasks          Task[]
-  auditLogs      AuditLog[]
+  plugin Plugin @relation(fields: [pluginId], references: [id])
+  @@index([pluginId])
 }
 
 
 /////////////////////////////////////////
 // PROFILES (CRON)
 /////////////////////////////////////////
-model Profile {
-  id            Int       @id @default(autoincrement())
-  name          String
-  description   String?
-  cron          String
-  timezone      String    @default("UTC")
-  isActive      Boolean   @default(true)
-
-  lastRunAt     DateTime?
-  lastSuccessAt DateTime?
-  lastError     String?
-
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  tasks         Task[]
-}
 
 /////////////////////////////////////////
 // TASKS
 /////////////////////////////////////////
-model Task {
-  id             Int      @id @default(autoincrement())
 
-  profileId      Int
-  profile        Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-
-  name           String
-  actionId       String
-  config         Json
-  order          Int      @default(0)
-  isActive       Boolean  @default(true)
-  retries        Int      @default(3)
-  backoffMs      Int      @default(2000)
-
-  pluginVersion  String?
-  pluginSource   String?
-
-  pluginId       String?
-  plugin         Plugin?  @relation(fields: [pluginId], references: [id])
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  runs           Run[]
-}
 
 
 /////////////////////////////////////////
 // RUN LOGS
 /////////////////////////////////////////
-model Run {
-  id             Int      @id @default(autoincrement())
-  taskId         Int
-  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  startedAt      DateTime @default(now())
-  finishedAt     DateTime?
-  durationMs     Int?
-
-  status         String
-  attempt        Int      @default(1)
-  log            Json?
-  errorMessage   String?
-  createdAt      DateTime @default(now())
-}
 
 /////////////////////////////////////////
 // AUDIT
@@ -329,19 +277,7 @@ model Audit {
   createdAt DateTime @default(now())
 }
 
-model AuditLog {
-  id        Int      @id @default(autoincrement())
-  userId    Int?
-  action    String
-  meta      Json?
-  createdAt DateTime @default(now())
 
-  pluginId  String?
-  plugin    Plugin? @relation(fields: [pluginId], references: [id])
-
-  @@index([userId])
-  @@index([pluginId])
-}
 
 model StorageConfig {
   id           Int       @id @default(autoincrement())
@@ -370,4 +306,58 @@ model Backup {
   createdById    Int?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+}
+//////////////////////////////////////////////////////////////////
+
+model AutomationProfile {
+  id          Int           @id @default(autoincrement())
+  name        String
+  description String?
+  cron        String
+  enabled     Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  tasks       AutomationTask[]
+  runs        AutomationRun[]
+}
+
+model AutomationTask {
+  id         Int      @id @default(autoincrement())
+  profileId  Int
+  actionType String   // e.g. builtin:test_action
+  actionMeta Json?
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  profile AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  runs    AutomationRun[]
+}
+
+model AutomationRun {
+  id           Int       @id @default(autoincrement())
+  profileId    Int
+  taskId       Int?
+  status       String    // pending|running|success|failed
+  result       Json?
+  errorMessage String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  profile AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  task    AutomationTask?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([taskId])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  source     String   // e.g. "automation", "auth"
+  action     String   // e.g. "profile.create", "task.run"
+  actor      String?  // username or system
+  meta       Json?
+  level      String   // INFO, WARN, ERROR
+  createdAt  DateTime @default(now())
 }

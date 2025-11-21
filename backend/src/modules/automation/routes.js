@@ -1,88 +1,52 @@
-// src/modules/automation/routes.js
-// Main automation routes (profiles, tasks, actions, tests, plugins, cron)
-
 const express = require("express");
-const multer = require("multer");
+const ProfileController = require("./controllers/profile.controller");
+const TaskController = require("./controllers/task.controller");
+const RunController = require("./controllers/run.controller");
 
-// Controllers
-const profileController = require("./controllers/profile.controller");
-const taskController = require("./controllers/task.controller");
-const actionController = require("./controllers/action.controller");
-const testController = require("./controllers/test.controller");
-const pluginController = require("./controllers/plugin.controller");
-const pluginUpload = require("./controllers/pluginUpload.controller");
-const cronController = require("./controllers/cron.controller"); // ✅ FIXED (missing)
-// src/modules/pluginsandbox
+const validate = require("./middleware/validate");
+const responseFormatter = require("./middleware/responseFormatter");
+const errorHandler = require("./middleware/errorHandler");
 
+const profileSchema = require("./validators/profile.validator");
+const taskSchema = require("./validators/task.validator");
+const { idParamSchema, profileIdParamSchema, taskIdParamSchema } = require("./validators/params.validator");
 
-// at top along with other controllers
-const marketplaceController = require('./controllers/marketplace.controller');
-const router = express.Router();
+module.exports = (router, deps) => {
+  // attach automation-only response behavior
+  router.use(responseFormatter);
 
-// ✅ Multer disk storage for plugin upload
-const upload = multer({
-  dest: "uploads/plugins/tmp", // safely uploaded here before extraction
-});
+  const profileCtrl = new ProfileController(deps);
+  const taskCtrl = new TaskController(deps);
+  const runCtrl = new RunController(deps);
 
-/* ------------------------------------
- * PROFILES
- * ----------------------------------*/
-router.get("/profiles", profileController.listProfiles);
-router.post("/profiles", profileController.createProfile);
-router.get("/profiles/:id", profileController.getProfile);
-router.put("/profiles/:id", profileController.updateProfile);
-router.delete("/profiles/:id", profileController.deleteProfile);
+  // PROFILES
+  router.get("/profiles", profileCtrl.list.bind(profileCtrl));
+  router.post("/profiles", validate(profileSchema), profileCtrl.create.bind(profileCtrl));
+  router.get("/profiles/:id", validate(idParamSchema, "params"), profileCtrl.get.bind(profileCtrl));
+  router.put("/profiles/:id", validate(idParamSchema, "params"), validate(profileSchema), profileCtrl.update.bind(profileCtrl));
+  router.delete("/profiles/:id", validate(idParamSchema, "params"), profileCtrl.delete.bind(profileCtrl));
+  router.post("/profiles/:id/enable", validate(idParamSchema, "params"), profileCtrl.enable.bind(profileCtrl));
+  router.post("/profiles/:id/disable", validate(idParamSchema, "params"), profileCtrl.disable.bind(profileCtrl));
 
-/* ------------------------------------
- * TASKS
- * ----------------------------------*/
-/* ------------------------------------
- * TASKS
- * ----------------------------------*/
-router.get('/tasks', taskController.listTasks);   // <-- NEW
-router.post('/tasks', taskController.createTask);
-router.get('/tasks/:id', taskController.getTask);
-router.put('/tasks/:id', taskController.updateTask);
-router.delete('/tasks/:id', taskController.deleteTask);
-router.post('/tasks/:id/run', taskController.runTaskNow);
+  // TASKS
+  router.get("/profiles/:id/tasks", validate(profileIdParamSchema, "params"), taskCtrl.listForProfile.bind(taskCtrl));
+  router.post("/profiles/:id/tasks", validate(profileIdParamSchema, "params"), validate(taskSchema), taskCtrl.createForProfile.bind(taskCtrl));
+  router.get("/tasks/:id", validate(taskIdParamSchema, "params"), taskCtrl.get.bind(taskCtrl));
+  router.put("/tasks/:id", validate(taskIdParamSchema, "params"), validate(taskSchema), taskCtrl.update.bind(taskCtrl));
+  router.delete("/tasks/:id", validate(taskIdParamSchema, "params"), taskCtrl.delete.bind(taskCtrl));
+  router.post("/tasks/:id/run", validate(taskIdParamSchema, "params"), taskCtrl.runNow.bind(taskCtrl));
 
-/* ------------------------------------
- * ACTIONS
- * ----------------------------------*/
-router.get("/actions", actionController.listActions);
+  // RUN PROFILE
+  router.post("/run/:profileId", validate(profileIdParamSchema, "params"), runCtrl.runNow.bind(runCtrl));
 
-/* ------------------------------------
- * PLUGIN MANAGEMENT
- * ----------------------------------*/
-router.get("/plugins", pluginController.listPlugins);
+  // ACTIONS
+  router.get("/actions", (req, res) => {
+    const list = require("./services/builtInActions.service").listActions();
+    res.success(list);
+  });
 
-router.post(
-  "/plugins/upload",
-  upload.single("plugin"),
-  pluginUpload.uploadPlugin
-);
+  // Automation-only error handler
+  router.use(errorHandler(deps.logger));
 
-/* ------------------------------------
- * CRON BUILDER
- * ----------------------------------*/
-router.post("/cron/build", cronController.buildCron);
-router.post("/cron/validate", cronController.validateCron);
-
-
-// ...
-
-
-
-/* ------------------------------------
- * TEST ACTIONS
- * ----------------------------------*/
-router.post("/actions/:actionId/test", testController.testAction);
-
-
-
-
-
-// add routes (under PLUGIN MANAGEMENT)
-router.get('/plugins/marketplace', marketplaceController.listMarketplace);
-router.post('/plugins/marketplace/install', marketplaceController.installFromUrl);
-module.exports = router;
+  return router;
+};

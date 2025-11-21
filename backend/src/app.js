@@ -6,10 +6,18 @@ const cors = require("cors");
 const ip = require("ip");
 const app = express();
 
-/* IMPORT AUTOMATION MODULE HERE */
-const automationModule = require("./modules/automation/automation.module");
-/* IMPORT BACKUP MODULE */
+// /* IMPORT AUTOMATION MODULE HERE */
+const initAutomationModule = require("./modules/automation");   // ✅ Added
+// const automationModule = require("./modules/automation/automation.module");
+// /* IMPORT BACKUP MODULE */
 const backupModule = require("./modules/backup/backup.module");
+// const pluginRoutes = require('./modules/plugins/routes');
+// const automationRoutes = require('./modules/automation/routes');
+// const pluginLoader = require('./modules/plugins/pluginEngine/pluginLoader');
+// const cronRunner = require('./modules/automation/workers/cron.runner');
+
+// ✅ DO NOT REMOVE — NEW: Import plugin module ONLY (NOT pluginRoutes directly)
+const initPluginModule = require("./modules/plugins");
 
 /* ---------------------- DEBUG LOG ORIGIN ---------------------- */
 app.use((req, res, next) => {
@@ -57,15 +65,28 @@ app.use("/api/auth", require("./modules/auth/auth.routes"));
 app.use("/api/v1/clients", require("./modules/clients/clients.routes"));
 app.use("/api/domains", require("./modules/domains"));
 
-/* AUTOMATION ROUTES — ONLY ONE */
-app.use("/api/automation", require("./modules/automation/routes"));
+// /* AUTOMATION ROUTES — ONLY ONE */
+// app.use("/api/automation", require("./modules/automation/routes"));
 
-/* INIT AUTOMATION MODULE */
-automationModule.init(); // no "app" needed
+// /* INIT AUTOMATION MODULE */
+// automationModule.init(); // no "app" needed
+
+// ❗ FIX: REMOVE TOP-LEVEL AWAIT — wrap in async init()
+// async function init() {
+//   await pluginLoader.loadAll();
+//   await cronRunner.scheduleAll();
+// }
+
+// app.use('/api/v1', pluginRoutes);
+// app.use('/api/v1', automationRoutes);
 
 /* BACKUP ROUTES */
 app.use("/api/backups", require("./modules/backup/routes/backup.routes"));
 backupModule.init();   // starts bullmq worker
+
+/* ---------------------- PLUGIN ROUTES (NEW, NO COMMENT REMOVED) ---------------------- */
+// ❗ IMPORTANT: remove this line because plugin routes are mounted inside initPluginModule
+// app.use("/api/plugins", pluginRoutes);
 
 /* ---------------------- HEALTH CHECK ---------------------- */
 app.get("/health", (req, res) => {
@@ -78,4 +99,40 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: "Internal Server Error" });
 });
 
-module.exports = app;
+/* ---------------------- INIT FUNCTION ---------------------- */
+async function init() {
+  console.log("🚀 Initializing core modules...");
+
+  const { PrismaClient } = require("@prisma/client");
+  const prisma = new PrismaClient();
+
+  // Logger for automation module
+  const automationLogger = require("./modules/automation/lib/logger");
+
+  /* ---------------------- INIT PLUGINS MODULE (NO COMMENTS REMOVED) ---------------------- */
+  await initPluginModule({
+    app,               // <-- REQUIRED (your error was because app was missing)
+    prisma,
+    logger: automationLogger,
+   // plugin loader needs Ajv instance
+ajv: new (require("ajv"))(),
+
+publicKeyPem: null
+     // add support later when signatures enabled
+  });
+
+  // ---------------------- INIT AUTOMATION MODULE ---------------------- //
+  const automation = await initAutomationModule({
+    app,
+    prismaClient: prisma,
+    logger: automationLogger,
+    config: {}
+  });
+
+  // Make scheduler globally available if needed
+  app.locals.scheduler = automation.scheduler;
+
+  console.log("⚙️ Automation module initialized successfully");
+}
+
+module.exports = { app, init };
