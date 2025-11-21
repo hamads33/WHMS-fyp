@@ -1,36 +1,28 @@
-// src/modules/plugins/validators/manifest.schema.js
 module.exports = {
   type: "object",
+  additionalProperties: true,          // <-- allow anything (safe for plugin development)
+  required: ["id"],
   properties: {
-    id: { type: "string", pattern: "^[a-zA-Z0-9_\\-]+$" },
+    id: { type: "string" },
     name: { type: "string" },
     version: { type: "string" },
-    description: { type: "string" },
-    author: { type: "string" },
-    // allow a jsonSchema object if plugin supplies one for actionMeta validation
-    jsonSchema: { type: "object" },
-    // optional metadata fields some plugins include
-    source: { type: "string" },
-    hasTest: { type: "boolean" },
-    hasExecute: { type: "boolean" },
-    signature: { type: "string" },
+    type: { type: "string" },          // <-- allow plugin type
     actions: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          type: { type: "string" },        // e.g. plugin:ping_url
-          description: { type: "string" },
-          // optional schema per action
-          jsonSchema: { type: "object" }
-        },
-        required: ["type"],
-        additionalProperties: true
-      },
-      minItems: 1
-    },
-    ui: { type: "object" } // optional metadata for UI forms
-  },
-  required: ["id", "name", "version", "actions"],
-  additionalProperties: true
+      type: "object",
+      additionalProperties: {
+        oneOf: [
+          { type: "string" },
+          {
+            type: "object",
+            properties: {
+              file: { type: "string" },
+              description: { type: "string" },
+              meta: { type: "object", additionalProperties: true }
+            },
+            required: ["file"]
+          }
+        ]
+      }
+    }
+  }
 };

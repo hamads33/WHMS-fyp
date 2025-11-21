@@ -1,58 +1,90 @@
 // src/modules/plugins/pluginEngine/registry.js
-// Simple in-memory registry for loaded plugins.
-// Exposes basic operations used by plugin engine + routes.
+const path = require("path");
 
 class PluginRegistry {
-  constructor() {
-    // Map pluginId -> metadata object
-    this.plugins = Object.create(null);
+  constructor({ logger = console } = {}) {
+    // pluginId -> pluginMeta
+    this.plugins = new Map();
+
+    // pluginId -> Map(actionName -> { file, description, meta })
+    this.actions = new Map();
+
+    this.logger = logger;
   }
 
-  /**
-   * Register a single plugin metadata object.
-   * metadata must include at least: id, manifest, base, indexPath, folder, name, version
-   */
-  register(pluginId, metadata) {
-    if (!pluginId) throw new Error("pluginId required to register");
-    this.plugins[pluginId] = Object.assign({}, metadata, { id: pluginId });
+  /* ---------------------------
+   * Plugin-level API
+   * --------------------------- */
+
+  register(pluginId, meta) {
+    return this.registerPlugin(pluginId, meta);
   }
 
-  /**
-   * Replace the whole plugin set (used after install / reload)
-   * @param {Object} pluginsMap - map pluginId -> metadata
-   */
-  setAll(pluginsMap) {
-    this.plugins = Object.create(null);
-    for (const [k, v] of Object.entries(pluginsMap || {})) {
-      this.register(k, v);
-    }
+  registerPlugin(pluginId, meta) {
+    this.plugins.set(pluginId, meta);
+    if (!this.actions.has(pluginId)) this.actions.set(pluginId, new Map());
+    this.logger.info(`PluginRegistry: registered plugin ${pluginId}`);
   }
 
-  get(pluginId) {
-    return this.plugins[pluginId];
-  }
-
-  list() {
-    return Object.values(this.plugins);
-  }
-
-  listActionTypes() {
-    const types = [];
-    for (const p of Object.values(this.plugins)) {
-      if (p && Array.isArray(p.manifest && p.manifest.actions)) {
-        types.push(...p.manifest.actions.map(a => a.type));
-      }
-    }
-    return types;
-  }
-
-  has(pluginId) {
-    return Boolean(this.plugins[pluginId]);
+  remove(pluginId) {
+    this.plugins.delete(pluginId);
+    this.actions.delete(pluginId);
+    this.logger.info(`PluginRegistry: removed plugin ${pluginId}`);
   }
 
   clear() {
-    this.plugins = Object.create(null);
+    this.plugins.clear();
+    this.actions.clear();
+    this.logger.info("PluginRegistry: cleared all plugins");
+  }
+
+  setAll(mapObj) {
+    this.clear();
+    if (!mapObj || typeof mapObj !== "object") return;
+    for (const [id, meta] of Object.entries(mapObj)) {
+      this.registerPlugin(id, meta);
+    }
+    this.logger.info("PluginRegistry: setAll completed");
+  }
+
+  list() {
+    return [...this.plugins.values()];
+  }
+
+  get(pluginId) {
+    return this.plugins.get(pluginId) || null;
+  }
+
+  /* ---------------------------
+   * Action API
+   * --------------------------- */
+
+  registerAction(pluginId, actionName, actionInfo) {
+    if (!this.actions.has(pluginId)) this.actions.set(pluginId, new Map());
+    this.actions.get(pluginId).set(actionName, actionInfo);
+    this.logger.info(`PluginRegistry: registered action ${pluginId}::${actionName}`);
+  }
+
+  listActions(pluginId) {
+    const m = this.actions.get(pluginId);
+    if (!m) return [];
+    return [...m.entries()].map(([name, info]) => ({ name, ...info }));
+  }
+
+  getAction(pluginId, actionName) {
+    const m = this.actions.get(pluginId);
+    if (!m) return null;
+    return m.get(actionName) || null;
+  }
+
+  setActionsForPlugin(pluginId, actionsObj = {}) {
+    const map = new Map();
+    for (const [name, info] of Object.entries(actionsObj)) {
+      map.set(name, info);
+    }
+    this.actions.set(pluginId, map);
   }
 }
 
+// ❗ FIX: Single shared instance
 module.exports = new PluginRegistry();

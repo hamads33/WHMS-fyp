@@ -35,6 +35,7 @@ let allowedOrigins = FRONTEND_ORIGIN.split(",")
 
 allowedOrigins.push("http://127.0.0.1:3000");
 allowedOrigins.push(`http://${ip.address()}:3000`);
+allowedOrigins.push(`http://localhost:4000`);
 
 console.log("✅ Allowed Origins:", allowedOrigins);
 

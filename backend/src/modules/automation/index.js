@@ -12,7 +12,7 @@ const ExecutionLogStore = require("./store/executionLogStore");
 
 // Services
 const AuditService = require("./services/audit.service");
-const { BuiltInExecutor } = require("./services/executor.service");
+const ExecutorService = require("./services/executor.service");
 const SchedulerService = require("./services/scheduler.service");
 
 // Controllers
@@ -50,10 +50,13 @@ module.exports = async function initAutomationModule({
 
   // Services
   const audit = new AuditService({ prisma: prismaClient, logger });
-  const executor = new BuiltInExecutor({
+
+  // Use ExecutorService directly
+  const executor = new ExecutorService({
     logger,
     prisma: prismaClient,
     audit,
+    app, // <-- required for plugin engine
   });
 
   const scheduler = new SchedulerService({
@@ -96,7 +99,7 @@ module.exports = async function initAutomationModule({
   // Router
   const router = express.Router();
 
-  // Apply formatter
+  // JSON formatter
   router.use(responseFormatter);
 
   // ----------------------------------------------------
@@ -145,7 +148,6 @@ module.exports = async function initAutomationModule({
   // ----------------------------------------------------
   // TASKS
   // ----------------------------------------------------
-  // FIX ROUTE PARAM → profileId (NOT id)
 
   router.get(
     "/profiles/:profileId/tasks",
@@ -202,6 +204,31 @@ module.exports = async function initAutomationModule({
   router.get("/actions", (req, res) => {
     const builtInActions = require("./services/builtInActions.service");
     return res.success(builtInActions.listActions());
+  });
+
+  // ----------------------------------------------------
+  // TEST PLUGIN RUN
+  // ----------------------------------------------------
+  router.post("/test-plugin-run", async (req, res) => {
+    try {
+      const { pluginId, actionName, meta } = req.body;
+
+      if (!pluginId || !actionName) {
+        return res.status(400).json({
+          error: "pluginId and actionName are required",
+        });
+      }
+
+      const result = await executor.run({
+        actionType: `plugin:${pluginId}:${actionName}`,
+        actionMeta: meta || {},
+      });
+
+      return res.json({ ok: true, result });
+    } catch (err) {
+      logger.error("Test plugin run error:", err);
+      return res.status(500).json({ error: err.message });
+    }
   });
 
   // Automation Error Handler

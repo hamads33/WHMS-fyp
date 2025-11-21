@@ -1,0 +1,11 @@
+{
+  "id": "axios_ping",
+  "name": "Axios Ping Plugin",
+  "version": "1.0.0",
+  "actions": {
+    "ping": {
+      "file": "ping.js",
+      "fnName": "run"
+    }
+  }
+}

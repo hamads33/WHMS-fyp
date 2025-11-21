@@ -1,27 +1,11 @@
 {
-  "id": "complex_ui_plugin",
-  "name": "Complex UI Plugin",
+  "id": "react_dashboard",
+  "name": "React Dashboard",
   "version": "1.0.0",
-  "description": "Demo complex UI plugin that fetches demographic info for a name and can call server-side action.",
-  "actions": [
-    {
-      "type": "plugin:complex_ui_plugin:fetchProfile",
-      "entry": "index.js",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ]
-      }
-    }
-  ],
-  "allowedHosts": [
-    "api.agify.io",
-    "api.genderize.io"
-  ]
+  "description": "A sample React plugin with charts & API calls.",
+  "type": "ui",
+  "actions": [],
+  "ui": {
+    "entry": "index.html"
+  }
 }
