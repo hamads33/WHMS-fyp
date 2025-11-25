@@ -1,32 +1,39 @@
-// /frontend/app/automation/profiles/page.tsx
+import { AppSidebar } from "@/components/app-sidebar"
+import { SectionCards } from "@/app/admin/section-cards"
+import { SiteHeader } from "@/components/site-header"
+import {
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar"
+import { AutomationSidebar } from "@/app/automation/components/mainpage/sidebar"
+import ProfilesPage from "@/app/automation/profiles/profilepage"
 
-import React from "react";
-import Link from "next/link";
-import PageHeader from "@/app/automation/components/PageHeader";
-import { getProfiles } from "@/app/automation/utils/api";
-import { DataTable } from "@/app/automation/components/DataTable";
-import { TableToolbar } from "@/app/automation/components/DataTable/table-toolbar";
-import StatusBadge from "@/app/automation/components/StatusBadge";
-import ProfilesClient from "./profiles-client";
-
-export default async function ProfilesPage() {
-  const profiles = await getProfiles();
-
+export default function Page() {
   return (
-    <div>
-      <PageHeader
-        title="Profiles"
-        description="Automation profiles define schedules and task execution logic."
-      >
-        <Link href="/automation/profiles/new" className="btn-primary">
-          <span className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-md">
-            New Profile
-          </span>
-        </Link>
-      </PageHeader>
-
-      {/* Client wrapper handles delete dialogs + search */}
-      <ProfilesClient initialData={profiles} />
-    </div>
-  );
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 52)",
+          "--header-height": "calc(var(--spacing) * 10)",
+        } as React.CSSProperties
+      }
+    >
+      <AutomationSidebar variant="inset" />
+      <SidebarInset>
+        <SiteHeader />
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              
+              <div className="px-4 lg:px-6">
+                
+               <ProfilesPage/>
+              </div>
+              {/* <DataTable data={data} /> */}
+            </div>
+          </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  )
 }

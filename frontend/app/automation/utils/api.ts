@@ -1,135 +1,173 @@
-// /frontend/app/automation/utils/api.ts
+// ======================================================
+// AUTOMATION MODULE — FULL API CLIENT (Profiles + Tasks)
+// ======================================================
 
-import {
-  Profile,
-  Task,
-  ActionItem,
-  PluginItem,
-  PluginUploadResponse,
-} from "./types";
-
-const BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
-
-const AUTO = `${BASE}/automation`;
-
-/* ---------------------------- Generic Fetch Wrapper ---------------------------- */
-async function http<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...options,
-    credentials: "include",
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-
+// --------------------------------------
+// Shared response handler
+// --------------------------------------
+async function handleResponse(res: Response) {
+  if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
-/* -------------------------------- Profiles ----------------------------------- */
-export const getProfiles = () =>
-  http<Profile[]>(`${AUTO}/profiles`);
+// --------------------------------------
+// TYPES
+// --------------------------------------
+export interface Profile {
+  id: number;
+  name: string;
+  timezone: string;
+  enabled: boolean;
+}
 
-export const getProfile = (id: number) =>
-  http<Profile>(`${AUTO}/profiles/${id}`);
+export interface Task {
+  id: number;
+  profileId: number;
+  cron: string;
+  actionType: string;
+  actionMeta: any;
+  enabled: boolean;
+}
 
-export const createProfile = (data: Partial<Profile>) =>
-  http<Profile>(`${AUTO}/profiles`, {
-    method: "POST",
-    body: JSON.stringify(data),
-    headers: { "Content-Type": "application/json" },
-  });
+// ======================================================
+// PROFILES API
+// ======================================================
 
-export const updateProfile = (id: number, data: Partial<Profile>) =>
-  http<Profile>(`${AUTO}/profiles/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-    headers: { "Content-Type": "application/json" },
-  });
+// GET /profiles
+export async function listProfiles(): Promise<{ data: Profile[] }> {
+  return handleResponse(
+    await fetch("http://localhost:4000/api/automation/profiles")
+  );
+}
 
-export const deleteProfile = (id: number) =>
-  http<void>(`${AUTO}/profiles/${id}`, {
-    method: "DELETE",
-  });
+// POST /profiles
+export async function createProfile(body: { name: string; timezone: string }) {
+  return handleResponse(
+    await fetch("http://localhost:4000/api/automation/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
 
-/* ---------------------------------- Tasks ------------------------------------ */
-export const getTask = (id: number) =>
-  http<Task>(`${AUTO}/tasks/${id}`);
+// PUT /profiles/:id
+export async function updateProfile(
+  id: number,
+  body: { name: string; timezone: string }
+) {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/profiles/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
 
-export const createTask = (data: Partial<Task>) =>
-  http<Task>(`${AUTO}/tasks`, {
-    method: "POST",
-    body: JSON.stringify(data),
-    headers: { "Content-Type": "application/json" },
-  });
+// DELETE /profiles/:id
+export async function deleteProfile(id: number) {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/profiles/${id}`, {
+      method: "DELETE",
+    })
+  );
+}
 
-export const updateTask = (id: number, data: Partial<Task>) =>
-  http<Task>(`${AUTO}/tasks/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-    headers: { "Content-Type": "application/json" },
-  });
+// POST /profiles/:id/enable
+export async function enableProfile(id: number) {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/profiles/${id}/enable`, {
+      method: "POST",
+    })
+  );
+}
 
-export const deleteTask = (id: number) =>
-  http<void>(`${AUTO}/tasks/${id}`, {
-    method: "DELETE",
-  });
+// POST /profiles/:id/disable
+export async function disableProfile(id: number) {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/profiles/${id}/disable`, {
+      method: "POST",
+    })
+  );
+}
 
-export const runTask = (id: number) =>
-  http(`${AUTO}/tasks/${id}/run`, {
-    method: "POST",
-  });
+// ======================================================
+// TASKS API
+// ======================================================
 
-/* --------------------------------- Actions ----------------------------------- */
-export const listActions = () =>
-  http<ActionItem[]>(`${AUTO}/actions`);
+// GET /profiles/:profileId/tasks
+export async function listTasks(
+  profileId: number
+): Promise<{ data: Task[] }> {
+  return handleResponse(
+    await fetch(
+      `http://localhost:4000/api/automation/profiles/${profileId}/tasks`
+    )
+  );
+}
 
-export const testAction = (actionId: string, config: any) =>
-  http(`${AUTO}/actions/${actionId}/test`, {
-    method: "POST",
-    body: JSON.stringify(config),
-    headers: { "Content-Type": "application/json" },
-  });
+// GET /tasks/:taskId
+export async function getTask(taskId: number): Promise<{ data: Task }> {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/tasks/${taskId}`)
+  );
+}
 
-/* --------------------------------- Plugins ----------------------------------- */
-export const listPlugins = async () => {
-  const res = await http<{ plugins: PluginItem[] }>(`${AUTO}/plugins`);
-  return res.plugins;
-};
+// POST /profiles/:profileId/tasks
+export async function createTask(
+  profileId: number,
+  body: { cron: string; actionType: string; actionMeta: any }
+) {
+  return handleResponse(
+    await fetch(
+      `http://localhost:4000/api/automation/profiles/${profileId}/tasks`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    )
+  );
+}
 
-// FIXED — NO AXIOS, 100% correct multipart upload
-export const uploadPlugin = async (
-  file: File
-): Promise<PluginUploadResponse> => {
-  const form = new FormData();
-  form.append("plugin", file);
+// PUT /tasks/:taskId
+export async function updateTask(
+  taskId: number,
+  body: { cron: string; actionType: string; actionMeta: any }
+) {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/tasks/${taskId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
 
-  const res = await fetch(`${AUTO}/plugins/upload`, {
-    method: "POST",
-    body: form,
-    credentials: "include",
-  });
+// DELETE /tasks/:taskId
+export async function deleteTask(taskId: number) {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/tasks/${taskId}`, {
+      method: "DELETE",
+    })
+  );
+}
 
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
+// POST /tasks/:taskId/run
+export async function runTask(taskId: number) {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/tasks/${taskId}/run`, {
+      method: "POST",
+    })
+  );
+}
 
-  return res.json();
-};
-
-/* ------------------------------ Cron Builder API ------------------------------ */
-export const cronBuild = (data: any) =>
-  http(`${AUTO}/cron/build`, {
-    method: "POST",
-    body: JSON.stringify(data),
-    headers: { "Content-Type": "application/json" },
-  });
-
-export const cronValidate = (expr: string) =>
-  http(`${AUTO}/cron/validate`, {
-    method: "POST",
-    body: JSON.stringify({ expression: expr }),
-    headers: { "Content-Type": "application/json" },
-  });
+// POST /run/:profileId
+export async function runProfile(profileId: number) {
+  return handleResponse(
+    await fetch(`http://localhost:4000/api/automation/run/${profileId}`, {
+      method: "POST",
+    })
+  );
+}
