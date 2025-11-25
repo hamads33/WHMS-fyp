@@ -7,6 +7,7 @@ const VMExecutor = require("./pluginEngine/vmExecutor");
 const pluginsRoutes = require("./routes/plugins.routes");
 const pluginUIRoutes = require("./routes/pluginUI.routes");
 
+const WASMExecutor = require("./pluginEngine/wasmExecutor");
 module.exports = async function initPluginModule({
   app,
   prisma,
@@ -28,7 +29,7 @@ module.exports = async function initPluginModule({
   });
 
   const plugins = await loader.loadAll();
-
+const wasmExecutor = new WASMExecutor({ logger });
   // Create VM executor
   const vmExecutor = new VMExecutor({ logger });
 
@@ -53,6 +54,7 @@ module.exports = async function initPluginModule({
     loader,
     registry,
     vmExecutor,
+    wasmExecutor,
     plugins
   };
 
@@ -62,6 +64,7 @@ module.exports = async function initPluginModule({
     loader,
     registry,
     vmExecutor,
+    wasmExecutor,
     plugins
   };
 };

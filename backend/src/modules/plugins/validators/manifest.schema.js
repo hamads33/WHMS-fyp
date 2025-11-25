@@ -1,28 +1,74 @@
 module.exports = {
   type: "object",
-  additionalProperties: true,          // <-- allow anything (safe for plugin development)
-  required: ["id"],
+  additionalProperties: false,
+
   properties: {
-    id: { type: "string" },
+    id: { type: "string", minLength: 1 },
     name: { type: "string" },
     version: { type: "string" },
-    type: { type: "string" },          // <-- allow plugin type
+
+    // ----------------------------------------------------
+    // JS ACTIONS (Existing)
+    // ----------------------------------------------------
     actions: {
       type: "object",
-      additionalProperties: {
-        oneOf: [
-          { type: "string" },
-          {
-            type: "object",
-            properties: {
-              file: { type: "string" },
-              description: { type: "string" },
-              meta: { type: "object", additionalProperties: true }
-            },
-            required: ["file"]
-          }
-        ]
+      nullable: true,
+      patternProperties: {
+        "^[a-zA-Z0-9_\\-]+$": {
+          oneOf: [
+            // "ping.js"
+            { type: "string" },
+
+            // { file, fnName, description, meta }
+            {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                file: { type: "string" },
+                fnName: { type: "string", nullable: true },
+                description: { type: "string", nullable: true },
+                meta: { type: "object", nullable: true },
+
+                // allow WASM inside actions
+                runtime: {
+                  type: "string",
+                  enum: ["js", "wasm"],
+                  nullable: true
+                },
+
+                // WASM export name
+                export: { type: "string", nullable: true }
+              },
+              required: ["file"]
+            }
+          ]
+        }
+      }
+    },
+
+    // ----------------------------------------------------
+    // WASM ACTIONS (NEW)
+    // ----------------------------------------------------
+    wasm: {
+      type: "object",
+      nullable: true,
+      patternProperties: {
+        "^[a-zA-Z0-9_\\-]+$": {
+          type: "object",
+          additionalProperties: false,
+
+          properties: {
+            file: { type: "string" },     // Required: path to .wasm
+            export: { type: "string" },   // optional: exported fn
+            description: { type: "string", nullable: true },
+            meta: { type: "object", nullable: true }
+          },
+
+          required: ["file"]
+        }
       }
     }
-  }
+  },
+
+  required: ["id"]
 };

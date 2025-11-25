@@ -1,0 +1,14 @@
+{
+  "id": "hash_wasm",
+  "name": "Hash & Math WASM Plugin",
+  "version": "1.0.0",
+  "description": "Performs sha256 hashing, math operations, and random generation via WASM (wasi).",
+  "actions": {
+    "do": {
+      "file": "build/plugin.wasm",
+      "runtime": "wasm",
+      "export": "run",
+      "description": "Main entry - reads /plugin/input.json and writes /plugin/output.json"
+    }
+  }
+}

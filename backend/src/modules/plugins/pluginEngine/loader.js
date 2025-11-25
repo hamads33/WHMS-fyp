@@ -111,6 +111,71 @@ class PluginLoader {
 
         // register declared actions
         this._registerActionsForPlugin(id, base, manifest.actions);
+        // ---------------------------------------------------------------
+// WASM ACTIONS SUPPORT (Non-breaking, additive)
+// ---------------------------------------------------------------
+if (manifest.wasm && typeof manifest.wasm === "object") {
+  for (const [actionName, def] of Object.entries(manifest.wasm)) {
+    if (!def.file) {
+      this.logger.warn(`PluginLoader: wasm action missing file for ${id}:${actionName}`);
+      continue;
+    }
+
+    const wasmFile = def.file;
+    const exportName = def.export || "run";
+    const fullWasmPath = path.join(base, wasmFile);
+
+    if (!fs.existsSync(fullWasmPath)) {
+      this.logger.warn(
+        `PluginLoader: wasm file not found for ${id}:${actionName} → ${fullWasmPath}`
+      );
+      continue;
+    }
+
+    this.registry.registerAction(id, actionName, {
+      file: wasmFile,
+      export: exportName,
+      runtime: "wasm",
+      description: def.description || null,
+      meta: def.meta || null
+    });
+
+    this.logger.info(`PluginLoader: registered WASM action ${id}::${actionName}`);
+  }
+}
+
+// ---------------------------------------------------------------
+// Allow WASM inside manifest.actions using runtime: "wasm"
+// ---------------------------------------------------------------
+if (manifest.actions && typeof manifest.actions === "object") {
+  for (const [actionName, def] of Object.entries(manifest.actions)) {
+    if (def && def.runtime === "wasm") {
+      if (!def.file) {
+        this.logger.warn(`PluginLoader: wasm action missing file for ${id}:${actionName}`);
+        continue;
+      }
+
+      const fullWasmPath = path.join(base, def.file);
+      if (!fs.existsSync(fullWasmPath)) {
+        this.logger.warn(
+          `PluginLoader: wasm action file not found for ${id}:${actionName} → ${fullWasmPath}`
+        );
+        continue;
+      }
+
+      this.registry.registerAction(id, actionName, {
+        file: def.file,
+        export: def.export || def.fnName || "run",
+        runtime: "wasm",
+        description: def.description || null,
+        meta: def.meta || null
+      });
+
+      this.logger.info(`PluginLoader: registered WASM action (via manifest.actions) ${id}::${actionName}`);
+    }
+  }
+}
+
 
         this.logger.info(`PluginLoader: loaded plugin ${id} from ${base}`);
       } catch (err) {

@@ -1,0 +1,18 @@
+[package]
+name = "hash_wasm_plugin"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+# build as cdylib so it produces usable wasm
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+hex = "0.4"
+rand = { version = "0.8", features = ["std"] }
+
+[profile.release]
+opt-level = "z"
