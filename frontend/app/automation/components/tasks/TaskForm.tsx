@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createTask } from "@/app/automation/api";
-import CronBuilder from "../cron/CronBuilder";
+import CronBuilder from "@/app/automation/components/cron/cron-builder";
 
 export default function TaskForm({ profileId }: { profileId: string }) {
   const [actionType, setActionType] = useState("plugin:axios_ping:ping");
@@ -13,9 +13,8 @@ export default function TaskForm({ profileId }: { profileId: string }) {
     await createTask(profileId, {
       actionType,
       actionMeta: { url },
-      cron,
+      cron
     });
-
     window.location.reload();
   }
 
@@ -32,7 +31,7 @@ export default function TaskForm({ profileId }: { profileId: string }) {
 
       <input
         className="border p-2 rounded w-full mb-2"
-        placeholder="Meta URL"
+        placeholder="Action Meta URL"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
       />
