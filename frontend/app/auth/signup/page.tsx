@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { GoogleLogin, CredentialResponse } from "@react-oauth/google";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { GalleryVerticalEnd } from "lucide-react";
@@ -12,26 +11,6 @@ import { Separator } from "@/components/ui/separator";
 
 export default function LoginPage() {
   const router = useRouter();
-
-  const handleSuccess = async (res: CredentialResponse) => {
-    try {
-      if (!res.credential) throw new Error("No credential returned");
-
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "";
-      const r = await axios.post(`${backendUrl}/api/auth/signin/google`, {
-        idToken: res.credential,
-      });
-
-      const { accessToken, refreshToken } = r.data;
-
-      localStorage.setItem("accessToken", accessToken);
-      localStorage.setItem("refreshToken", refreshToken);
-
-      router.push("/dashboard");
-    } catch (err) {
-      alert("Google signin failed");
-    }
-  };
 
   return (
     <div className="bg-muted flex min-h-screen flex-col items-center justify-center p-6 md:p-10">
@@ -61,20 +40,14 @@ export default function LoginPage() {
             {/* Custom Signup/Login Form */}
             <SignupForm />
 
-            {/* Divider */}
-            <div className="flex items-center gap-3">
+            {/* Divider removed because Google login removed */}
+            {/* <div className="flex items-center gap-3">
               <Separator className="flex-1" />
               <span className="text-xs text-muted-foreground">OR</span>
               <Separator className="flex-1" />
-            </div>
+            </div> */}
 
-            {/* Google Login */}
-            <div className="flex justify-center">
-              <GoogleLogin
-                onSuccess={handleSuccess}
-                onError={() => alert("Google login failed")}
-              />
-            </div>
+            {/* Google Login Removed */}
 
           </CardContent>
         </Card>

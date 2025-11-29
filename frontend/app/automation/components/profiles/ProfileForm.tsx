@@ -1,42 +1,57 @@
 "use client";
 
-import { useState } from "react";
-import { createProfile } from "@/app/automation/api";
+import React, { useEffect, useState } from "react";
 import CronBuilder from "@/app/automation/components/cron/cron-builder";
+import { createProfile, updateProfile, Profile } from "@/app/automation/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-export default function ProfileForm() {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [cron, setCron] = useState("");
+export default function ProfileForm({ initial, onSaved, onCancel }:{ initial?: Profile; onSaved?: ()=>void; onCancel?: ()=>void }) {
+  const [name,setName] = useState(initial?.name ?? "");
+  const [desc,setDesc] = useState(initial?.description ?? "");
+  const [cron,setCron] = useState(initial?.cron ?? "*/5 * * * *");
 
-  async function save() {
-    await createProfile({ name, description, cron });
-    window.location.reload();
+  useEffect(()=> {
+    setName(initial?.name ?? "");
+    setDesc(initial?.description ?? "");
+    setCron(initial?.cron ?? "*/5 * * * *");
+  }, [initial]);
+
+  const qc = useQueryClient();
+
+  const createMut = useMutation({ mutationFn: (payload: Partial<Profile>) => createProfile(payload), onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }) });
+  const updateMut = useMutation({ mutationFn: ({ id, payload } : { id: string; payload: Partial<Profile>}) => updateProfile(id, payload), onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }) });
+
+  async function save(e?:React.FormEvent) {
+    if (e) e.preventDefault();
+    if (initial?.id) {
+      await updateMut.mutateAsync({ id: initial.id, payload: { name, description: desc, cron } });
+    } else {
+      await createMut.mutateAsync({ name, description: desc, cron });
+    }
+    onSaved?.();
   }
 
   return (
-    <div className="border p-4 rounded-lg bg-gray-50">
-      <h3 className="font-semibold mb-2">Create Profile</h3>
+    <form onSubmit={save} className="space-y-3">
+      <div>
+        <label className="text-xs font-medium">Name</label>
+        <input className="w-full border rounded p-2" value={name} onChange={(e)=>setName(e.target.value)} required />
+      </div>
 
-      <input
-        className="border p-2 rounded w-full mb-2"
-        placeholder="Profile name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
+      <div>
+        <label className="text-xs font-medium">Description</label>
+        <input className="w-full border rounded p-2" value={desc} onChange={(e)=>setDesc(e.target.value)} />
+      </div>
 
-      <textarea
-        className="border p-2 rounded w-full mb-2"
-        placeholder="Description"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-      />
+      <div>
+        <label className="text-xs font-medium">Schedule</label>
+        <CronBuilder initialCron={cron} onChange={(c)=>setCron(c)} />
+      </div>
 
-      <CronBuilder value={cron} onChange={setCron} />
-
-      <button className="mt-3 px-3 py-1 bg-blue-500 text-white rounded" onClick={save}>
-        Save Profile
-      </button>
-    </div>
+      <div className="flex gap-2">
+        <button className="px-3 py-1 bg-blue-600 text-white rounded">Save</button>
+        <button type="button" className="px-3 py-1 bg-gray-200 rounded" onClick={()=>onCancel?.()}>Cancel</button>
+      </div>
+    </form>
   );
 }

@@ -25,6 +25,10 @@ model User {
   refreshTokens RefreshToken[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+
+  /// Marketplace relations (required for relation symmetry)
+  marketplaceSeller    MarketplaceSeller?
+  marketplacePurchases MarketplacePurchase[]
 }
 
 model RefreshToken {
@@ -209,37 +213,37 @@ model ProviderConfig {
 // TLD PRICING
 /////////////////////////////////////////
 model Tld {
-  id            Int      @id @default(autoincrement())
-  name          String   @unique
+  id            Int       @id @default(autoincrement())
+  name          String    @unique
   registerPrice Int?
   renewPrice    Int?
   transferPrice Int?
   markupPercent Int?
   providerData  Json?
   lastSynced    DateTime?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 /////////////////////////////////////////
-// PLUGIN REGISTRY (NEW)
+// PLUGIN REGISTRY (unchanged except id default)
 /////////////////////////////////////////
 model Plugin {
-  id        String   @id
-  name      String
-  version   String
-  folder    String
-  enabled   Boolean  @default(true)
+  id          String   @id @default(uuid())
+  name        String
+  version     String
+  folder      String
+  enabled     Boolean  @default(true)
   installedAt DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   settings PluginSetting[]
 }
 
 model PluginSetting {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   pluginId  String
   key       String
   value     Json?
@@ -247,76 +251,21 @@ model PluginSetting {
   updatedAt DateTime @updatedAt
 
   plugin Plugin @relation(fields: [pluginId], references: [id])
+
   @@index([pluginId])
 }
 
-
 /////////////////////////////////////////
-// PROFILES (CRON)
+// AUTOMATION
 /////////////////////////////////////////
-
-/////////////////////////////////////////
-// TASKS
-/////////////////////////////////////////
-
-
-
-/////////////////////////////////////////
-// RUN LOGS
-/////////////////////////////////////////
-
-
-/////////////////////////////////////////
-// AUDIT
-/////////////////////////////////////////
-model Audit {
-  id        Int      @id @default(autoincrement())
-  actor     String?
-  action    String
-  payload   Json?
-  createdAt DateTime @default(now())
-}
-
-
-
-model StorageConfig {
-  id           Int       @id @default(autoincrement())
-  name         String
-  provider     String    // ftp | ftps | sftp | local | s3 ...
-  config       Json      // encrypted or plain JSON (we'll store encrypted blob if desired)
-  createdById  Int?      // optional user id
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  backups      Backup[]
-}
-
-model Backup {
-  id             Int       @id @default(autoincrement())
-  name           String
-  type           String    // db | files | full
-  storageConfig  StorageConfig? @relation(fields: [storageConfigId], references: [id])
-  storageConfigId Int?
-  filePath       String?   // remote path or local path
-  sizeBytes      Int?
-  status         String    @default("pending") // pending | running | success | failed
-  errorMessage   String?
-  startedAt      DateTime?
-  finishedAt     DateTime?
-  retentionDays  Int       @default(30)
-  createdById    Int?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-}
-//////////////////////////////////////////////////////////////////
-
 model AutomationProfile {
-  id          Int           @id @default(autoincrement())
+  id          Int              @id @default(autoincrement())
   name        String
   description String?
   cron        String
-  enabled     Boolean       @default(true)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  enabled     Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   tasks       AutomationTask[]
   runs        AutomationRun[]
 }
@@ -324,7 +273,7 @@ model AutomationProfile {
 model AutomationTask {
   id         Int      @id @default(autoincrement())
   profileId  Int
-  actionType String   // e.g. builtin:test_action
+  actionType String
   actionMeta Json?
   order      Int      @default(0)
   createdAt  DateTime @default(now())
@@ -338,7 +287,7 @@ model AutomationRun {
   id           Int       @id @default(autoincrement())
   profileId    Int
   taskId       Int?
-  status       String    // pending|running|success|failed
+  status       String
   result       Json?
   errorMessage String?
   startedAt    DateTime?
@@ -353,11 +302,73 @@ model AutomationRun {
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  source     String   // e.g. "automation", "auth"
-  action     String   // e.g. "profile.create", "task.run"
-  actor      String?  // username or system
-  meta       Json?
-  level      String   // INFO, WARN, ERROR
+  id        Int      @id @default(autoincrement())
+  source    String
+  action    String
+  actor     String?
+  meta      Json?
+  level     String
+  createdAt DateTime @default(now())
+}
+
+/////////////////////////////////////////
+// MARKETPLACE (FIXED)
+/////////////////////////////////////////
+model MarketplaceSeller {
+  id              String   @id @default(uuid())
+  userId          Int      @unique
+  user            User     @relation(fields: [userId], references: [id])
+  storeName       String
+  stripeAccountId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  products MarketplaceProduct[]
+}
+
+model MarketplaceProduct {
+  id        String            @id @default(uuid())
+  sellerId  String
+  seller    MarketplaceSeller @relation(fields: [sellerId], references: [id])
+  title     String
+  slug      String            @unique
+  shortDesc String?
+  longDesc  String?
+  category  String?
+  status    String            @default("draft")
+  logo      String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  versions  MarketplaceVersion[]
+  purchases MarketplacePurchase[]
+}
+
+model MarketplaceVersion {
+  id           String             @id @default(uuid())
+  productId    String
+  product      MarketplaceProduct @relation(fields: [productId], references: [id])
+  version      String
+  manifestJson Json
+  archivePath  String
+  changelog    String?
+  priceCents   Int
+  currency     String             @default("USD")
+  createdAt    DateTime           @default(now())
+
+  purchases MarketplacePurchase[]
+}
+
+model MarketplacePurchase {
+  id         String   @id @default(uuid())
+  userId     Int
+  productId  String
+  versionId  String
+  licenseKey String   @unique
+  subscribed Boolean  @default(false)
   createdAt  DateTime @default(now())
+
+  user    User               @relation(fields: [userId], references: [id])
+  product MarketplaceProduct @relation(fields: [productId], references: [id])
+  version MarketplaceVersion @relation(fields: [versionId], references: [id])
 }

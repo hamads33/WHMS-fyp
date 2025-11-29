@@ -1,121 +1,64 @@
+// frontend/app/automation/api.ts
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000";
+
 export type Profile = {
   id: string;
   name: string;
   description?: string;
-  cron?: string;
+  cron: string;
   enabled?: boolean;
 };
 
 export type Task = {
   id: string;
+  profileId: string;
   name: string;
   cron: string;
   actionType: string;
-  actionMeta: any;
+  actionMeta: Record<string, any>;
   order?: number;
 };
 
-export type ApiSuccess<T> = {
-  success: true;
-  data: T;
-};
-
-export type ApiError = {
-  success: false;
-  error: string;
-};
-
-export type ApiResult<T> = ApiSuccess<T> | ApiError;
-
-const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000";
-
-async function req<T>(path: string, opts: RequestInit = {}): Promise<ApiResult<T>> {
+// Generic request helper
+async function request<T = any>(path: string, init?: RequestInit): Promise<{ success: boolean; data?: T; error?: string }> {
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetch(`${API_BASE}${path}`, {
       headers: { "Content-Type": "application/json" },
-      ...opts,
+      ...init,
     });
-
-    const json = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      return { success: false, error: json?.error || res.statusText };
-    }
-
-    return { success: true, data: json.data as T };
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { success: false, error: json?.error || res.statusText };
+    return { success: true, data: json.data ?? json };
   } catch (e: any) {
     return { success: false, error: e?.message || "Network error" };
   }
 }
 
-/* ------------------ PROFILES ------------------ */
+/* Profiles */
+export const listProfiles = () => request<Profile[]>("/api/automation/profiles");
+export const getProfile = (id: string) => request<Profile>(`/api/automation/profiles/${id}`);
+export const createProfile = (payload: Partial<Profile>) => request<Profile>("/api/automation/profiles", { method: "POST", body: JSON.stringify(payload) });
+export const updateProfile = (id: string, payload: Partial<Profile>) => request<Profile>(`/api/automation/profiles/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+export const deleteProfile = (id: string) => request(`/api/automation/profiles/${id}`, { method: "DELETE" });
+export const enableProfile = (id: string) => request(`/api/automation/profiles/${id}/enable`, { method: "POST" });
+export const disableProfile = (id: string) => request(`/api/automation/profiles/${id}/disable`, { method: "POST" });
+export const runProfile = (id: string) => request(`/api/automation/run/${id}`, { method: "POST" });
 
-export function listProfiles() {
-  return req<Profile[]>(`/api/automation/profiles`);
-}
+/* Tasks */
+export const listTasks = (profileId: string) => request<Task[]>(`/api/automation/profiles/${profileId}/tasks`);
+export const getTask = (id: string) => request<Task>(`/api/automation/tasks/${id}`);
+export const createTask = (profileId: string, payload: Partial<Task>) => request<Task>(`/api/automation/profiles/${profileId}/tasks`, { method: "POST", body: JSON.stringify(payload) });
+export const updateTask = (id: string, payload: Partial<Task>) => request<Task>(`/api/automation/tasks/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+export const deleteTask = (id: string) => request(`/api/automation/tasks/${id}`, { method: "DELETE" });
+export const runTask = (id: string) => request(`/api/automation/tasks/${id}/run`, { method: "POST" });
 
-export function getProfile(id: string) {
-  return req<Profile>(`/api/automation/profiles/${id}`);
-}
-
-export function createProfile(body: Partial<Profile>) {
-  return req<Profile>(`/api/automation/profiles`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export function updateProfile(id: string, body: Partial<Profile>) {
-  return req<Profile>(`/api/automation/profiles/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
-}
-
-export function deleteProfile(id: string) {
-  return req<{}>(`/api/automation/profiles/${id}`, { method: "DELETE" });
-}
-
-export function enableProfile(id: string) {
-  return req<{}>(`/api/automation/profiles/${id}/enable`, { method: "POST" });
-}
-
-export function disableProfile(id: string) {
-  return req<{}>(`/api/automation/profiles/${id}/disable`, { method: "POST" });
-}
-
-export function runProfile(id: string) {
-  return req<{}>(`/api/automation/run/${id}`, { method: "POST" });
-}
-
-/* ------------------ TASKS ------------------ */
-
-export function listTasks(profileId: string) {
-  return req<Task[]>(`/api/automation/profiles/${profileId}/tasks`);
-}
-
-export function getTask(id: string) {
-  return req<Task>(`/api/automation/tasks/${id}`);
-}
-
-export function createTask(profileId: string, body: Partial<Task>) {
-  return req<Task>(`/api/automation/profiles/${profileId}/tasks`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export function updateTask(id: string, body: Partial<Task>) {
-  return req<Task>(`/api/automation/tasks/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
-}
-
-export function deleteTask(id: string) {
-  return req<{}>(`/api/automation/tasks/${id}`, { method: "DELETE" });
-}
-
-export function runTask(id: string) {
-  return req<{}>(`/api/automation/tasks/${id}/run`, { method: "POST" });
-}
+/* Built-in actions + plugin registry */
+export const listBuiltInActions = () => request<string[]>("/api/automation/actions");
+export const listPlugins = () => request<any[]>("/api/plugins");
+export const listPluginActions = (pluginId: string) => request<string[]>(`/api/plugins/${pluginId}/actions`);
+export const getPluginManifest = (pluginId: string) => request<any>(`/api/plugins/${pluginId}/manifest`);
+export const installPlugin = (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return fetch(`${API_BASE}/api/plugins/install`, { method: "POST", body: fd }).then(res => res.json());
+};

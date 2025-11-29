@@ -1,70 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { listProfiles, deleteProfile, enableProfile, disableProfile } from "@/app/automation/api";
+import React from "react";
+import { Profile } from "@/app/automation/api";
 
 export default function ProfilesList({
+  profiles,
   selectedId,
-  onSelect
-}: {
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const [profiles, setProfiles] = useState<any[]>([]);
-
-  async function load() {
-    const res = await listProfiles();
-    if (res.success) setProfiles(res.data);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
+  onSelect,
+  onEdit,
+  onDelete,
+  onEnable,
+  onDisable
+}:{ profiles: Profile[]; selectedId: string | null; onSelect: (id:string)=>void; onEdit: (p:Profile)=>void; onDelete: (id:string)=>void; onEnable:(id:string)=>void; onDisable:(id:string)=>void }) {
   return (
-    <div className="space-y-3">
-      {profiles.map((p) => (
-        <div
-          key={p.id}
-          className={`p-3 rounded border cursor-pointer ${selectedId === p.id ? "bg-blue-100" : ""}`}
-          onClick={() => onSelect(p.id)}
-        >
-          <div className="font-semibold">{p.name}</div>
-          <div className="text-sm text-gray-600">{p.description}</div>
+    <div className="space-y-2">
+      {profiles.length === 0 && <div className="text-sm text-gray-500">No profiles yet.</div>}
+      {profiles.map(p => (
+        <div key={p.id} className={`p-3 border rounded flex justify-between items-start ${selectedId===p.id ? "bg-blue-50" : "bg-white"}`}>
+          <div className="cursor-pointer flex-1" onClick={()=>onSelect(p.id)}>
+            <div className="font-medium">{p.name}</div>
+            <div className="text-xs text-gray-600">{p.description}</div>
+            <div className="text-xs text-gray-500 mt-1">Cron: <code>{p.cron}</code></div>
+          </div>
 
-          <div className="flex gap-2 mt-2">
-            <button
-              className="text-xs px-2 py-1 bg-green-200 rounded"
-              onClick={(e) => {
-                e.stopPropagation();
-                enableProfile(p.id);
-                load();
-              }}
-            >
-              Enable
-            </button>
-
-            <button
-              className="text-xs px-2 py-1 bg-yellow-200 rounded"
-              onClick={(e) => {
-                e.stopPropagation();
-                disableProfile(p.id);
-                load();
-              }}
-            >
-              Disable
-            </button>
-
-            <button
-              className="text-xs px-2 py-1 bg-red-200 rounded"
-              onClick={async (e) => {
-                e.stopPropagation();
-                await deleteProfile(p.id);
-                load();
-              }}
-            >
-              Delete
-            </button>
+          <div className="flex flex-col gap-2 ml-4">
+            <button className="px-2 py-1 text-xs bg-slate-100 rounded" onClick={()=>onEdit(p)}>Edit</button>
+            {p.enabled ? (
+              <button className="px-2 py-1 text-xs bg-yellow-100 rounded" onClick={()=>onDisable(p.id)}>Disable</button>
+            ) : (
+              <button className="px-2 py-1 text-xs bg-green-100 rounded" onClick={()=>onEnable(p.id)}>Enable</button>
+            )}
+            <button className="px-2 py-1 text-xs bg-red-100 rounded" onClick={()=>onDelete(p.id)}>Delete</button>
           </div>
         </div>
       ))}
