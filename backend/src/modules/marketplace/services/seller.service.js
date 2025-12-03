@@ -1,23 +1,23 @@
+// modules/marketplace/services/seller.service.js
 const SellerStore = require("../stores/sellerStore");
 
-class SellerService {
-    constructor(prisma) {
-        this.store = new SellerStore(prisma);
-    }
+module.exports = {
+  async getMySeller(userId) {
+    return SellerStore.findByUserId(userId);
+  },
 
-    async register(userId, storeName) {
-        const existing = await this.store.getSellerByUserId(userId);
-        if (existing) throw new Error("Seller already registered");
+  async applySeller(userId, data = {}) {
+    const existing = await SellerStore.findByUserId(userId);
+    if (existing) return existing;
+    const createData = {
+      userId,
+      storeName: data.storeName || `store-${userId}`,
+      stripeAccountId: data.stripeAccountId || null,
+    };
+    return SellerStore.create(createData);
+  },
 
-        return this.store.createSeller({
-            userId,
-            storeName
-        });
-    }
-
-    async getSeller(userId) {
-        return this.store.getSellerByUserId(userId);
-    }
-}
-
-module.exports = SellerService;
+  async updateSeller(id, data) {
+    return SellerStore.update(id, data);
+  },
+};

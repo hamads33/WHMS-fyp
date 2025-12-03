@@ -1,32 +1,16 @@
-const PurchaseService = require("../services/purchase.service");
+const PurchaseService = require('../services/purchase.service');
 
-class PurchaseController {
-    constructor({ prisma }) {
-        this.service = new PurchaseService(prisma);
-    }
+exports.purchase = async (req, res) => {
+  try {
+    const userId = req.user ? req.user.id : null; // require auth in real
+    if (!userId) return res.status(401).json({ ok: false, message: 'Auth required' });
 
-    async buy(req, res) {
-        try {
-            const { userId, versionId } = req.body;
-            const { productId } = req.params;
-
-            const purchase = await this.service.buy(
-                parseInt(userId),
-                productId,
-                versionId
-            );
-
-            res.json(purchase);
-        } catch (err) {
-            res.status(400).json({ error: err.message });
-        }
-    }
-
-    listMine(req, res) {
-        const { userId } = req.query;
-        return this.service.listMine(parseInt(userId))
-            .then(r => res.json(r));
-    }
-}
-
-module.exports = PurchaseController;
+    const productId = req.params.productId;
+    const versionId = req.body.versionId;
+    // Normally: create stripe checkout session -> on success create purchase entry in webhook
+    const purchase = await PurchaseService.purchase(productId, userId, versionId, {});
+    res.json({ ok: true, data: purchase });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+};

@@ -26,9 +26,13 @@ model User {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  /// Marketplace relations (required for relation symmetry)
-  marketplaceSeller    MarketplaceSeller?
-  marketplacePurchases MarketplacePurchase[]
+  // Marketplace Relations
+  marketplaceReviews        MarketplaceReview[]
+  marketplaceSubmissions    MarketplaceSubmission[]
+
+  // NEW (required for relations)
+  marketplaceSeller         MarketplaceSeller?       // 1-to-1 seller profile
+  marketplacePurchases      MarketplacePurchase[]    // user purchases
 }
 
 model RefreshToken {
@@ -310,10 +314,13 @@ model AuditLog {
   level     String
   createdAt DateTime @default(now())
 }
+/////////////////////////////////////////////////////////
+// MARKETPLACE SYSTEM (FULL FR-M1 → FR-M11)
+/////////////////////////////////////////////////////////
 
-/////////////////////////////////////////
-// MARKETPLACE (FIXED)
-/////////////////////////////////////////
+/////////////////////////
+// Seller
+/////////////////////////
 model MarketplaceSeller {
   id              String   @id @default(uuid())
   userId          Int      @unique
@@ -326,49 +333,283 @@ model MarketplaceSeller {
   products MarketplaceProduct[]
 }
 
+/////////////////////////
+// Category
+/////////////////////////
+model MarketplaceCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  icon      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products MarketplaceProduct[]
+}
+
+/////////////////////////
+// Product
+/////////////////////////
 model MarketplaceProduct {
-  id        String            @id @default(uuid())
-  sellerId  String
-  seller    MarketplaceSeller @relation(fields: [sellerId], references: [id])
-  title     String
-  slug      String            @unique
-  shortDesc String?
-  longDesc  String?
-  category  String?
-  status    String            @default("draft")
-  logo      String?
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id            String   @id @default(uuid())
+  sellerId      String
+  seller        MarketplaceSeller @relation(fields: [sellerId], references: [id])
+  title         String
+  slug          String   @unique
+  shortDesc     String?
+  longDesc      String?
+  category      String?
+  categoryId    String?
+  tags          String[]  @default([])
+  status        String     @default("draft")
+  rejectReason  String?
+  logo          String?
+  screenshots   String[]   @default([])
+  documentation String?
+  ratingAvg     Float      @default(0)
+  ratingCount   Int        @default(0)
+  installCount  Int        @default(0)
+  downloadCount Int        @default(0)
+  lastUpdatedAt DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+approvedAt   DateTime?   @default(now())
 
-  versions  MarketplaceVersion[]
-  purchases MarketplacePurchase[]
+  versions      MarketplaceVersion[]
+  purchases     MarketplacePurchase[]
+  categoryRel   MarketplaceCategory? @relation(fields: [categoryId], references: [id])
+  reviews       MarketplaceReview[]
+  dependencies  MarketplaceDependency[]
+  submissions   MarketplaceSubmission[]
+  verifications MarketplaceVerification[]
+  analytics     MarketplaceAnalytics[]
 }
 
+/////////////////////////
+// Version
+/////////////////////////
 model MarketplaceVersion {
-  id           String             @id @default(uuid())
-  productId    String
-  product      MarketplaceProduct @relation(fields: [productId], references: [id])
-  version      String
-  manifestJson Json
-  archivePath  String
-  changelog    String?
-  priceCents   Int
-  currency     String             @default("USD")
-  createdAt    DateTime           @default(now())
+  id            String   @id @default(uuid())
+  productId     String
+  product       MarketplaceProduct @relation(fields: [productId], references: [id])
+  version       String
+  manifestJson  Json
+  archivePath   String
+  changelog     String?
+  priceCents    Int
+  currency      String   @default("USD")
+  createdAt     DateTime @default(now())
 
-  purchases MarketplacePurchase[]
+  purchases     MarketplacePurchase[]
+  analytics     MarketplaceAnalytics[]
+  submissions   MarketplaceSubmission[]
+  verifications MarketplaceVerification[]
 }
 
+/////////////////////////
+// Purchases / Licensing
+/////////////////////////
 model MarketplacePurchase {
-  id         String   @id @default(uuid())
-  userId     Int
-  productId  String
-  versionId  String
-  licenseKey String   @unique
-  subscribed Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  id              String   @id @default(uuid())
+  userId          Int
+  productId       String
+  versionId       String
+  licenseKey      String   @unique
+  subscribed      Boolean  @default(false)
+  activationLimit Int      @default(1)
+  expiresAt       DateTime?
+  revoked         Boolean  @default(false)
+  createdAt       DateTime @default(now())
 
+  user     User               @relation(fields: [userId], references: [id])
+  product  MarketplaceProduct @relation(fields: [productId], references: [id])
+  version  MarketplaceVersion @relation(fields: [versionId], references: [id])
+  activations MarketplaceLicenseActivation[]
+}
+
+model MarketplaceLicenseActivation {
+  id        String   @id @default(uuid())
+  licenseId String
+  userAgent String?
+  host      String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  purchase MarketplacePurchase @relation(fields: [licenseId], references: [id])
+}
+
+/////////////////////////
+// Reviews (FR-M10)
+/////////////////////////
+model MarketplaceReview {
+  id        String   @id @default(uuid())
+  productId String
+  userId    Int
+  rating    Int
+  stability Int?
+  review    String?
+  createdAt DateTime @default(now())
+
+  product MarketplaceProduct @relation(fields: [productId], references: [id])
   user    User               @relation(fields: [userId], references: [id])
+}
+
+/////////////////////////
+// Dependencies (FR-M7)
+/////////////////////////
+model MarketplaceDependency {
+  id           String   @id @default(uuid())
+  productId    String
+  dependencyId String
+  versionRange String
+  createdAt    DateTime @default(now())
+
+  product MarketplaceProduct @relation(fields: [productId], references: [id])
+}
+
+/////////////////////////
+// Submissions (FR-M6)
+/////////////////////////
+model MarketplaceSubmission {
+  id          String   @id @default(uuid())
+  productId   String
+  versionId   String?
+  status      String
+  reviewerId  Int?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  product MarketplaceProduct  @relation(fields: [productId], references: [id])
+  version MarketplaceVersion? @relation(fields: [versionId], references: [id])
+  reviewer User?              @relation(fields: [reviewerId], references: [id])
+}
+
+/////////////////////////
+// Verification (FR-M8)
+/////////////////////////
+model MarketplaceVerification {
+  id        String   @id @default(uuid())
+  productId String
+  versionId String
+  passed    Boolean
+  issues    Json?
+  createdAt DateTime @default(now())
+
   product MarketplaceProduct @relation(fields: [productId], references: [id])
   version MarketplaceVersion @relation(fields: [versionId], references: [id])
+}
+
+/////////////////////////
+// Analytics (FR-M9)
+/////////////////////////
+model MarketplaceAnalytics {
+  id        String   @id @default(uuid())
+
+  // RELATIONS (required by Product.analytics & Version.analytics)
+  productId String
+  product   MarketplaceProduct @relation(fields: [productId], references: [id])
+
+  versionId String?
+  version   MarketplaceVersion? @relation(fields: [versionId], references: [id])
+
+  eventType String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@index([versionId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+
+model MarketplaceActiveInstance {
+  id         String   @id @default(uuid())
+  productId  String
+  versionId  String?
+  instanceId String   // unique id for plugin instance (user+host)
+  userId     Int?
+  lastSeen   DateTime @default(now())
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([productId])
+  @@index([instanceId])
+  @@index([lastSeen])
+}
+
+model MarketplaceCrash {
+  id         String   @id @default(uuid())
+  productId  String
+  versionId  String?
+  userId     Int?
+  message    String
+  stackTrace String?  @db.Text
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([productId])
+  @@index([versionId])
+  @@index([createdAt])
+}
+
+model MarketplacePerfMetric {
+  id         String   @id @default(uuid())
+  productId  String
+  versionId  String?
+  metric     String   // e.g. "action_latency_ms", "memory_mb", "cpu_percent"
+  value      Float
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([productId])
+  @@index([metric])
+  @@index([createdAt])
+}
+
+model MarketplaceAnalyticsAggregate {
+  id         String   @id @default(uuid())
+  productId  String
+  date       DateTime // date bucket (UTC midnight)
+  installs   Int      @default(0)
+  active     Int      @default(0)
+  crashes    Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@unique([productId, date])
+  @@index([productId, date])
+}
+
+model MarketplaceWebhookEndpoint {
+  id        String   @id @default(uuid())
+  vendorId  String
+  url       String
+  secret    String?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([vendorId])
+}
+model MarketplaceBuildLog {
+  id            String   @id @default(uuid())
+  submissionId  String?              // optional: attached to a submission
+  productId     String?              // optional: which product version/build
+  versionId     String?              // optional: version id
+  level         String   @default("info") // info | warn | error | debug
+  message       String
+  meta          Json?
+  step          String?              // e.g. "upload", "validate", "sign", "installDeps", "verify"
+  createdAt     DateTime @default(now())
+
+  // indexes for fast lookup
+  @@index([submissionId])
+  @@index([productId])
+  @@index([versionId])
+  @@index([createdAt])
+}
+model MarketplaceWebhook {
+  id        String   @id @default(uuid())
+  event     String
+  payload   Json
+  createdAt DateTime @default(now())
 }

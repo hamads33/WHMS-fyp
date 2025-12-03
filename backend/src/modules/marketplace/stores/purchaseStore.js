@@ -1,19 +1,16 @@
-module.exports = class PurchaseStore {
-    constructor(prisma) {
-        this.prisma = prisma;
-    }
+const  prisma  = require('../../../db/prisma');
+const PurchaseStore = {
+  async create(data) {
+    return prisma.marketplacePurchase.create({ data });
+  },
 
-    create(data) {
-        return this.prisma.marketplacePurchase.create({ data });
-    }
+  async findByLicense(licenseKey) {
+    return prisma.marketplacePurchase.findUnique({ where: { licenseKey }});
+  },
 
-    listByUser(userId) {
-        return this.prisma.marketplacePurchase.findMany({
-            where: { userId },
-            include: {
-                product: true,
-                version: true
-            }
-        });
-    }
+  async listByUser(userId) {
+    return prisma.marketplacePurchase.findMany({ where: { userId }});
+  }
 };
+
+module.exports = PurchaseStore;
