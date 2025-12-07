@@ -1,0 +1,42 @@
+[
+  {
+    "key": "admin.access",
+    "description": "Access admin portal"
+  },
+  {
+    "key": "admin.manage.staff",
+    "description": "Manage admin staff accounts"
+  },
+  {
+    "key": "admin.settings.update",
+    "description": "Update system settings"
+  },
+  {
+    "key": "client.area.access",
+    "description": "Access client dashboard"
+  },
+  {
+    "key": "billing.invoices.view",
+    "description": "View invoices"
+  },
+  {
+    "key": "billing.invoices.pay",
+    "description": "Pay invoices"
+  },
+  {
+    "key": "reseller.dashboard.access",
+    "description": "Access reseller dashboard"
+  },
+  {
+    "key": "developer.console.access",
+    "description": "Access developer console"
+  },
+  {
+    "key": "plugins.upload",
+    "description": "Upload new plugin to marketplace"
+  },
+  {
+    "key": "plugins.update",
+    "description": "Update existing plugin versions"
+  }
+]

@@ -1,3 +1,4 @@
+// merged schema.prisma
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -8,37 +9,312 @@ generator client {
 }
 
 /////////////////////////////////////////
-// USERS
+// USERS (Single Identity for ALL roles)
 /////////////////////////////////////////
 model User {
-  id            Int            @id @default(autoincrement())
-  username      String?        @unique
-  email         String         @unique
-  password      String?
-  role          String         @default("admin")
-  provider      String         @default("local")
-  googleId      String?        @unique
-  displayName   String?
-  avatarUrl     String?
-  emailVerified Boolean        @default(false)
-  lastLoginAt   DateTime?
-  refreshTokens RefreshToken[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id              String   @id @default(uuid())
+  email           String   @unique
+  passwordHash    String
 
-  // Marketplace Relations
+  emailVerified   Boolean  @default(false)
+
+  mfaEnabled      Boolean  @default(false)
+  mfaSecret       String?
+  mfaBackupCodes  String[] @default([])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // RBAC
+  roles UserRole[]
+
+  // Sessions (normal + impersonation sessions)
+  sessions Session[]
+
+  // API Keys
+  apiKeys ApiKey[]
+
+  // Login Attempts
+  loginLogs LoginLog[]
+
+  // Trusted devices, email tokens, audit logs
+  trustedDevices TrustedDevice[]
+  emailTokens    EmailToken[]
+  auditLogs      AuditLog[]            // AuditLog now references user as String
+
+  // Impersonation relations (both sides)
+  impersonationsStarted  Impersonation[] @relation("Impersonator")
+  impersonationsReceived Impersonation[] @relation("Impersonated")
+
+  // Portal Profiles
+  clientProfile    ClientProfile?
+  adminProfile     AdminProfile?
+  resellerProfile  ResellerProfile?
+  developerProfile DeveloperProfile?
+
+  // Marketplace Relations (converted to string userId)
   marketplaceReviews        MarketplaceReview[]
   marketplaceSubmissions    MarketplaceSubmission[]
-
-  // NEW (required for relations)
   marketplaceSeller         MarketplaceSeller?       // 1-to-1 seller profile
   marketplacePurchases      MarketplacePurchase[]    // user purchases
+
+  // Legacy / other
+  refreshTokens RefreshToken[]   // keep existing RefreshToken model but userId is String now
 }
 
+/////////////////////////////////////////////////////////
+// ROLE SYSTEM (Modular RBAC)
+/////////////////////////////////////////////////////////
+model Role {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+
+  // Relations
+  permissions RolePermission[]
+  userRoles   UserRole[]
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  key         String           @unique
+  description String?
+  rolePerms   RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  role         Role       @relation(fields: [roleId], references: [id])
+  roleId       String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  permissionId String
+
+  @@unique([roleId, permissionId])
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+  role   Role   @relation(fields: [roleId], references: [id])
+  roleId String
+    @@unique([userId, roleId]) // ADD THIS
+}
+
+/////////////////////////////////////////////////////////
+// SESSIONS
+/////////////////////////////////////////////////////////
+model Session {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  token     String   @unique
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  // Impersonation support
+  isImpersonation     Boolean @default(false)
+  impersonatorId      String?
+  impersonationReason String?
+}
+
+/////////////////////////////////////////////////////////
+// TRUSTED DEVICES
+/////////////////////////////////////////////////////////
+model TrustedDevice {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  deviceId   String   @unique
+  userAgent  String?
+  ip         String?
+  name       String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @updatedAt
+  expiresAt  DateTime
+  revoked    Boolean  @default(false)
+}
+
+/////////////////////////////////////////////////////////
+// API KEYS (Plugin Devs, Resellers, Integrations)
+/////////////////////////////////////////////////////////
+model ApiKey {
+  id        String        @id @default(uuid())
+  user      User          @relation(fields: [userId], references: [id])
+  userId    String
+  name      String
+  keyHash   String
+  createdAt DateTime      @default(now())
+  revoked   Boolean       @default(false)
+  expiresAt DateTime?
+  scopes    ApiKeyScope[]
+}
+
+model ApiKeyScope {
+  id       String @id @default(uuid())
+  apiKey   ApiKey @relation(fields: [apiKeyId], references: [id])
+  apiKeyId String
+  scope    String
+}
+
+/////////////////////////////////////////////////////////
+// LOGIN LOGS (Security/Audit)
+/////////////////////////////////////////////////////////
+model LoginLog {
+  id        String   @id @default(uuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  userEmail String?
+  success   Boolean
+  ip        String?
+  userAgent String?
+  reason    String?
+  createdAt DateTime @default(now())
+}
+
+/////////////////////////////////////////////////////////
+// USER PROFILES (Portal-specific metadata)
+/////////////////////////////////////////////////////////
+
+// CLIENT AREA ACCOUNT
+model ClientProfile {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique
+
+  company String?
+  phone   String?
+  address String?
+  country String?
+  city    String?
+  postal  String?
+}
+
+// ADMIN PORTAL STAFF ACCOUNT
+model AdminProfile {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique
+
+  department      String?
+  staffTitle      String?
+  restrictionJson Json? // JSON for module-level restrictions, IP rules, schedules
+}
+
+// WHOLESALE / RESELLER PORTAL
+model ResellerProfile {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique
+
+  resellerCode String  @unique
+  company      String?
+  phone        String?
+  address      String?
+}
+
+// MARKETPLACE / PLUGIN DEVELOPER ACCOUNT
+model DeveloperProfile {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique
+
+  displayName  String?
+  website      String?
+  github       String?
+  payoutsEmail String?
+}
+
+/////////////////////////////////////////////////////////
+// IMPERSONATION RECORD (optional extra)
+/////////////////////////////////////////////////////////
+model Impersonation {
+  id             String    @id @default(uuid())
+  adminId        String
+  admin          User?     @relation("Impersonator", fields: [adminId], references: [id])
+  impersonatedId String
+  impersonated   User?     @relation("Impersonated", fields: [impersonatedId], references: [id])
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+  sessionToken   String    @unique
+  reason         String?
+}
+
+/////////////////////////////////////////////////////////
+// EMAIL TOKENS (verification / password reset)
+/////////////////////////////////////////////////////////
+model EmailToken {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  tokenHash String
+  type      String // "verify_email" | "password_reset"
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  used      Boolean  @default(false)
+}
+
+/////////////////////////////////////////////////////////
+// AUDIT LOGS
+/////////////////////////////////////////////////////////
+// Using the richer AuditLog shape from auth module, keeping compatibility
+model AuditLog {
+  id        String   @id @default(uuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  ip        String?
+  userAgent String?
+  data      Json?
+  createdAt DateTime @default(now())
+}
+
+/////////////////////////////////////////////////////////
+// WEBHOOKS
+/////////////////////////////////////////////////////////
+model Webhook {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  url        String
+  secret     String
+  events     String[] // e.g. ["login.success","user.register"]
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  logs       WebhookLog[]
+}
+
+model WebhookLog {
+  id          String   @id @default(cuid())
+  webhookId   String
+  event       String
+  payload     Json
+  status      String   // queued | success | failed
+  httpStatus  Int?
+  attempts    Int      @default(0)
+  lastError   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  webhook Webhook @relation(fields: [webhookId], references: [id])
+}
+
+/////////////////////////////////////////////////////////
+// KEEP/ADJUSTED MODELS FROM YOUR ORIGINAL SCHEMA
+/////////////////////////////////////////////////////////
+
+/////////////////////////////////////////
+// RefreshToken (kept but userId changed to String)
+/////////////////////////////////////////
 model RefreshToken {
   id        Int      @id @default(autoincrement())
   token     String   @unique
-  userId    Int
+  userId    String
   revoked   Boolean  @default(false)
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -231,7 +507,7 @@ model Tld {
 }
 
 /////////////////////////////////////////
-// PLUGIN REGISTRY (unchanged except id default)
+// PLUGIN REGISTRY
 /////////////////////////////////////////
 model Plugin {
   id          String   @id @default(uuid())
@@ -305,25 +581,16 @@ model AutomationRun {
   @@index([taskId])
 }
 
-model AuditLog {
-  id        Int      @id @default(autoincrement())
-  source    String
-  action    String
-  actor     String?
-  meta      Json?
-  level     String
-  createdAt DateTime @default(now())
-}
-/////////////////////////////////////////////////////////
-// MARKETPLACE SYSTEM (FULL FR-M1 → FR-M11)
-/////////////////////////////////////////////////////////
+/////////////////////////////////////////
+// Marketplace System (FR-M1 → FR-M11)
+/////////////////////////////////////////
 
 /////////////////////////
 // Seller
 /////////////////////////
 model MarketplaceSeller {
   id              String   @id @default(uuid())
-  userId          Int      @unique
+  userId          String   @unique
   user            User     @relation(fields: [userId], references: [id])
   storeName       String
   stripeAccountId String?
@@ -373,7 +640,7 @@ model MarketplaceProduct {
   lastUpdatedAt DateTime?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
-approvedAt   DateTime?   @default(now())
+  approvedAt    DateTime?   @default(now())
 
   versions      MarketplaceVersion[]
   purchases     MarketplacePurchase[]
@@ -411,7 +678,7 @@ model MarketplaceVersion {
 /////////////////////////
 model MarketplacePurchase {
   id              String   @id @default(uuid())
-  userId          Int
+  userId          String
   productId       String
   versionId       String
   licenseKey      String   @unique
@@ -444,7 +711,7 @@ model MarketplaceLicenseActivation {
 model MarketplaceReview {
   id        String   @id @default(uuid())
   productId String
-  userId    Int
+  userId    String
   rating    Int
   stability Int?
   review    String?
@@ -475,7 +742,7 @@ model MarketplaceSubmission {
   productId   String
   versionId   String?
   status      String
-  reviewerId  Int?
+  reviewerId  String?
   notes       String?
   createdAt   DateTime @default(now())
 
@@ -522,13 +789,12 @@ model MarketplaceAnalytics {
   @@index([createdAt])
 }
 
-
 model MarketplaceActiveInstance {
   id         String   @id @default(uuid())
   productId  String
   versionId  String?
   instanceId String   // unique id for plugin instance (user+host)
-  userId     Int?
+  userId     String?
   lastSeen   DateTime @default(now())
   meta       Json?
   createdAt  DateTime @default(now())
@@ -542,7 +808,7 @@ model MarketplaceCrash {
   id         String   @id @default(uuid())
   productId  String
   versionId  String?
-  userId     Int?
+  userId     String?
   message    String
   stackTrace String?  @db.Text
   meta       Json?
@@ -590,6 +856,7 @@ model MarketplaceWebhookEndpoint {
 
   @@index([vendorId])
 }
+
 model MarketplaceBuildLog {
   id            String   @id @default(uuid())
   submissionId  String?              // optional: attached to a submission
@@ -607,9 +874,33 @@ model MarketplaceBuildLog {
   @@index([versionId])
   @@index([createdAt])
 }
+
 model MarketplaceWebhook {
   id        String   @id @default(uuid())
   event     String
   payload   Json
   createdAt DateTime @default(now())
+}
+
+/////////////////////////////////////////////////////////
+// Marketplace other models done
+/////////////////////////////////////////////////////////
+
+/// schema.prisma (append)
+model IpAccessRule {
+  id            Int       @id @default(autoincrement())
+  pattern       String    // "1.2.3.4", "1.2.3.0/24", "1.2.*.*"
+  type          IpRuleType
+  description   String?   @db.Text
+  active        Boolean   @default(true)
+  createdById   String?   // admin user id who created the rule (converted to String)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([pattern])
+}
+
+enum IpRuleType {
+  ALLOW
+  DENY
 }

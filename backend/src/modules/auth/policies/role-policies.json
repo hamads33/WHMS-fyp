@@ -1,0 +1,31 @@
+{
+  "superadmin": {
+    "forceMFA": false,
+    "requireEmailVerified": true
+  },
+  "admin": {
+    "forceMFA": true,
+    "requireEmailVerified": true,
+    "allowedHours": { "start": "08:00", "end": "18:00" }
+  },
+  "staff": {
+    "forceMFA": true,
+    "requireEmailVerified": true,
+    "allowedHours": { "start": "09:00", "end": "17:00" }
+  },
+  "sales": {
+    "forceMFA": false,
+    "requireEmailVerified": true,
+    "allowedHours": { "start": "09:00", "end": "18:00" },
+    "allowedIPs": []
+  },
+  "client": {
+    "requireEmailVerified": false
+  },
+  "reseller": {
+    "requireEmailVerified": true
+  },
+  "developer": {
+    "requireEmailVerified": true
+  }
+}

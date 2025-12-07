@@ -1,0 +1,63 @@
+[
+  {
+    "name": "superadmin",
+    "description": "Full unrestricted access",
+    "permissions": [
+      "admin.access",
+      "admin.manage.staff",
+      "admin.settings.update",
+      "billing.invoices.view",
+      "billing.invoices.pay",
+      "reseller.dashboard.access",
+      "developer.console.access",
+      "plugins.upload",
+      "plugins.update",
+      "client.area.access"
+    ]
+  },
+  {
+    "name": "admin",
+    "description": "Admin access with limited control",
+    "permissions": [
+      "admin.access",
+      "billing.invoices.view",
+      "billing.invoices.pay",
+      "client.area.access"
+    ]
+  },
+  {
+    "name": "staff",
+    "description": "Support/billing agent",
+    "permissions": [
+      "admin.access",
+      "billing.invoices.view"
+    ]
+  },
+  {
+    "name": "client",
+    "description": "Regular client account",
+    "permissions": [
+      "client.area.access",
+      "billing.invoices.view",
+      "billing.invoices.pay"
+    ]
+  },
+  {
+    "name": "reseller",
+    "description": "Reseller portal access",
+    "permissions": [
+      "reseller.dashboard.access",
+      "billing.invoices.view",
+      "billing.invoices.pay"
+    ]
+  },
+  {
+    "name": "developer",
+    "description": "Marketplace developer",
+    "permissions": [
+      "developer.console.access",
+      "plugins.upload",
+      "plugins.update"
+    ]
+  }
+]
