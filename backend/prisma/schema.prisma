@@ -57,6 +57,8 @@ model User {
   marketplaceSubmissions    MarketplaceSubmission[]
   marketplaceSeller         MarketplaceSeller?       // 1-to-1 seller profile
   marketplacePurchases      MarketplacePurchase[]    // user purchases
+  
+tickets Ticket[]
 
   // Legacy / other
   refreshTokens RefreshToken[]   // keep existing RefreshToken model but userId is String now
@@ -327,45 +329,7 @@ model RefreshToken {
 /////////////////////////////////////////
 // CLIENTS & SERVICES
 /////////////////////////////////////////
-model Client {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  status    String   @default("active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  clientServices ClientService[]
-  services       Service[]
-  tickets        Ticket[]
-}
-
-model ClientService {
-  id          String   @id @default(uuid())
-  clientId    String
-  serviceName String
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  client Client @relation(fields: [clientId], references: [id])
-
-  @@index([clientId])
-}
-
-model Service {
-  id        Int      @id @default(autoincrement())
-  clientId  String
-  plan      String
-  status    String   @default("active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  client Client @relation(fields: [clientId], references: [id])
-
-  @@index([clientId])
-}
 
 model Ticket {
   id        Int      @id @default(autoincrement())
@@ -376,10 +340,11 @@ model Ticket {
   status    String   @default("open")
   createdAt DateTime @default(now())
 
-  client Client @relation(fields: [clientId], references: [id])
+  client User @relation(fields: [clientId], references: [id])
 
   @@index([clientId])
 }
+
 
 /////////////////////////////////////////
 // EMAIL SYSTEM

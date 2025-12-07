@@ -1,39 +1,91 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const bcrypt = require("bcrypt");
 
 async function main() {
-  console.log("🌱 Seeding FULL Marketplace Test Data...");
+  console.log("🌱 Seeding Marketplace Test Data...");
 
   ////////////////////////////////////////////////
-  // 1. USER + SELLER
+  // 0. Create Roles (client, admin, reseller, developer)
   ////////////////////////////////////////////////
+
+  const roles = ["client", "admin", "reseller", "developer"];
+
+  for (const name of roles) {
+    await prisma.role.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+  }
+
+  console.log("✔ Roles created");
+
+  ////////////////////////////////////////////////
+  // 1. USER (Developer + Marketplace Seller)
+  ////////////////////////////////////////////////
+
+  const passwordHash = await bcrypt.hash("password123", 10);
 
   const user = await prisma.user.upsert({
-    where: { email: "test@demo.com" },
+    where: { email: "dev@demo.com" },
     update: {},
     create: {
-      email: "test@demo.com",
-      username: "testuser",
-      password: "password123",
-      displayName: "Test User",
-      provider: "local",
-      role: "user"
-    }
+      email: "dev@demo.com",
+      passwordHash,
+      emailVerified: true,
+    },
   });
 
-  console.log("✔ User OK (ID:", user.id, ")");
+  console.log("✔ User created:", user.id);
+
+  ////////////////////////////////////////////////
+  // Assign DEVELOPER role
+  ////////////////////////////////////////////////
+
+  const developerRole = await prisma.role.findUnique({ where: { name: "developer" } });
+
+  await prisma.userRole.upsert({
+    where: { userId_roleId: { userId: user.id, roleId: developerRole.id } },
+    update: {},
+    create: {
+      userId: user.id,
+      roleId: developerRole.id,
+    },
+  });
+
+  console.log("✔ Developer role assigned");
+
+  ////////////////////////////////////////////////
+  // Developer Profile → required by schema
+  ////////////////////////////////////////////////
+
+  await prisma.developerProfile.upsert({
+    where: { userId: user.id },
+    update: {},
+    create: {
+      userId: user.id,
+      displayName: "Demo Developer",
+      website: "https://example.com",
+    },
+  });
+
+  console.log("✔ Developer Profile created");
+
+  ////////////////////////////////////////////////
+  // MarketplaceSeller (developer == seller)
+  ////////////////////////////////////////////////
 
   const seller = await prisma.marketplaceSeller.upsert({
     where: { userId: user.id },
     update: {},
     create: {
-      id: "seller-1",
       userId: user.id,
-      storeName: "Demo Seller",
-    }
+      storeName: "Demo Seller Store",
+    },
   });
 
-  console.log("✔ Seller OK");
+  console.log("✔ Marketplace Seller created");
 
   ////////////////////////////////////////////////
   // 2. CATEGORIES
@@ -41,14 +93,14 @@ async function main() {
 
   await prisma.marketplaceCategory.createMany({
     data: [
-      { id: "cat-tools", name: "Tools", slug: "tools", icon: "wrench" },
-      { id: "cat-security", name: "Security", slug: "security", icon: "shield" },
-      { id: "cat-automation", name: "Automation", slug: "automation", icon: "cog" }
+      { id: "cat-tools", name: "Tools", slug: "tools" },
+      { id: "cat-security", name: "Security", slug: "security" },
+      { id: "cat-automation", name: "Automation", slug: "automation" },
     ],
-    skipDuplicates: true
+    skipDuplicates: true,
   });
 
-  console.log("✔ Categories OK");
+  console.log("✔ Categories created");
 
   ////////////////////////////////////////////////
   // 3. PRODUCT
@@ -59,7 +111,7 @@ async function main() {
     update: {},
     create: {
       id: "prod-1",
-      sellerId: "seller-1",
+      sellerId: seller.id,
       title: "Demo Plugin",
       slug: "demo-plugin",
       shortDesc: "A test plugin",
@@ -71,11 +123,11 @@ async function main() {
       ratingAvg: 4.5,
       ratingCount: 3,
       installCount: 20,
-      downloadCount: 54
-    }
+      downloadCount: 54,
+    },
   });
 
-  console.log("✔ Product OK");
+  console.log("✔ Product created");
 
   ////////////////////////////////////////////////
   // 4. VERSION
@@ -92,14 +144,33 @@ async function main() {
       archivePath: "/plugins/demo-plugin.zip",
       changelog: "Initial release",
       priceCents: 0,
-      currency: "USD"
-    }
+      currency: "USD",
+    },
   });
 
-  console.log("✔ Version OK");
+  console.log("✔ Version created");
 
   ////////////////////////////////////////////////
-  // 5. PURCHASE
+  // 5. SUBMISSION
+  ////////////////////////////////////////////////
+
+  await prisma.marketplaceSubmission.upsert({
+    where: { id: "sub-1" },
+    update: {},
+    create: {
+      id: "sub-1",
+      productId: "prod-1",
+      versionId: version.id,
+      status: "approved",
+      reviewerId: user.id,
+      notes: "Auto-approved for testing",
+    },
+  });
+
+  console.log("✔ Submission created");
+
+  ////////////////////////////////////////////////
+  // 6. PURCHASE + LICENSE ACTIVATION
   ////////////////////////////////////////////////
 
   const purchase = await prisma.marketplacePurchase.upsert({
@@ -109,55 +180,44 @@ async function main() {
       id: "purchase-1",
       userId: user.id,
       productId: "prod-1",
-      versionId: "version-1",
+      versionId: version.id,
       licenseKey: "TEST-LICENSE-KEY-123",
-      subscribed: false,
-      activationLimit: 5
-    }
+      activationLimit: 5,
+    },
   });
 
-  console.log("✔ Purchase OK");
-
-  ////////////////////////////////////////////////
-  // 6. LICENSE ACTIVATION
-  ////////////////////////////////////////////////
+  console.log("✔ Purchase created");
 
   await prisma.marketplaceLicenseActivation.upsert({
-    where: { id: "activation-1" },
+    where: { id: "act-1" },
     update: {},
     create: {
-      id: "activation-1",
-      licenseId: "purchase-1",
-      userAgent: "Mozilla",
+      id: "act-1",
+      licenseId: purchase.id,
       host: "localhost",
-      ip: "127.0.0.1"
-    }
+      ip: "127.0.0.1",
+      userAgent: "Mozilla",
+    },
   });
 
-  console.log("✔ License Activations OK");
+  console.log("✔ License Activation created");
 
   ////////////////////////////////////////////////
-  // 7. REVIEWS
+  // 7. REVIEWS + DEPENDENCIES
   ////////////////////////////////////////////////
 
   await prisma.marketplaceReview.upsert({
-    where: { id: "review-1" },
+    where: { id: "rev-1" },
     update: {},
     create: {
-      id: "review-1",
-      userId: user.id,
+      id: "rev-1",
       productId: "prod-1",
+      userId: user.id,
       rating: 5,
       stability: 4,
-      review: "Great plugin!"
-    }
+      review: "Excellent plugin!",
+    },
   });
-
-  console.log("✔ Reviews OK");
-
-  ////////////////////////////////////////////////
-  // 8. DEPENDENCY
-  ////////////////////////////////////////////////
 
   await prisma.marketplaceDependency.upsert({
     where: { id: "dep-1" },
@@ -166,183 +226,15 @@ async function main() {
       id: "dep-1",
       productId: "prod-1",
       dependencyId: "external-sdk",
-      versionRange: "^1.0.0"
-    }
+      versionRange: "^1.0.0",
+    },
   });
 
-  console.log("✔ Dependencies OK");
+  console.log("✔ Dependencies created");
 
-  ////////////////////////////////////////////////
-  // 9. SUBMISSION
-  ////////////////////////////////////////////////
-
-  await prisma.marketplaceSubmission.upsert({
-    where: { id: "sub-1" },
-    update: {},
-    create: {
-      id: "sub-1",
-      productId: "prod-1",
-      versionId: "version-1",
-      status: "approved",
-      reviewerId: user.id,
-      notes: "Auto approved for testing"
-    }
-  });
-
-  console.log("✔ Submissions OK");
-
-  ////////////////////////////////////////////////
-  // 10. VERIFICATION
-  ////////////////////////////////////////////////
-
-  await prisma.marketplaceVerification.upsert({
-    where: { id: "verify-1" },
-    update: {},
-    create: {
-      id: "verify-1",
-      productId: "prod-1",
-      versionId: "version-1",
-      passed: true,
-      issues: []
-    }
-  });
-
-  console.log("✔ Verification OK");
-
-  ////////////////////////////////////////////////
-  // 11. ANALYTICS
-  ////////////////////////////////////////////////
-
-  await prisma.marketplaceAnalytics.createMany({
-    data: [
-      { id: "event-1", productId: "prod-1", versionId: "version-1", eventType: "plugin.install" },
-      { id: "event-2", productId: "prod-1", versionId: "version-1", eventType: "plugin.heartbeat" },
-      { id: "event-3", productId: "prod-1", versionId: "version-1", eventType: "plugin.crash" }
-    ],
-    skipDuplicates: true
-  });
-
-  console.log("✔ Analytics OK");
-
-  ////////////////////////////////////////////////
-  // 12. ACTIVE INSTANCE
-  ////////////////////////////////////////////////
-
-  await prisma.marketplaceActiveInstance.upsert({
-    where: { id: "active-1" },
-    update: {},
-    create: {
-      id: "active-1",
-      productId: "prod-1",
-      versionId: "version-1",
-      instanceId: "instance-123",
-      userId: user.id,
-      meta: { host: "localhost" }
-    }
-  });
-
-  console.log("✔ Active Instance OK");
-
-  ////////////////////////////////////////////////
-  // 13. CRASHES
-  ////////////////////////////////////////////////
-
-  await prisma.marketplaceCrash.upsert({
-    where: { id: "crash-1" },
-    update: {},
-    create: {
-      id: "crash-1",
-      productId: "prod-1",
-      versionId: "version-1",
-      userId: user.id,
-      message: "Test crash",
-      stackTrace: "line1\nline2"
-    }
-  });
-
-  console.log("✔ Crash Logs OK");
-
-  ////////////////////////////////////////////////
-  // 14. PERF METRICS
-  ////////////////////////////////////////////////
-
-  await prisma.marketplacePerfMetric.upsert({
-    where: { id: "perf-1" },
-    update: {},
-    create: {
-      id: "perf-1",
-      productId: "prod-1",
-      versionId: "version-1",
-      metric: "cpu_percent",
-      value: 12.5
-    }
-  });
-
-  console.log("✔ Perf Metrics OK");
-
-  ////////////////////////////////////////////////
-  // 15. AGGREGATE ANALYTICS
-  ////////////////////////////////////////////////
-
-  await prisma.marketplaceAnalyticsAggregate.upsert({
-    where: { id: "agg-1" },
-    update: {},
-    create: {
-      id: "agg-1",
-      productId: "prod-1",
-      date: new Date("2025-01-01T00:00:00Z"),
-      installs: 10,
-      active: 3,
-      crashes: 1
-    }
-  });
-
-  console.log("✔ Aggregates OK");
-
-  ////////////////////////////////////////////////
-  // 16. WEBHOOK ENDPOINT
-  ////////////////////////////////////////////////
-
-  await prisma.marketplaceWebhookEndpoint.upsert({
-    where: { id: "wh-1" },
-    update: {},
-    create: {
-      id: "wh-1",
-      vendorId: "seller-1",
-      url: "https://webhook.site/test",
-      secret: "secret123",
-      enabled: true
-    }
-  });
-
-  console.log("✔ Webhook OK");
-
-  ////////////////////////////////////////////////
-  // 17. BUILD LOG
-  ////////////////////////////////////////////////
-
-  await prisma.marketplaceBuildLog.upsert({
-    where: { id: "build-1" },
-    update: {},
-    create: {
-      id: "build-1",
-      submissionId: "sub-1",
-      productId: "prod-1",
-      versionId: "version-1",
-      level: "info",
-      message: "Build step completed",
-      step: "verify"
-    }
-  });
-
-  console.log("✔ Build Logs OK");
-
-  console.log("\n🎉 FULL Marketplace Seed Completed!");
+  console.log("\n🎉 SEEDING COMPLETE!");
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
+  .catch(console.error)
   .finally(() => prisma.$disconnect());

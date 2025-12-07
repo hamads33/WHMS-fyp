@@ -104,9 +104,9 @@ backupModule.init();
 /* ================================================================
    MARKETPLACE (DISABLED FOR NOW)
 ================================================================ */
-// const dummyAuth = require("./modules/marketplace/middleware/dummyAuth");
-// app.use("/marketplace", dummyAuth);
-// app.use("/marketplace", require("./modules/marketplace/routes"));
+const dummyAuth = require("./modules/marketplace/middleware/dummyAuth");
+app.use("/marketplace", dummyAuth);
+app.use("/marketplace", require("./modules/marketplace/routes"));
 
 /* ================================================================
    HEALTH CHECK
