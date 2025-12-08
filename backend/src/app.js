@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const ip = require("ip");
 const cookieParser = require("cookie-parser");
+const crypto = require("crypto");
 
 const app = express();
 
@@ -104,9 +105,17 @@ backupModule.init();
 /* ================================================================
    MARKETPLACE (DISABLED FOR NOW)
 ================================================================ */
-const dummyAuth = require("./modules/marketplace/middleware/dummyAuth");
-app.use("/marketplace", dummyAuth);
-app.use("/marketplace", require("./modules/marketplace/routes"));
+
+const MarketplaceModule = require("./modules/marketplace");
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
+
+const marketplace = MarketplaceModule({
+  prisma,
+  idGen: () => crypto.randomUUID(),
+});
+
+app.use("/api/marketplace", marketplace.routes);
 
 /* ================================================================
    HEALTH CHECK

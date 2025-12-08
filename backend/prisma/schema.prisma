@@ -12,18 +12,18 @@ generator client {
 // USERS (Single Identity for ALL roles)
 /////////////////////////////////////////
 model User {
-  id              String   @id @default(uuid())
-  email           String   @unique
-  passwordHash    String
+  id           String @id @default(uuid())
+  email        String @unique
+  passwordHash String
 
-  emailVerified   Boolean  @default(false)
+  emailVerified Boolean @default(false)
 
-  mfaEnabled      Boolean  @default(false)
-  mfaSecret       String?
-  mfaBackupCodes  String[] @default([])
+  mfaEnabled     Boolean  @default(false)
+  mfaSecret      String?
+  mfaBackupCodes String[] @default([])
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // RBAC
   roles UserRole[]
@@ -40,7 +40,7 @@ model User {
   // Trusted devices, email tokens, audit logs
   trustedDevices TrustedDevice[]
   emailTokens    EmailToken[]
-  auditLogs      AuditLog[]            // AuditLog now references user as String
+  auditLogs      AuditLog[] // AuditLog now references user as String
 
   // Impersonation relations (both sides)
   impersonationsStarted  Impersonation[] @relation("Impersonator")
@@ -53,15 +53,15 @@ model User {
   developerProfile DeveloperProfile?
 
   // Marketplace Relations (converted to string userId)
-  marketplaceReviews        MarketplaceReview[]
-  marketplaceSubmissions    MarketplaceSubmission[]
-  marketplaceSeller         MarketplaceSeller?       // 1-to-1 seller profile
-  marketplacePurchases      MarketplacePurchase[]    // user purchases
-  
-tickets Ticket[]
+  marketplaceReviews     MarketplaceReview[]
+  marketplaceSubmissions MarketplaceSubmission[]
+
+  marketplacePurchases MarketplacePurchase[] // user purchases
+
+  tickets Ticket[]
 
   // Legacy / other
-  refreshTokens RefreshToken[]   // keep existing RefreshToken model but userId is String now
+  refreshTokens RefreshToken[] // keep existing RefreshToken model but userId is String now
 }
 
 /////////////////////////////////////////////////////////
@@ -100,7 +100,8 @@ model UserRole {
   userId String
   role   Role   @relation(fields: [roleId], references: [id])
   roleId String
-    @@unique([userId, roleId]) // ADD THIS
+
+  @@unique([userId, roleId]) // ADD THIS
 }
 
 /////////////////////////////////////////////////////////
@@ -221,13 +222,25 @@ model ResellerProfile {
 // MARKETPLACE / PLUGIN DEVELOPER ACCOUNT
 model DeveloperProfile {
   id     String @id @default(uuid())
-  user   User   @relation(fields: [userId], references: [id])
   userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 
-  displayName  String?
-  website      String?
-  github       String?
-  payoutsEmail String?
+  displayName String?
+  website     String?
+  github      String?
+
+  // ---- MERGED marketplace seller fields ----
+  storeName       String?
+  payoutsEmail    String?
+  stripeAccountId String?
+  publicKeyPem    String?
+  marketplaceMeta Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // IMPORTANT: must match MarketplaceProduct relation name
+  products MarketplaceProduct[] @relation("dev_products")
 }
 
 /////////////////////////////////////////////////////////
@@ -280,28 +293,28 @@ model AuditLog {
 // WEBHOOKS
 /////////////////////////////////////////////////////////
 model Webhook {
-  id         String   @id @default(cuid())
-  name       String   @unique
-  url        String
-  secret     String
-  events     String[] // e.g. ["login.success","user.register"]
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  logs       WebhookLog[]
+  id        String       @id @default(cuid())
+  name      String       @unique
+  url       String
+  secret    String
+  events    String[] // e.g. ["login.success","user.register"]
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  logs      WebhookLog[]
 }
 
 model WebhookLog {
-  id          String   @id @default(cuid())
-  webhookId   String
-  event       String
-  payload     Json
-  status      String   // queued | success | failed
-  httpStatus  Int?
-  attempts    Int      @default(0)
-  lastError   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  webhookId  String
+  event      String
+  payload    Json
+  status     String // queued | success | failed
+  httpStatus Int?
+  attempts   Int      @default(0)
+  lastError  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   webhook Webhook @relation(fields: [webhookId], references: [id])
 }
@@ -330,7 +343,6 @@ model RefreshToken {
 // CLIENTS & SERVICES
 /////////////////////////////////////////
 
-
 model Ticket {
   id        Int      @id @default(autoincrement())
   clientId  String
@@ -344,7 +356,6 @@ model Ticket {
 
   @@index([clientId])
 }
-
 
 /////////////////////////////////////////
 // EMAIL SYSTEM
@@ -551,21 +562,6 @@ model AutomationRun {
 /////////////////////////////////////////
 
 /////////////////////////
-// Seller
-/////////////////////////
-model MarketplaceSeller {
-  id              String   @id @default(uuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id])
-  storeName       String
-  stripeAccountId String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  products MarketplaceProduct[]
-}
-
-/////////////////////////
 // Category
 /////////////////////////
 model MarketplaceCategory {
@@ -583,33 +579,42 @@ model MarketplaceCategory {
 // Product
 /////////////////////////
 model MarketplaceProduct {
-  id            String   @id @default(uuid())
-  sellerId      String
-  seller        MarketplaceSeller @relation(fields: [sellerId], references: [id])
-  title         String
-  slug          String   @unique
-  shortDesc     String?
-  longDesc      String?
-  category      String?
-  categoryId    String?
-  tags          String[]  @default([])
-  status        String     @default("draft")
-  rejectReason  String?
-  logo          String?
-  screenshots   String[]   @default([])
-  documentation String?
-  ratingAvg     Float      @default(0)
-  ratingCount   Int        @default(0)
-  installCount  Int        @default(0)
-  downloadCount Int        @default(0)
-  lastUpdatedAt DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  approvedAt    DateTime?   @default(now())
+  id String @id @default(uuid())
 
+  // Seller (DeveloperProfile) — required
+  sellerId String
+  seller   DeveloperProfile @relation("dev_products", fields: [sellerId], references: [id])
+
+  title     String
+  slug      String  @unique
+  shortDesc String?
+  longDesc  String?
+
+  categoryId String?
+  category   MarketplaceCategory? @relation(fields: [categoryId], references: [id])
+
+  tags         String[] @default([])
+  status       String   @default("draft")
+  rejectReason String?
+
+  logo        String?
+  screenshots String[] @default([])
+
+  documentation String?
+
+  ratingAvg     Float @default(0)
+  ratingCount   Int   @default(0)
+  installCount  Int   @default(0)
+  downloadCount Int   @default(0)
+
+  lastUpdatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  approvedAt    DateTime?
+
+  // Relations
   versions      MarketplaceVersion[]
   purchases     MarketplacePurchase[]
-  categoryRel   MarketplaceCategory? @relation(fields: [categoryId], references: [id])
   reviews       MarketplaceReview[]
   dependencies  MarketplaceDependency[]
   submissions   MarketplaceSubmission[]
@@ -618,19 +623,23 @@ model MarketplaceProduct {
 }
 
 /////////////////////////
-// Version
+// Version (FR-M4)
 /////////////////////////
 model MarketplaceVersion {
-  id            String   @id @default(uuid())
-  productId     String
-  product       MarketplaceProduct @relation(fields: [productId], references: [id])
-  version       String
-  manifestJson  Json
-  archivePath   String
-  changelog     String?
-  priceCents    Int
-  currency      String   @default("USD")
-  createdAt     DateTime @default(now())
+  id String @id @default(uuid())
+
+  productId String
+  product   MarketplaceProduct @relation(fields: [productId], references: [id])
+
+  version      String
+  manifestJson Json
+  archivePath  String
+  changelog    String?
+
+  priceCents Int
+  currency   String @default("USD")
+
+  createdAt DateTime @default(now())
 
   purchases     MarketplacePurchase[]
   analytics     MarketplaceAnalytics[]
@@ -639,23 +648,25 @@ model MarketplaceVersion {
 }
 
 /////////////////////////
-// Purchases / Licensing
+// Purchase & Licensing (FR-M5)
 /////////////////////////
 model MarketplacePurchase {
-  id              String   @id @default(uuid())
-  userId          String
-  productId       String
-  versionId       String
-  licenseKey      String   @unique
-  subscribed      Boolean  @default(false)
-  activationLimit Int      @default(1)
-  expiresAt       DateTime?
-  revoked         Boolean  @default(false)
-  createdAt       DateTime @default(now())
+  id         String @id @default(uuid())
+  userId     String
+  productId  String
+  versionId  String
+  licenseKey String @unique
 
-  user     User               @relation(fields: [userId], references: [id])
-  product  MarketplaceProduct @relation(fields: [productId], references: [id])
-  version  MarketplaceVersion @relation(fields: [versionId], references: [id])
+  subscribed      Boolean   @default(false)
+  activationLimit Int       @default(1)
+  expiresAt       DateTime?
+  revoked         Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  user    User               @relation(fields: [userId], references: [id])
+  product MarketplaceProduct @relation(fields: [productId], references: [id])
+  version MarketplaceVersion @relation(fields: [versionId], references: [id])
+
   activations MarketplaceLicenseActivation[]
 }
 
@@ -674,12 +685,14 @@ model MarketplaceLicenseActivation {
 // Reviews (FR-M10)
 /////////////////////////
 model MarketplaceReview {
-  id        String   @id @default(uuid())
+  id        String @id @default(uuid())
   productId String
   userId    String
+
   rating    Int
   stability Int?
   review    String?
+
   createdAt DateTime @default(now())
 
   product MarketplaceProduct @relation(fields: [productId], references: [id])
@@ -703,26 +716,27 @@ model MarketplaceDependency {
 // Submissions (FR-M6)
 /////////////////////////
 model MarketplaceSubmission {
-  id          String   @id @default(uuid())
-  productId   String
-  versionId   String?
-  status      String
-  reviewerId  String?
-  notes       String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  productId  String
+  versionId  String?
+  status     String
+  reviewerId String?
+  notes      String?
+  createdAt  DateTime @default(now())
 
-  product MarketplaceProduct  @relation(fields: [productId], references: [id])
-  version MarketplaceVersion? @relation(fields: [versionId], references: [id])
-  reviewer User?              @relation(fields: [reviewerId], references: [id])
+  product  MarketplaceProduct  @relation(fields: [productId], references: [id])
+  version  MarketplaceVersion? @relation(fields: [versionId], references: [id])
+  reviewer User?               @relation(fields: [reviewerId], references: [id])
 }
 
 /////////////////////////
 // Verification (FR-M8)
 /////////////////////////
 model MarketplaceVerification {
-  id        String   @id @default(uuid())
+  id        String @id @default(uuid())
   productId String
   versionId String
+
   passed    Boolean
   issues    Json?
   createdAt DateTime @default(now())
@@ -735,9 +749,8 @@ model MarketplaceVerification {
 // Analytics (FR-M9)
 /////////////////////////
 model MarketplaceAnalytics {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  // RELATIONS (required by Product.analytics & Version.analytics)
   productId String
   product   MarketplaceProduct @relation(fields: [productId], references: [id])
 
@@ -754,26 +767,33 @@ model MarketplaceAnalytics {
   @@index([createdAt])
 }
 
+/////////////////////////
+// Active Instances
+/////////////////////////
 model MarketplaceActiveInstance {
   id         String   @id @default(uuid())
   productId  String
   versionId  String?
-  instanceId String   // unique id for plugin instance (user+host)
+  instanceId String
   userId     String?
   lastSeen   DateTime @default(now())
-  meta       Json?
   createdAt  DateTime @default(now())
+  meta       Json?
 
   @@index([productId])
   @@index([instanceId])
   @@index([lastSeen])
 }
 
+/////////////////////////
+// Crash Logs
+/////////////////////////
 model MarketplaceCrash {
-  id         String   @id @default(uuid())
-  productId  String
-  versionId  String?
-  userId     String?
+  id        String  @id @default(uuid())
+  productId String
+  versionId String?
+  userId    String?
+
   message    String
   stackTrace String?  @db.Text
   meta       Json?
@@ -784,33 +804,43 @@ model MarketplaceCrash {
   @@index([createdAt])
 }
 
+/////////////////////////
+// Performance Metrics
+/////////////////////////
 model MarketplacePerfMetric {
-  id         String   @id @default(uuid())
-  productId  String
-  versionId  String?
-  metric     String   // e.g. "action_latency_ms", "memory_mb", "cpu_percent"
-  value      Float
-  meta       Json?
-  createdAt  DateTime @default(now())
+  id        String  @id @default(uuid())
+  productId String
+  versionId String?
+
+  metric    String
+  value     Float
+  meta      Json?
+  createdAt DateTime @default(now())
 
   @@index([productId])
   @@index([metric])
   @@index([createdAt])
 }
 
+/////////////////////////
+// Aggregated Analytics
+/////////////////////////
 model MarketplaceAnalyticsAggregate {
-  id         String   @id @default(uuid())
-  productId  String
-  date       DateTime // date bucket (UTC midnight)
-  installs   Int      @default(0)
-  active     Int      @default(0)
-  crashes    Int      @default(0)
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  productId String
+  date      DateTime
+  installs  Int      @default(0)
+  active    Int      @default(0)
+  crashes   Int      @default(0)
+  createdAt DateTime @default(now())
 
   @@unique([productId, date])
   @@index([productId, date])
 }
 
+/////////////////////////
+// Webhook Endpoints
+/////////////////////////
 model MarketplaceWebhookEndpoint {
   id        String   @id @default(uuid())
   vendorId  String
@@ -822,24 +852,30 @@ model MarketplaceWebhookEndpoint {
   @@index([vendorId])
 }
 
+/////////////////////////
+// Build Logs
+/////////////////////////
 model MarketplaceBuildLog {
-  id            String   @id @default(uuid())
-  submissionId  String?              // optional: attached to a submission
-  productId     String?              // optional: which product version/build
-  versionId     String?              // optional: version id
-  level         String   @default("info") // info | warn | error | debug
-  message       String
-  meta          Json?
-  step          String?              // e.g. "upload", "validate", "sign", "installDeps", "verify"
-  createdAt     DateTime @default(now())
+  id           String  @id @default(uuid())
+  submissionId String?
+  productId    String?
+  versionId    String?
 
-  // indexes for fast lookup
+  level     String   @default("info")
+  message   String
+  meta      Json?
+  step      String?
+  createdAt DateTime @default(now())
+
   @@index([submissionId])
   @@index([productId])
   @@index([versionId])
   @@index([createdAt])
 }
 
+/////////////////////////
+// Webhook Events
+/////////////////////////
 model MarketplaceWebhook {
   id        String   @id @default(uuid())
   event     String
@@ -853,14 +889,14 @@ model MarketplaceWebhook {
 
 /// schema.prisma (append)
 model IpAccessRule {
-  id            Int       @id @default(autoincrement())
-  pattern       String    // "1.2.3.4", "1.2.3.0/24", "1.2.*.*"
-  type          IpRuleType
-  description   String?   @db.Text
-  active        Boolean   @default(true)
-  createdById   String?   // admin user id who created the rule (converted to String)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id          Int        @id @default(autoincrement())
+  pattern     String // "1.2.3.4", "1.2.3.0/24", "1.2.*.*"
+  type        IpRuleType
+  description String?    @db.Text
+  active      Boolean    @default(true)
+  createdById String? // admin user id who created the rule (converted to String)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   @@index([pattern])
 }
