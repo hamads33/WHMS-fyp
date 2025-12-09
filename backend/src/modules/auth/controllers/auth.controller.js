@@ -2,16 +2,7 @@
 
 const AuthService = require("../services/auth.service");
 
-/**
- * Full AuthController
- * - Register
- * - Login (with cookies for localhost)
- * - Refresh token
- * - Logout
- * - Me
- */
 class AuthController {
-
   // ======================================================
   // REGISTER
   // ======================================================
@@ -20,7 +11,9 @@ class AuthController {
       const { email, password } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({ error: "Email and password are required" });
+        return res
+          .status(400)
+          .json({ error: "Email and password are required" });
       }
 
       const user = await AuthService.register({ email, password });
@@ -36,14 +29,16 @@ class AuthController {
   }
 
   // ======================================================
-  // LOGIN — FIXED COOKIE BEHAVIOR FOR LOCALHOST
+  // LOGIN — Cookies + return tokens for Postman
   // ======================================================
   static async login(req, res) {
     try {
       const { email, password } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({ error: "Email and password are required" });
+        return res
+          .status(400)
+          .json({ error: "Email and password are required" });
       }
 
       // AuthService returns: { accessToken, refreshToken, user }
@@ -54,18 +49,18 @@ class AuthController {
         userAgent: req.get("User-Agent"),
       });
 
-      // ⚡ Cookie settings that ACTUALLY work for localhost cross-port
+      // Cookie config for localhost
       const cookieOptions = {
         httpOnly: true,
-        secure: false,      // only true on HTTPS domain
-        sameSite: "lax",    // required for localhost:3000 → 4000
+        secure: false, // set true in production HTTPS
+        sameSite: "lax",
         path: "/",
       };
 
       // Set cookies
       res.cookie("access_token", accessToken, {
         ...cookieOptions,
-        maxAge: 1000 * 60 * 15, // 15 min
+        maxAge: 1000 * 60 * 15, // 15 minutes
       });
 
       res.cookie("refresh_token", refreshToken, {
@@ -75,9 +70,13 @@ class AuthController {
 
       console.log("✔ LOGIN SUCCESS — Cookies set.");
 
+      // IMPORTANT FIX:
+      // Return tokens in body for Postman AND keep cookies for frontend
       return res.status(200).json({
         message: "Login successful",
         user,
+        accessToken,
+        refreshToken,
       });
 
     } catch (err) {
@@ -87,11 +86,12 @@ class AuthController {
   }
 
   // ======================================================
-  // REFRESH TOKEN — ROTATE TOKENS SAFELY
+  // REFRESH TOKEN
   // ======================================================
   static async refresh(req, res) {
     try {
-      const refreshToken = req.cookies?.refresh_token || req.body?.refreshToken;
+      const refreshToken =
+        req.cookies?.refresh_token || req.body?.refreshToken;
 
       if (!refreshToken) {
         return res.status(400).json({ error: "refreshToken is required" });
@@ -107,7 +107,7 @@ class AuthController {
         path: "/",
       };
 
-      // Replace old token with rotated ones
+      // Rotate cookies
       res.cookie("access_token", accessToken, {
         ...cookieOptions,
         maxAge: 1000 * 60 * 15,
@@ -132,7 +132,7 @@ class AuthController {
   }
 
   // ======================================================
-  // LOGOUT — CLEAR COOKIES + REVOKE REFRESH TOKEN
+  // LOGOUT
   // ======================================================
   static async logout(req, res) {
     try {
@@ -163,24 +163,23 @@ class AuthController {
   }
 
   // ======================================================
-  // ME — Protected route
+  // ME — Protected
   // ======================================================
   static async me(req, res) {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Not authenticated" });
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      return res.json({
+        user: req.user, // includes impersonation fields
+      });
+
+    } catch (err) {
+      console.error("ME ERROR:", err);
+      return res.status(500).json({ error: "Something went wrong" });
     }
-
-    return res.json({
-      user: req.user,   // includes roles, portals, profiles, impersonation
-    });
-
-  } catch (err) {
-    console.error("ME ERROR:", err);
-    return res.status(500).json({ error: "Something went wrong" });
   }
-}
-
 }
 
 module.exports = AuthController;

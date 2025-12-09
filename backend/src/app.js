@@ -19,6 +19,11 @@ app.use((req, res, next) => {
   console.log("🌐 Incoming Origin:", req.headers.origin);
   next();
 });
+/* ================================================================
+   AUTHENTICATION MIDDLEWARE (GLOBAL)
+================================================================ */
+const authenticateToken = require("./modules/auth/middlewares/auth.guard");
+app.use(authenticateToken);
 
 /* ================================================================
    CORS CONFIG (CLEAN + FIXED)
@@ -98,9 +103,14 @@ app.use("/api/domains", require("./modules/domains"));
 /* ================================================================
    BACKUP MODULE
 ================================================================ */
-const backupModule = require("./modules/backup/backup.module");
-app.use("/api/backups", require("./modules/backup/routes/backup.routes"));
-backupModule.init();
+const backupApi = require("./modules/backup/api"); 
+// ^ this automatically loads:
+// - /backups controller
+// - /storage-configs controller
+// - provider bootstrap (local, s3, sftp)
+// - registry initialization
+
+app.use("/api", backupApi);
 
 /* ================================================================
    MARKETPLACE (DISABLED FOR NOW)

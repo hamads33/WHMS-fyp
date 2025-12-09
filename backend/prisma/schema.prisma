@@ -454,7 +454,7 @@ model DomainLog {
 /////////////////////////////////////////
 // PROVIDER CONFIG
 /////////////////////////////////////////
-model ProviderConfig {
+model ProviderConfig { 
   id        Int      @id @default(autoincrement())
   name      String   @unique
   key       String?
@@ -464,6 +464,59 @@ model ProviderConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+/////////////////////////
+//to check provider CONFIG
+////////////////////////
+model StorageConfig {
+  id            Int      @id @default(autoincrement())
+  name          String
+  provider      String   // "local" | "s3" | "sftp" | plugin providers
+  config        Json     // ENCRYPTED (AES-GCM or KMS)
+  createdById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+model Backup {
+  id           String   @id @default(cuid())
+  name         String
+  type         String
+  storageConfigId Int?
+  filePath     String?
+  sizeBytes    BigInt?
+  status       String
+  retentionDays Int?
+  createdById  String
+  createdAt    DateTime @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  deleted      Boolean  @default(false)   // used by retention worker
+  errorMessage String?
+  // relations
+  versions     BackupVersion[]
+  stepLogs     BackupStepLog[]
+}
+
+model BackupVersion {
+  id         String   @id @default(uuid())
+  backupId   String
+  version    Int      @default(1)
+  filePath   String
+  sizeBytes  BigInt?
+  createdAt  DateTime @default(now())
+  backup Backup @relation(fields:[backupId], references:[id])
+}
+
+model BackupStepLog {
+  id        String   @id @default(uuid())
+  backupId  String
+  step      String
+  meta      Json?
+  status    String   @default("started")
+  message   String?
+  createdAt DateTime @default(now())
+  backup Backup @relation(fields:[backupId], references:[id])
+}
+
 
 /////////////////////////////////////////
 // TLD PRICING
