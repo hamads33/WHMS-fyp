@@ -1,5 +1,3 @@
-// src/modules/automation/validators/task.validator.js
-
 module.exports = {
   type: "object",
   properties: {

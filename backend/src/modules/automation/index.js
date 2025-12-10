@@ -1,5 +1,3 @@
-// src/modules/automation/index.js
-
 const express = require("express");
 
 // Logger
@@ -13,7 +11,7 @@ const ExecutionLogStore = require("./store/executionLogStore");
 // Services
 const AuditService = require("./services/audit.service");
 const ExecutorService = require("./services/executor.service");
-const SchedulerService = require("./services/scheduler.service");
+const SchedulerService = require("./services/scheduler.redis.service");
 
 // Controllers
 const ProfileController = require("./controllers/profile.controller");
@@ -51,12 +49,12 @@ module.exports = async function initAutomationModule({
   // Services
   const audit = new AuditService({ prisma: prismaClient, logger });
 
-  // Use ExecutorService directly
+  // Use ExecutorService directly (workers will also instantiate)
   const executor = new ExecutorService({
     logger,
     prisma: prismaClient,
     audit,
-    app, // <-- required for plugin engine
+    app, // required for plugin engine if used locally
   });
 
   const scheduler = new SchedulerService({

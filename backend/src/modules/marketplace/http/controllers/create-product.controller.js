@@ -1,25 +1,41 @@
-module.exports = ({ createProduct }) => {
-  return async (req, res, next) => {
+module.exports = ({ prisma }) => {
+  return async (req, res) => {
     try {
-      const sellerId = req.user?.id || req.body.sellerId;
-
-      if (!sellerId) {
-        return res.status(400).json({ error: "sellerId required" });
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const result = await createProduct.execute({
-        sellerId,
-        title: req.body.title,
-        slug: req.body.slug,
-        shortDesc: req.body.shortDesc,
-        longDesc: req.body.longDesc,
-        categoryId: req.body.categoryId,
-        tags: req.body.tags || [],
+      // Fetch developer profile
+      const developer = await prisma.developerProfile.findUnique({
+        where: { userId }
       });
 
-      res.json({ success: true, data: result });
+      if (!developer) {
+        return res.status(400).json({
+          error: "Developer profile not found — user is not a marketplace seller"
+        });
+      }
+
+      const sellerId = developer.id; // THIS is what Prisma expects
+
+      const { title, slug, shortDesc, longDesc, categoryId } = req.body;
+
+      const product = await prisma.marketplaceProduct.create({
+        data: {
+          sellerId,       // REQUIRED
+          title,
+          slug,
+          shortDesc,
+          longDesc,
+          categoryId
+        }
+      });
+
+      return res.json({ success: true, data: product });
     } catch (err) {
-      next(err);
+      console.error("Create Product Error:", err);
+      return res.status(500).json({ error: err.message });
     }
   };
 };

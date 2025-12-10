@@ -1,10 +1,3 @@
-// src/modules/automation/controllers/task.controller.js
-const Ajv = require("ajv");
-const taskSchema = require("../validators/task.validator");
-const ajv = new Ajv();
-
-const validateTask = ajv.compile(taskSchema);
-
 class TaskController {
   constructor({ taskStore, profileStore, scheduler, executor, executionLogStore, audit, logger }) {
     this.taskStore = taskStore;
@@ -16,185 +9,118 @@ class TaskController {
     this.logger = logger;
   }
 
-async listForProfile(req, res, next) {
-  try {
+  async listForProfile(req, res) {
     const profileId = Number(req.params.profileId);
-
-    console.log("DEBUG → req.params.profileId =", req.params.profileId);
-
     const tasks = await this.taskStore.listForProfile(profileId);
-
     return res.success(tasks);
-  } catch (err) {
-    next(err);
-  }
-}
-
-
-  async createForProfile(req, res, next) {
-    try {
-const profileId = Number(req.params.profileId);
-
-      const body = req.body;
-
-      if (!validateTask(body)) {
-        return res.fail("Invalid task data", 400, "validation_error", validateTask.errors);
-      }
-
-      const profile = await this.profileStore.getById(profileId);
-      if (!profile) {
-        const err2 = new Error("Profile not found");
-        err2.status = 404;
-        err2.code = "profile_not_found";
-        throw err2;
-      }
-
-      const created = await this.taskStore.create(profileId, body);
-
-      await this.audit.log("automation", "task.create", req.user?.username || "system", {
-        profileId, taskId: created.id
-      });
-
-      if (profile.enabled) this.scheduler.scheduleProfile(profile);
-
-      res.status(201);
-      return res.success(created);
-    } catch (err) {
-      next(err);
-    }
   }
 
-  async get(req, res, next) {
-    try {
-      const id = Number(req.params.id);
-      const task = await this.taskStore.getById(id);
+  async createForProfile(req, res) {
+    const profileId = Number(req.params.profileId);
+    const data = req.body;
 
-      if (!task) {
-        const error = new Error("Task not found");
-        error.status = 404;
-        error.code = "task_not_found";
-        throw error;
-      }
+    const t = await this.taskStore.create(profileId, data);
 
-      return res.success(task);
-    } catch (err) {
-      next(err);
-    }
+    const p = await this.profileStore.getById(profileId);
+    if (p?.enabled) this.scheduler.scheduleProfile(p);
+
+    // SYSTEM AUDIT
+    await this.audit.system("automation.task.create", {
+      userId: req.auditContext.userId,
+      entity: "AutomationTask",
+      entityId: t.id,
+      ip: req.auditContext.ip,
+      userAgent: req.auditContext.userAgent,
+      data: t
+    });
+
+    return res.success(t);
   }
 
-  async update(req, res, next) {
-    try {
-      const id = Number(req.params.id);
-      const body = req.body;
+  async get(req, res) {
+    const id = Number(req.params.taskId);
+    const t = await this.taskStore.getById(id);
+    if (!t) return res.fail("Not found", 404);
 
-      if (!validateTask(body)) {
-        return res.fail("Invalid task data", 400, "validation_error", validateTask.errors);
-      }
-
-      const existing = await this.taskStore.getById(id);
-      if (!existing) {
-        const error = new Error("Task not found");
-        error.status = 404;
-        error.code = "task_not_found";
-        throw error;
-      }
-
-      const updated = await this.taskStore.update(id, body);
-
-      await this.audit.log("automation", "task.update", req.user?.username || "system", {
-        taskId: id
-      });
-
-      const profile = await this.profileStore.getById(existing.profileId);
-      if (profile && profile.enabled) this.scheduler.scheduleProfile(profile);
-
-      return res.success(updated);
-    } catch (err) {
-      next(err);
-    }
+    return res.success(t);
   }
 
-  async delete(req, res, next) {
-    try {
-      const id = Number(req.params.id);
+  async update(req, res) {
+    const id = Number(req.params.taskId);
+    const data = req.body;
 
-      const existing = await this.taskStore.getById(id);
-      if (!existing) {
-        const error = new Error("Task not found");
-        error.status = 404;
-        error.code = "task_not_found";
-        throw error;
-      }
+    const t = await this.taskStore.update(id, data);
 
-      await this.taskStore.delete(id);
+    const p = await this.profileStore.getById(t.profileId);
+    if (p?.enabled) this.scheduler.scheduleProfile(p);
 
-      await this.audit.log("automation", "task.delete", req.user?.username || "system", {
-        taskId: id
-      });
+    // SYSTEM AUDIT
+    await this.audit.system("automation.task.update", {
+      userId: req.auditContext.userId,
+      entity: "AutomationTask",
+      entityId: id,
+      ip: req.auditContext.ip,
+      userAgent: req.auditContext.userAgent,
+      data
+    });
 
-      const profile = await this.profileStore.getById(existing.profileId);
-      if (profile.enabled) this.scheduler.scheduleProfile(profile);
-
-      return res.success({ deleted: id });
-    } catch (err) {
-      next(err);
-    }
+    return res.success(t);
   }
 
-  async runNow(req, res, next) {
-    try {
-      const id = Number(req.params.id);
-      const task = await this.taskStore.getById(id);
+  async delete(req, res) {
+    const id = Number(req.params.taskId);
 
-      if (!task) {
-        const error = new Error("Task not found");
-        error.status = 404;
-        error.code = "task_not_found";
-        throw error;
-      }
+    const t = await this.taskStore.getById(id);
+    await this.taskStore.delete(id);
 
-      const profile = await this.profileStore.getById(task.profileId);
+    const p = await this.profileStore.getById(t.profileId);
+    if (p?.enabled) this.scheduler.scheduleProfile(p);
 
-      const runRecord = await this.executionLogStore.createPending(profile.id, task.id);
+    // SYSTEM AUDIT
+    await this.audit.system("automation.task.delete", {
+      userId: req.auditContext.userId,
+      entity: "AutomationTask",
+      entityId: id,
+      ip: req.auditContext.ip,
+      userAgent: req.auditContext.userAgent,
+      data: null
+    });
 
-      await this.audit.log("automation", "task.run", req.user?.username || "system", {
-        profileId: profile.id,
-        taskId: task.id,
+    return res.success({ deleted: true });
+  }
+
+  async runNow(req, res) {
+    const id = Number(req.params.taskId);
+
+    const t = await this.taskStore.getById(id);
+    if (!t) return res.fail("Task not found", 404);
+
+    const runRecord = await this.executionLogStore.createPending(t.profileId, t.id);
+
+    const { createQueue } = require("../queue/jobQueue");
+    const { queue } = createQueue("automation");
+
+    await queue.add(
+      "run-task",
+      {
+        profileId: t.profileId,
+        taskId: t.id,
         runId: runRecord.id
-      });
+      },
+      {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 1000 }
+      }
+    );
 
-      (async () => {
-        try {
-          await this.executionLogStore.updateStatus(runRecord.id, "running", {
-            startedAt: new Date()
-          });
+    // AUTOMATION AUDIT
+    await this.audit.automation(
+      "task.run_now",
+      { profileId: t.profileId, taskId: t.id, runId: runRecord.id },
+      req.auditContext.userId
+    );
 
-          const result = await this.executor.run({
-            id: profile.id,
-            taskId: task.id,
-            actionType: task.actionType,
-            actionMeta: task.actionMeta || {}
-          });
-
-          await this.executionLogStore.complete(runRecord.id, "success", result);
-
-          await this.audit.log("automation", "task.run.complete", "system", {
-            runId: runRecord.id
-          });
-        } catch (err) {
-          await this.executionLogStore.complete(runRecord.id, "failed", null, err.message);
-
-          await this.audit.log("automation", "task.run.failed", "system", {
-            runId: runRecord.id,
-            error: err.message
-          });
-        }
-      })();
-
-      return res.success({ runId: runRecord.id });
-    } catch (err) {
-      next(err);
-    }
+    return res.success({ runId: runRecord.id });
   }
 }
 

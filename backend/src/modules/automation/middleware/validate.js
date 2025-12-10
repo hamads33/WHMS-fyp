@@ -1,4 +1,3 @@
-// src/modules/automation/middleware/validate.js
 const Ajv = require("ajv").default;
 const addFormats = require("ajv-formats");
 

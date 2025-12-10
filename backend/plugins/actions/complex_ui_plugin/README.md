@@ -1,1 +1,0 @@
-Complex UI Plugin demo. Place under plugins/actions/complex_ui_plugin. UI in /ui, server action in index.js.

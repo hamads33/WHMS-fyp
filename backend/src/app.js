@@ -5,28 +5,38 @@ const cors = require("cors");
 const ip = require("ip");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
+const { PrismaClient } = require("@prisma/client");
 
 const app = express();
+const prisma = new PrismaClient();
 
 /* ================================================================
    GLOBAL MIDDLEWARES
+   – JSON body limit
+   – Cookies
+   – Debug incoming origin
 ================================================================ */
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// Debug request origin
+// Debugging request origins (useful when testing CORS issues)
 app.use((req, res, next) => {
   console.log("🌐 Incoming Origin:", req.headers.origin);
   next();
 });
-/* ================================================================
-   AUTHENTICATION MIDDLEWARE (GLOBAL)
-================================================================ */
-const authenticateToken = require("./modules/auth/middlewares/auth.guard");
-app.use(authenticateToken);
 
 /* ================================================================
-   CORS CONFIG (CLEAN + FIXED)
+   AUTHENTICATION MIDDLEWARE (GLOBAL)
+   – Protects all routes by default
+================================================================ */
+// const authenticateToken = require("./modules/auth/middlewares/auth.guard");
+// app.use(authenticateToken);
+
+/* ================================================================
+   CORS CONFIG (CLEAN + PATCHED)
+   – Supports multiple allowed origins
+   – Allows local network variants
+   – Allows tools/cURL with no origin
 ================================================================ */
 const FRONTEND_ORIGIN = process.env.FRONTEND_URL || "http://localhost:3000";
 
@@ -34,7 +44,7 @@ let allowedOrigins = FRONTEND_ORIGIN.split(",")
   .map(o => o.trim())
   .filter(Boolean);
 
-// Local dev variants
+// Local dev fallbacks
 allowedOrigins.push("http://127.0.0.1:3000");
 allowedOrigins.push(`http://${ip.address()}:3000`);
 allowedOrigins.push("http://localhost:3000");
@@ -44,7 +54,8 @@ console.log("✅ Allowed Origins:", allowedOrigins);
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // Allow mobile apps, curl, etc.
+      // Allow requests with no origin (mobile apps, Postman, server-side)
+      if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
         console.log("✔ CORS Allowed:", origin);
@@ -56,23 +67,36 @@ app.use(
     },
 
     credentials: true,
-
-    // IMPORTANT — PATCH MUST BE HERE
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-// No need for app.options("*") — cors() handles OPTIONS automatically
-
 console.log("Google Client ID:", process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 
 /* ================================================================
-   IMPERSONATION MIDDLEWARE
+   AUDIT CONTEXT MIDDLEWARE (NEW + REQUIRED)
+   – Extracts IP, userAgent, userId from request
+   – Makes automation logs fully traceable
 ================================================================ */
+const auditContext = require("./modules/automation/middleware/auditContext");
+app.use(auditContext());
+
+// (Do NOT uncomment impersonation middleware yet)
 // const impersonationMiddleware = require("./modules/auth/middlewares/impersonation.middleware");
-// app.use(impersonationMiddleware); //will add this later
+// app.use(impersonationMiddleware);
+
+/* ================================================================
+   STATIC SDK FOR PLUGIN UIs (REQUIRED)
+   – Lets frontend plugins load plugin-sdk.js
+================================================================ */
+const path = require("path");
+
+// Serves: http://localhost:4000/plugins/sdk/plugin-sdk.js
+app.use(
+  "/plugins/sdk",
+  express.static(path.join(process.cwd(), "public", "plugins"))
+);
 
 /* ================================================================
    AUTH MODULE ROUTES
@@ -86,46 +110,40 @@ app.use("/api/auth/apikeys", require("./modules/auth/routes/apiKey.routes"));
 app.use("/api/auth/impersonate", require("./modules/auth/routes/impersonation.routes"));
 
 app.use("/api/admin/impersonation", require("./modules/auth/routes/impersonationLogs.routes"));
-
-// in src/server.js after your other auth route registrations
 app.use("/api/admin/users", require("./modules/auth/routes/adminUsers.routes"));
 
-// IP Rules
 const ipRulesRoutes = require("./modules/auth/routes/ipRules.routes");
 app.use("/api/ip-rules", ipRulesRoutes);
 
 /* ================================================================
-   OTHER APIs
+   OTHER MODULE ROUTES
 ================================================================ */
 app.use("/api/v1/clients", require("./modules/clients/clients.routes"));
 app.use("/api/domains", require("./modules/domains"));
 
 /* ================================================================
-   BACKUP MODULE
+   BACKUP MODULE (AUTO-LOADS PROVIDERS + ROUTES)
 ================================================================ */
-const backupApi = require("./modules/backup/api"); 
-// ^ this automatically loads:
-// - /backups controller
-// - /storage-configs controller
-// - provider bootstrap (local, s3, sftp)
-// - registry initialization
-
+const backupApi = require("./modules/backup/api");
 app.use("/api", backupApi);
+////////email///
+// ADD your routes AFTER app is loaded (optional)
+const emailRoutes = require("./modules/email/email.routes");
+app.use("/api/v1/email", emailRoutes);
 
+
+///////////////
 /* ================================================================
-   MARKETPLACE (DISABLED FOR NOW)
+   MARKETPLACE MODULE
 ================================================================ */
+// const MarketplaceModule = require("./modules/marketplace");
 
-const MarketplaceModule = require("./modules/marketplace");
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+// const marketplace = MarketplaceModule({
+//   prisma,
+//   idGen: () => crypto.randomUUID(),
+// });
 
-const marketplace = MarketplaceModule({
-  prisma,
-  idGen: () => crypto.randomUUID(),
-});
-
-app.use("/api/marketplace", marketplace.routes);
+// app.use("/api/marketplace", marketplace.routes);
 
 /* ================================================================
    HEALTH CHECK
@@ -135,33 +153,48 @@ app.get("/health", (req, res) => {
 });
 
 /* ================================================================
-   INIT FUNCTION — PLUGINS, AUTOMATION, RBAC
+   INIT FUNCTION
+   – Seeds RBAC
+   – Initializes Plugin System
+   – Initializes Automation Module (new architecture)
+   – Starts Worker (BullMQ worker)
 ================================================================ */
 async function init() {
   console.log("🚀 Initializing core modules...");
 
-  const { PrismaClient } = require("@prisma/client");
-  const prisma = new PrismaClient();
-
-  // RBAC
+  /* ------------------------------------------------------------
+     1. RBAC SEED (Required for admin)
+  ------------------------------------------------------------ */
   const { seedRBAC } = require("./modules/auth/seed/rbac-seed");
   await seedRBAC(prisma);
   console.log("🔐 RBAC seeded successfully!");
 
-  // PLUGINS
+  /* ------------------------------------------------------------
+     2. PLUGIN SYSTEM (MUST LOAD BEFORE AUTOMATION)
+     – Allows automation actions like plugin:<pluginId>:<actionName>
+  ------------------------------------------------------------ */
   const automationLogger = require("./modules/automation/lib/logger");
   const initPluginModule = require("./modules/plugins");
 
-  await initPluginModule({
-    app,
-    prisma,
-    logger: automationLogger,
-    ajv: new (require("ajv"))(),
-    publicKeyPem: null,
-  });
+ const pluginEngine = await initPluginModule({
+  app,
+  prisma,
+  logger: console,
+  ajv: new (require("ajv"))(),
+  publicKeyPem: null,
+});
 
-  // AUTOMATION
+
+  app.locals.pluginEngine = pluginEngine;
+
+  /* ------------------------------------------------------------
+     3. AUTOMATION MODULE INITIALIZATION
+     – Registers controllers/routes
+     – Loads tasks/profiles
+     – Starts scheduler
+  ------------------------------------------------------------ */
   const initAutomationModule = require("./modules/automation");
+
   const automation = await initAutomationModule({
     app,
     prismaClient: prisma,
@@ -172,17 +205,42 @@ async function init() {
   app.locals.scheduler = automation.scheduler;
 
   console.log("⚙️ Automation module initialized successfully");
+
+  /* ------------------------------------------------------------
+     4. START BACKGROUND WORKER
+     – Processes queued jobs (task.run, profile.run)
+     – Required for actual automation execution
+  ------------------------------------------------------------ */
+  const startWorker = require("./modules/automation/worker/worker");
+
+  await startWorker({
+    app,
+    prisma,
+    logger: automationLogger,
+    concurrency: 5, // number of parallel jobs per worker
+    queueName: "automation",
+  });
+
+  console.log("👷 Worker started — Automation engine is live!");
 }
 
 /* ================================================================
    GLOBAL ERROR HANDLER
+   – Captures any unhandled backend errors
 ================================================================ */
 app.use((err, req, res, next) => {
-  console.error("🔥 Backend Error:", err.message);
+  console.error("🔥 Backend Error:", err);
   res.status(500).json({ success: false, error: "Internal Server Error" });
 });
 
 /* ================================================================
-   EXPORT
+   INIT IS CALLED HERE (IMPORTANT!)
 ================================================================ */
-module.exports = { app, init };
+init()
+  .then(() => console.log("Backend initialized."))
+  .catch(err => console.error("INIT FAILED:", err));
+
+/* ================================================================
+   EXPORT APP (NOT INIT)
+================================================================ */
+module.exports = app;

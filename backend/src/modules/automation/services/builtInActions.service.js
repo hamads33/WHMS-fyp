@@ -1,4 +1,3 @@
-// src/modules/automation/services/builtInActions.service.js
 const fetch = require('node-fetch'); // you may replace with undici/axios if needed
 
 class BuiltInActions {

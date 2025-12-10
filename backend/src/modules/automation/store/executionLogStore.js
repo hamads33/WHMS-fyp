@@ -1,4 +1,3 @@
-// src/modules/automation/store/executionLogStore.js
 const { assertNumber } = require('../lib/guards');
 
 class ExecutionLogStore {

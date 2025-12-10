@@ -277,17 +277,41 @@ model EmailToken {
 /////////////////////////////////////////////////////////
 // Using the richer AuditLog shape from auth module, keeping compatibility
 model AuditLog {
-  id        String   @id @default(uuid())
-  user      User?    @relation(fields: [userId], references: [id])
-  userId    String?
+  id        Int      @id @default(autoincrement())
+
+  // High-level source of the log (system, automation, auth, billing, plugin, etc.)
+  source    String
+
+  // Event type (profile.complete, task.failed, user.login, etc.)
   action    String
-  entity    String?
-  entityId  String?
+
+  // Who triggered the action (system, worker, user:123, plugin:xyz)
+  actor     String
+
+  // INFO | WARN | ERROR
+  level     String    @default("INFO")
+
+  // Structured metadata (JSON)
+  meta      Json?
+
+  // Auth context
+  userId    String?
   ip        String?
   userAgent String?
+
+  // Optional entity references
+  entity    String?
+  entityId  String?
+
+  // Optional additional data
   data      Json?
+
   createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
 }
+
+
 
 /////////////////////////////////////////////////////////
 // WEBHOOKS
@@ -543,13 +567,16 @@ model Plugin {
   name        String
   version     String
   folder      String
-  enabled     Boolean  @default(true)
-  installedAt DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  type        String?   @default("ui")     // ui, action, wasm, provisioning, etc
+  enabled     Boolean   @default(true)
+  installedAt DateTime  @default(now())
+  configSchema Json?    // UI config auto-generator
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   settings PluginSetting[]
 }
+
 
 model PluginSetting {
   id        Int      @id @default(autoincrement())
@@ -562,52 +589,101 @@ model PluginSetting {
   plugin Plugin @relation(fields: [pluginId], references: [id])
 
   @@index([pluginId])
+
+  // REQUIRED for settings upsert and plugin config API
+  @@unique([pluginId, key])
 }
 
-/////////////////////////////////////////
-// AUTOMATION
-/////////////////////////////////////////
+
+////////////////////////////////////////////////////////////
+/// ENUMS
+////////////////////////////////////////////////////////////
+
+/// Unified status enum for AutomationRun
+enum AutomationRunStatus {
+  pending
+  running
+  success
+  failed
+}
+
+////////////////////////////////////////////////////////////
+/// AUDIT LOG (OPTIONAL BUT HIGHLY RECOMMENDED)
+/// Used by audit.service.js
+////////////////////////////////////////////////////////////
+
+
+
+////////////////////////////////////////////////////////////
+/// AUTOMATION MODELS
+////////////////////////////////////////////////////////////
+
+/// A scheduled automation profile (cron job)
 model AutomationProfile {
-  id          Int              @id @default(autoincrement())
+  id          Int               @id @default(autoincrement())
   name        String
   description String?
   cron        String
-  enabled     Boolean          @default(true)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  enabled     Boolean           @default(true)
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
   tasks       AutomationTask[]
   runs        AutomationRun[]
+
+  @@unique([name])
+  @@index([enabled])
+  @@index([cron])
 }
+
+////////////////////////////////////////////////////////////
+/// Individual automation task inside a profile
+////////////////////////////////////////////////////////////
 
 model AutomationTask {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   profileId  Int
+
   actionType String
   actionMeta Json?
-  order      Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  order      Int       @default(0)
 
-  profile AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  runs    AutomationRun[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  profile    AutomationProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  runs       AutomationRun[]
+
+  @@index([profileId])
+  @@index([order])
 }
 
+////////////////////////////////////////////////////////////
+/// Execution record for either an entire profile run
+/// or an individual task run inside a profile
+////////////////////////////////////////////////////////////
+
 model AutomationRun {
-  id           Int       @id @default(autoincrement())
+  id           Int                   @id @default(autoincrement())
   profileId    Int
-  taskId       Int?
-  status       String
+  taskId       Int?                  // null = profile-level run
+
+  status       AutomationRunStatus
   result       Json?
   errorMessage String?
+
   startedAt    DateTime?
   finishedAt   DateTime?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime             @default(now())
 
-  profile AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  task    AutomationTask?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  profile      AutomationProfile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  task         AutomationTask?       @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([profileId])
   @@index([taskId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 /////////////////////////////////////////

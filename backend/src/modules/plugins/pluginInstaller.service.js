@@ -1,195 +1,218 @@
 // src/modules/plugins/pluginInstaller.service.js
-const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
+const fs = require("fs");
+const path = require("path");
+const AdmZip = require("adm-zip");
+
+const ManifestValidator = require("./manifestValidator.service");
+const MetadataRegistry = require("./metadataRegistry.service");
+const BuildLogStore = require("../marketplace/stores/buildLogStore");
 
 function ensureDirSync(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
+function removeDirSync(p) {
+  if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+}
+function resolvePluginDest(pluginId, base) {
+  return path.join(base || path.join(process.cwd(), "plugins", "actions"), String(pluginId));
+}
 
-/**
- * PluginInstallerService
- *
- * Responsibilities:
- * - Extract a provided ZIP archive (archivePath) into the plugin actions folder
- * - Or move an already-extracted folder into the plugin actions folder
- * - Validate basic manifest.json presence
- *
- * NOTE: This service is intentionally simple and synchronous where possible.
- * It expects the calling usecase to run it in an async flow (e.g. worker).
- */
 const PluginInstallerService = {
   /**
-   * Install from a zip archive path.
-   * @param {Object} opts
-   * @param {String} opts.archivePath - full path to .zip file
-   * @param {String} opts.productId
-   * @param {String} opts.version
-   * @param {String} [opts.destBase] - optional base path override (default: src/modules/plugins/actions)
-   * @returns {Promise<{installedPath, manifest}>}
+   * Install plugin from uploaded ZIP
    */
-  installFromArchive: async function ({ archivePath, productId, version, destBase } = {}) {
-    if (!archivePath) throw new Error("installFromArchive: archivePath is required");
-    if (!productId) throw new Error("installFromArchive: productId is required");
-    if (!version) throw new Error("installFromArchive: version is required");
+  async installFromArchive({ archivePath, productId, version, submissionId, destBase } = {}) {
+    if (!archivePath) throw new Error("archivePath is required");
+    if (!productId) throw new Error("productId is required");
 
-    const base = destBase || path.join(__dirname, 'actions');
-    const dest = path.join(base, String(productId), String(version));
+    const base = destBase || path.join(process.cwd(), "plugins", "actions");
+    const dest = resolvePluginDest(productId, base);
 
-    ensureDirSync(dest);
+    await BuildLogStore.log({
+      submissionId,
+      productId,
+      versionId: version,
+      level: "info",
+      step: "extract",
+      message: `Extracting plugin archive to ${dest}`
+    });
 
-    // Try to use adm-zip for extraction (fast). If not installed, give clear error.
-    let AdmZip;
-    try {
-      AdmZip = require('adm-zip');
-    } catch (e) {
-      throw new Error(
-        "PluginInstallerService: please install dependency `adm-zip` (npm i adm-zip) or implement an alternative extractor."
-      );
+    if (process.env.NODE_ENV === "production") {
+      removeDirSync(dest);
+      ensureDirSync(dest);
+    } else {
+      ensureDirSync(dest);
     }
 
     try {
       const zip = new AdmZip(archivePath);
       zip.extractAllTo(dest, true);
     } catch (err) {
-      throw new Error("PluginInstallerService: extraction failed: " + err.message);
+      await BuildLogStore.log({ submissionId, productId, level: "error", step: "extract", message: err.message });
+      throw new Error("ZIP extraction failed: " + err.message);
     }
 
-    // Basic validation — manifest.json must exist at root of extracted folder
-    const manifestPath = path.join(dest, 'manifest.json');
-    if (!fs.existsSync(manifestPath)) {
-      // try to discover manifest if zip had a top-level folder
-      const entries = fs.readdirSync(dest);
-      if (entries.length === 1) {
-        const candidate = path.join(dest, entries[0], 'manifest.json');
-        if (fs.existsSync(candidate)) {
-          // move files up one level
-          const tmpDir = path.join(base, `${productId}.${version}.tmp`);
-          ensureDirSync(tmpDir);
-          // move folder contents to dest root
-          const sourceDir = path.join(dest, entries[0]);
-          // Move recursively
-          const moveRec = (src, dst) => {
-            ensureDirSync(dst);
-            for (const name of fs.readdirSync(src)) {
-              const s = path.join(src, name);
-              const d = path.join(dst, name);
-              fs.renameSync(s, d);
-            }
-          };
-          moveRec(sourceDir, dest);
-          // cleanup empty folder
-          try { fs.rmdirSync(sourceDir); } catch (e) {}
-        }
-      }
+    const manifestPath = await detectManifest(dest);
+    if (!manifestPath) {
+      await BuildLogStore.log({ submissionId, productId, level: "error", step: "manifest", message: "manifest.json missing" });
+      throw new Error("manifest.json missing in plugin");
     }
 
-    if (!fs.existsSync(manifestPath)) {
-      throw new Error("PluginInstallerService: manifest.json not found after extraction");
-    }
+    const manifestJson = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-
-    return { installedPath: dest, manifest };
-  },
-
-  /**
-   * Install from an already-extracted folder (move or copy)
-   * @param {Object} opts
-   * @param {String} opts.extractedPath - full path to extracted plugin folder
-   * @param {String} opts.productId
-   * @param {String} opts.version
-   * @param {String} [opts.destBase]
-   * @returns {Promise<{installedPath, manifest}>}
-   */
-  installFromFolder: async function ({ extractedPath, productId, version, destBase } = {}) {
-    if (!extractedPath) throw new Error("installFromFolder: extractedPath is required");
-    if (!productId) throw new Error("installFromFolder: productId is required");
-    if (!version) throw new Error("installFromFolder: version is required");
-
-    const base = destBase || path.join(__dirname, 'actions');
-    const dest = path.join(base, String(productId), String(version));
-
-    // create destination and copy/move contents
-    ensureDirSync(dest);
-
-    // If extractedPath is same as dest, just validate
-    if (path.resolve(extractedPath) === path.resolve(dest)) {
-      const manifestPath = path.join(dest, 'manifest.json');
-      if (!fs.existsSync(manifestPath)) throw new Error("installFromFolder: manifest.json missing in destination");
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-      return { installedPath: dest, manifest };
-    }
-
-    // Try to move by renaming (cheap), fallback to recursive copy
-    try {
-      // attempt rename into parent dest folder (may fail across devices)
-      const tempParent = path.dirname(dest);
-      ensureDirSync(tempParent);
-      // If extractedPath contains a top-level folder, move that folder contents
-      const entries = fs.readdirSync(extractedPath);
-      if (entries.length === 1) {
-        const inner = path.join(extractedPath, entries[0]);
-        try {
-          fs.renameSync(inner, dest);
-        } catch (e) {
-          // fallback copy
-          copyRecursiveSync(inner, dest);
-        }
-      } else {
-        try {
-          fs.renameSync(extractedPath, dest);
-        } catch (e) {
-          copyRecursiveSync(extractedPath, dest);
-        }
-      }
-    } catch (err) {
-      // fallback recursive copy function
-      copyRecursiveSync(extractedPath, dest);
-    }
-
-    function copyRecursiveSync(src, destPath) {
-      ensureDirSync(destPath);
-      const entries = fs.readdirSync(src, { withFileTypes: true });
-      for (const entry of entries) {
-        const srcPath = path.join(src, entry.name);
-        const dstPath = path.join(destPath, entry.name);
-        if (entry.isDirectory()) copyRecursiveSync(srcPath, dstPath);
-        else fs.copyFileSync(srcPath, dstPath);
-      }
-    }
-
-    const manifestPath = path.join(dest, 'manifest.json');
-    if (!fs.existsSync(manifestPath)) {
-      throw new Error("PluginInstallerService: manifest.json missing after installFromFolder");
-    }
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    return { installedPath: dest, manifest };
-  },
-
-  /**
-   * Optional helper: run a shell command inside the plugin folder (e.g., for custom install steps)
-   * returns { code, stdout, stderr }
-   */
-  runCommandInFolder: function (folder, cmd, args = [], opts = {}) {
-    return new Promise((resolve, reject) => {
-      const child = spawn(cmd, args, {
-        cwd: folder,
-        shell: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: Object.assign({}, process.env, opts.env || {}),
+    const validation = ManifestValidator.validate(manifestJson);
+    if (!validation.valid) {
+      await BuildLogStore.log({
+        submissionId,
+        productId,
+        level: "error",
+        step: "validate",
+        message: "Manifest invalid",
+        meta: validation.errors
       });
+      throw new Error("Manifest validation failed");
+    }
 
-      let stdout = '';
-      let stderr = '';
+    await BuildLogStore.log({
+      submissionId,
+      productId,
+      level: "info",
+      step: "validate",
+      message: "Manifest validated successfully"
+    });
 
-      child.stdout.on('data', d => (stdout += d.toString()));
-      child.stderr.on('data', d => (stderr += d.toString()));
+    // register lightweight metadata (useful for marketplace UI)
+    try {
+      MetadataRegistry.register(productId, manifestJson);
+    } catch (e) {
+      await BuildLogStore.log({ submissionId, productId, level: "warn", step: "metadata", message: "metadata register failed: " + (e.message || e) });
+    }
 
-      child.on('error', (err) => reject(err));
-      child.on('close', (code) => resolve({ code, stdout, stderr }));
+    // CRITICAL: reload the shared engine (do NOT instantiate a new PluginLoader)
+    try {
+      const engine = global.__app?.locals?.pluginEngine || (global.app && global.app.locals && global.app.locals.pluginEngine);
+      if (!engine) {
+        await BuildLogStore.log({ submissionId, productId, level: "warn", step: "engine", message: "plugin engine not available to reload" });
+      } else {
+        if (typeof engine.reload === "function") {
+          await engine.reload();
+        } else if (engine.loader && typeof engine.loader.loadAll === "function") {
+          const plugins = await engine.loader.loadAll();
+          engine.plugins = plugins;
+        }
+      }
+      await BuildLogStore.log({ submissionId, productId, level: "info", step: "engine", message: "Plugin engine reload attempted" });
+    } catch (e) {
+      await BuildLogStore.log({ submissionId, productId, level: "error", step: "engine", message: "engine reload failed: " + (e.message || e) });
+    }
+
+    return { manifest: manifestJson, installedPath: dest };
+  },
+
+  /**
+   * Install plugin from a folder (manual developer installation)
+   */
+  async installFromFolder({ folderPath, productId, version, destBase } = {}) {
+    if (!folderPath) throw new Error("folderPath is required");
+    if (!productId) throw new Error("productId is required");
+
+    const base = destBase || path.join(process.cwd(), "plugins", "actions");
+    const dest = resolvePluginDest(productId, base);
+
+    if (process.env.NODE_ENV === "production") {
+      removeDirSync(dest);
+      ensureDirSync(dest);
+    } else {
+      ensureDirSync(dest);
+    }
+
+    // copy folder recursively
+    copyRecursive(folderPath, dest);
+
+    const manifestPath = path.join(dest, "manifest.json");
+    if (!fs.existsSync(manifestPath)) {
+      throw new Error("installFromFolder: manifest.json missing");
+    }
+
+    const manifestJson = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+
+    const validation = ManifestValidator.validate(manifestJson);
+    if (!validation.valid) {
+      throw new Error("installFromFolder: Manifest validation failed: " + JSON.stringify(validation.errors));
+    }
+
+    MetadataRegistry.register(productId, manifestJson);
+
+    // reload shared engine
+    try {
+      const engine = global.__app?.locals?.pluginEngine || (global.app && global.app.locals && global.app.locals.pluginEngine);
+      if (!engine) {
+        // warn and continue
+      } else {
+        if (typeof engine.reload === "function") {
+          await engine.reload();
+        } else if (engine.loader && typeof engine.loader.loadAll === "function") {
+          const plugins = await engine.loader.loadAll();
+          engine.plugins = plugins;
+        }
+      }
+    } catch (e) {
+      // not fatal
+    }
+
+    return {
+      ok: true,
+      installedPath: dest,
+      manifest: manifestJson
+    };
+  },
+
+  runCommand(folder, cmd, args = []) {
+    return new Promise((resolve) => {
+      const child = require("child_process").spawn(cmd, args, { cwd: folder, shell: true });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", d => (stdout += d.toString()));
+      child.stderr.on("data", d => (stderr += d.toString()));
+      child.on("close", code => resolve({ code, stdout, stderr }));
     });
   }
 };
+
+/* --------------------------
+   Manifest detection + helpers
+   -------------------------- */
+async function detectManifest(dest) {
+  const direct = path.join(dest, "manifest.json");
+  if (fs.existsSync(direct)) return direct;
+
+  const entries = fs.readdirSync(dest);
+  if (entries.length === 1 && fs.lstatSync(path.join(dest, entries[0])).isDirectory()) {
+    const nestedFolder = path.join(dest, entries[0]);
+    const nestedManifest = path.join(nestedFolder, "manifest.json");
+    if (fs.existsSync(nestedManifest)) {
+      // move contents up
+      for (const f of fs.readdirSync(nestedFolder)) {
+        fs.renameSync(path.join(nestedFolder, f), path.join(dest, f));
+      }
+      fs.rmSync(nestedFolder, { recursive: true, force: true });
+      return path.join(dest, "manifest.json");
+    }
+  }
+  return null;
+}
+
+function copyRecursive(src, dst) {
+  if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true });
+  for (const item of fs.readdirSync(src)) {
+    const s = path.join(src, item);
+    const d = path.join(dst, item);
+    if (fs.lstatSync(s).isDirectory()) {
+      copyRecursive(s, d);
+    } else {
+      fs.copyFileSync(s, d);
+    }
+  }
+}
 
 module.exports = PluginInstallerService;

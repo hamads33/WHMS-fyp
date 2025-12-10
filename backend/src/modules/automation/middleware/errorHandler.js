@@ -1,4 +1,3 @@
-// src/modules/automation/middleware/errorHandler.js
 const crypto = require("crypto");
 
 function automationErrorHandler(logger) {

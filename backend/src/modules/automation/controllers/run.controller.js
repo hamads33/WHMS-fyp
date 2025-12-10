@@ -1,5 +1,3 @@
-// src/modules/automation/controllers/run.controller.js
-
 class RunController {
   constructor({ profileStore, executor, executionLogStore, audit, scheduler }) {
     this.profileStore = profileStore;
@@ -9,42 +7,22 @@ class RunController {
     this.scheduler = scheduler;
   }
 
-  async runNow(req, res, next) {
+  async runNow(req, res) {
+    const profileId = Number(req.params.profileId);
+
     try {
-      const profileId = Number(req.params.profileId);
+      const run = await this.scheduler.runProfileNow(profileId);
 
-      const profile = await this.profileStore.getById(profileId);
-      if (!profile) {
-        const error = new Error("Profile not found");
-        error.status = 404;
-        error.code = "profile_not_found";
-        throw error;
-      }
+      // AUTOMATION AUDIT
+      await this.audit.automation(
+        "profile.manual_run",
+        { profileId, runId: run.id },
+        req.auditContext.userId
+      );
 
-      const runRecord = await this.executionLogStore.createPending(profileId, null);
-
-      await this.audit.log("automation", "profile.run", req.user?.username || "system", {
-        profileId, runId: runRecord.id
-      });
-
-      (async () => {
-        try {
-          await this.scheduler.runProfileNow(profileId, runRecord.id);
-
-          await this.audit.log("automation", "profile.run.complete", "system", {
-            runId: runRecord.id
-          });
-        } catch (err) {
-          await this.audit.log("automation", "profile.run.failed", "system", {
-            runId: runRecord.id,
-            error: err.message
-          });
-        }
-      })();
-
-      return res.success({ runId: runRecord.id });
+      return res.success(run);
     } catch (err) {
-      next(err);
+      return res.fail(err.message || "Run failed", 400);
     }
   }
 }

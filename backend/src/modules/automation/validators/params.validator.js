@@ -1,5 +1,3 @@
-// src/modules/automation/validators/params.validator.js
-
 module.exports = {
   idParamSchema: {
     type: "object",

@@ -1,25 +1,18 @@
-// src/modules/automation/lib/errors.js
-class AutomationError extends Error {
-  constructor(message, { status = 500, code = 'automation_error', meta = null } = {}) {
+class NotFoundError extends Error {
+  constructor(message) {
     super(message);
-    this.name = this.constructor.name;
-    this.status = status;
-    this.code = code;
+    this.name = 'NotFoundError';
+    this.status = 404;
+  }
+}
+
+class ValidationError extends Error {
+  constructor(message, meta) {
+    super(message);
+    this.name = 'ValidationError';
+    this.status = 400;
     this.meta = meta;
-    Error.captureStackTrace(this, this.constructor);
   }
 }
 
-class NotFoundError extends AutomationError {
-  constructor(message = 'Not found', meta = null) {
-    super(message, { status: 404, code: 'not_found', meta });
-  }
-}
-
-class ValidationError extends AutomationError {
-  constructor(message = 'Validation failed', meta = null) {
-    super(message, { status: 400, code: 'validation_error', meta });
-  }
-}
-
-module.exports = { AutomationError, NotFoundError, ValidationError };
+module.exports = { NotFoundError, ValidationError };

@@ -1,5 +1,3 @@
-// src/modules/automation/middleware/responseFormatter.js
-
 function responseFormatter(req, res, next) {
   res.success = (data = null, meta = {}) => {
     return res.status(res.statusCode && res.statusCode !== 200 ? res.statusCode : 200).json({

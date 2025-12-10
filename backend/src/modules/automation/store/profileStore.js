@@ -1,4 +1,3 @@
-// src/modules/automation/store/profileStore.js
 const { NotFoundError, ValidationError } = require('../lib/errors');
 const { assertNumber } = require('../lib/guards');
 

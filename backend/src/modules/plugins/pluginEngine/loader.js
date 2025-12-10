@@ -1,23 +1,7 @@
-// /**
-//  * PluginLoader (Regenerated & Fixed)
-//  *
-//  * Responsibilities:
-//  *  - Read plugins/*/manifest.json
-//  *  - Validate manifest with AJV + schema (if available)
-//  *  - Register plugin metadata
-//  *  - Register plugin actions (manifest.actions)
-//  *  - KEEP actions after registry.setAll() (CRITICAL FIX)
-//  *
-//  * Notes:
-//  *  - index.js is optional (UI only plugins supported)
-//  *  - Action files must exist, or they are skipped safely
-//  *  - Will never crash plugin module
-//  */
-
+// src/modules/plugins/pluginEngine/loader.js
 const fs = require("fs");
 const path = require("path");
 const registryFactory = require("./registry");
-
 
 class PluginLoader {
   constructor({ pluginsDir, logger, ajv, registry, publicKeyPem } = {}) {
@@ -27,7 +11,6 @@ class PluginLoader {
     this.registry = registry || registryFactory({ logger: this.logger });
     this.publicKeyPem = publicKeyPem;
 
-    // load manifest schema if exists
     try {
       this.manifestSchema = require("../validators/manifest.schema");
     } catch (err) {
@@ -35,12 +18,8 @@ class PluginLoader {
     }
   }
 
-  /**
-   * Load ALL plugins
-   */
   async loadAll() {
     const plugins = {};
-
     if (!fs.existsSync(this.pluginsDir)) {
       this.logger.info(`PluginLoader: no plugins directory at ${this.pluginsDir}`);
       if (this.registry.clear) this.registry.clear();
@@ -63,7 +42,6 @@ class PluginLoader {
           continue;
         }
 
-        // read manifest.json
         let manifest;
         try {
           manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -72,7 +50,6 @@ class PluginLoader {
           continue;
         }
 
-        // validate manifest
         if (this.ajv && this.manifestSchema) {
           const isValid = this.ajv.validate(this.manifestSchema, manifest);
           if (!isValid) {
@@ -91,7 +68,6 @@ class PluginLoader {
           continue;
         }
 
-        // plugin metadata
         const meta = {
           id,
           name: manifest.name || id,
@@ -109,73 +85,53 @@ class PluginLoader {
         if (this.registry.register) this.registry.register(id, meta);
         else this.registry.registerPlugin(id, meta);
 
-        // register declared actions
+        // register declared actions (existing behavior)
         this._registerActionsForPlugin(id, base, manifest.actions);
-        // ---------------------------------------------------------------
-// WASM ACTIONS SUPPORT (Non-breaking, additive)
-// ---------------------------------------------------------------
-if (manifest.wasm && typeof manifest.wasm === "object") {
-  for (const [actionName, def] of Object.entries(manifest.wasm)) {
-    if (!def.file) {
-      this.logger.warn(`PluginLoader: wasm action missing file for ${id}:${actionName}`);
-      continue;
-    }
 
-    const wasmFile = def.file;
-    const exportName = def.export || "run";
-    const fullWasmPath = path.join(base, wasmFile);
+        // -------------------------
+        // Hook support
+        // -------------------------
+        // manifest.hooks -> { "event.name": { "action": "someAction" } }
+        // Allow two forms:
+        // - action: "someActionName" (must match manifest.actions key)
+        // - action: "hooks/onEvent.js" (file path relative to plugin root) -> loader will register a synthetic action name for it
+        if (manifest.hooks && typeof manifest.hooks === "object") {
+          for (const [eventName, def] of Object.entries(manifest.hooks)) {
+            if (!def || !def.action) {
+              this.logger.warn(`PluginLoader: invalid hook definition for ${id}:${eventName}`);
+              continue;
+            }
 
-    if (!fs.existsSync(fullWasmPath)) {
-      this.logger.warn(
-        `PluginLoader: wasm file not found for ${id}:${actionName} → ${fullWasmPath}`
-      );
-      continue;
-    }
+            const actionRef = def.action;
+            if (actionRef.includes("/") || actionRef.endsWith(".js")) {
+              // file path → register a generated action name
+              const generatedActionName = `__hook__${eventName.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 
-    this.registry.registerAction(id, actionName, {
-      file: wasmFile,
-      export: exportName,
-      runtime: "wasm",
-      description: def.description || null,
-      meta: def.meta || null
-    });
+              // register as an action so pluginEngine.runAction can execute it
+              this.registry.registerAction(id, generatedActionName, {
+                file: actionRef,
+                fnName: def.fnName || "run",
+                description: def.description || `(hook for ${eventName})`,
+                meta: def.meta || null,
+                runtime: "js"
+              });
 
-    this.logger.info(`PluginLoader: registered WASM action ${id}::${actionName}`);
-  }
-}
+              // register hook mapping to the generated action name
+              this.registry.registerHook(id, eventName, generatedActionName);
+              this.logger.info(`PluginLoader: registered hook (file) ${id} -> ${eventName} -> ${generatedActionName}`);
+            } else {
+              // treat as action name (must exist in manifest.actions or will be resolved at runtime)
+              const actionName = actionRef;
+              this.registry.registerHook(id, eventName, actionName);
+              this.logger.info(`PluginLoader: registered hook ${id} -> ${eventName} -> ${actionName}`);
+            }
+          }
+        }
 
-// ---------------------------------------------------------------
-// Allow WASM inside manifest.actions using runtime: "wasm"
-// ---------------------------------------------------------------
-if (manifest.actions && typeof manifest.actions === "object") {
-  for (const [actionName, def] of Object.entries(manifest.actions)) {
-    if (def && def.runtime === "wasm") {
-      if (!def.file) {
-        this.logger.warn(`PluginLoader: wasm action missing file for ${id}:${actionName}`);
-        continue;
-      }
-
-      const fullWasmPath = path.join(base, def.file);
-      if (!fs.existsSync(fullWasmPath)) {
-        this.logger.warn(
-          `PluginLoader: wasm action file not found for ${id}:${actionName} → ${fullWasmPath}`
-        );
-        continue;
-      }
-
-      this.registry.registerAction(id, actionName, {
-        file: def.file,
-        export: def.export || def.fnName || "run",
-        runtime: "wasm",
-        description: def.description || null,
-        meta: def.meta || null
-      });
-
-      this.logger.info(`PluginLoader: registered WASM action (via manifest.actions) ${id}::${actionName}`);
-    }
-  }
-}
-
+        // -------------------------
+        // UI menu metadata: keep manifest.ui as-is
+        // -------------------------
+        // registry already stores manifest in plugin meta where admin UI can read it
 
         this.logger.info(`PluginLoader: loaded plugin ${id} from ${base}`);
       } catch (err) {
@@ -183,24 +139,21 @@ if (manifest.actions && typeof manifest.actions === "object") {
       }
     }
 
-    // critical fix: registry.setAll wipes actions, so restore afterwards
+    // restore actions if registry.setAll cleared them earlier (keeps prior behavior)
     this._syncRegistry(plugins);
-
     return plugins;
   }
+async reload() {
+  this.logger.info("PluginLoader: reloading plugins...");
+  return await this.loadAll();
+}
 
-  /**
-   * Register all actions from manifest
-   */
   _registerActionsForPlugin(pluginId, basePath, actions) {
     if (!actions || typeof actions !== "object") return;
 
     for (const [actionName, def] of Object.entries(actions)) {
-      let file, fnName, description, meta;
+      let file, fnName, description, meta, runtime;
 
-      // action definitions support:
-      // "ping.js"
-      // { file, fnName, description, meta }
       if (typeof def === "string") {
         file = def;
       } else if (def.file) {
@@ -208,6 +161,7 @@ if (manifest.actions && typeof manifest.actions === "object") {
         fnName = def.fnName || null;
         description = def.description || null;
         meta = def.meta || null;
+        runtime = def.runtime || (file && file.endsWith(".wasm") ? "wasm" : "js");
       } else {
         this.logger.warn(`PluginLoader: invalid action definition for ${pluginId}:${actionName}`);
         continue;
@@ -215,30 +169,23 @@ if (manifest.actions && typeof manifest.actions === "object") {
 
       const fullPath = path.join(basePath, file);
       if (!fs.existsSync(fullPath)) {
-        this.logger.warn(
-          `PluginLoader: action file missing for ${pluginId}:${actionName} → ${fullPath}`
-        );
+        this.logger.warn(`PluginLoader: action file missing for ${pluginId}:${actionName} → ${fullPath}`);
         continue;
       }
 
-      // register action
       this.registry.registerAction(pluginId, actionName, {
         file,
         fnName,
         description,
-        meta
+        meta,
+        runtime
       });
     }
   }
 
-  /**
-   * Sync plugin list into registry without removing actions.
-   * registry.setAll normally clears everything → we must reapply actions.
-   */
   _syncRegistry(plugins) {
     if (typeof this.registry.setAll === "function") {
       const previousActions = this._snapshotActions();
-
       this.registry.setAll(plugins); // replaces plugin list
 
       // restore actions
@@ -248,7 +195,6 @@ if (manifest.actions && typeof manifest.actions === "object") {
         }
       }
     } else {
-      // fallback: direct write into registry map if exists
       if (this.registry.plugins) {
         this.registry.plugins.clear();
         for (const [id, meta] of Object.entries(plugins)) {
@@ -258,13 +204,9 @@ if (manifest.actions && typeof manifest.actions === "object") {
     }
   }
 
-  /**
-   * Take snapshot of existing actions BEFORE registry.setAll clears them.
-   */
   _snapshotActions() {
     const out = {};
     if (!this.registry.actions) return out;
-
     for (const [pluginId, map] of this.registry.actions.entries()) {
       out[pluginId] = {};
       for (const [name, info] of map.entries()) {

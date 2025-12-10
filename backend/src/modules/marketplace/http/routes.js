@@ -1,74 +1,99 @@
-// src/modules/marketplace/http/routes.js
-const express = require("express");
-const multer = require("multer");
+// const express = require("express");
+// const multer = require("multer");
 
-// Multer instance for ZIP uploads
-const upload = multer({ dest: "uploads/marketplace" });
+// const upload = multer({ dest: "uploads/marketplace" });
 
-module.exports = function marketplaceRoutes({ controllers }) {
-  const router = express.Router();
+// // Controller loader
+// const buildControllers = require("./controllers");
 
-  /* ------------------------------------------------------
-   * FR-M1 — Browse Marketplace Plugins
-   * GET /api/marketplace/products
-   * ------------------------------------------------------ */
-  router.get("/products", controllers.browseProducts);
+// module.exports = function marketplaceRoutes(deps = {}) {
+//   const router = express.Router();
+//   const controllers = buildControllers(deps);
 
-  /* ------------------------------------------------------
-   * FR-M2 — View Product Details
-   * GET /api/marketplace/products/:productId
-   * ------------------------------------------------------ */
-  router.get("/products/:productId", controllers.getDetails);
+//   //
+//   // -------------------------
+//   // PUBLIC ROUTES
+//   // -------------------------
+//   //
 
-  /* ------------------------------------------------------
-   * FR-M11 — Add / Edit / Update Plugin Information
-   * POST /api/marketplace/products
-   * PUT  /api/marketplace/products/:productId
-   * ------------------------------------------------------ */
-  router.post("/products", controllers.createProduct);
-  router.put("/products/:productId", controllers.updateProduct);
+//   // Browse products
+//   router.get("/products", controllers.public.browseProducts);
 
-  /* ------------------------------------------------------
-   * FR-M6 — Developer submits new version (metadata only)
-   * POST /api/marketplace/products/:productId/versions
-   * ------------------------------------------------------ */
-  router.post("/products/:productId/versions", controllers.submitVersion);
+//   // Product details by slug
+//   router.get("/products/:slug", controllers.public.getProductDetails);
 
-  /* ------------------------------------------------------
-   * NEW — ZIP Upload → Extract → Register Version → Submit → Verify
-   * POST /api/marketplace/products/:productId/upload
-   * ------------------------------------------------------ */
-  router.post(
-    "/products/:productId/upload",
-    upload.single("file"),               // IMPORTANT
-    controllers.uploadVersion
-  );
+//   // Add review
+//   router.post("/products/:productId/reviews", controllers.public.addReview);
 
-  /* ------------------------------------------------------
-   * FR-M8 — Verification
-   * POST /api/marketplace/versions/:versionId/verify
-   * ------------------------------------------------------ */
-  router.post("/versions/:versionId/verify", controllers.verifyPlugin);
+//   // Version check
+//   router.get(
+//     "/products/:productId/check-updates",
+//     controllers.versionCheck
+//   );
 
-  /* ------------------------------------------------------
-   * FR-M5 — Licensing System
-   * POST /api/marketplace/purchase/:productId
-   * POST /api/marketplace/license/validate
-   * ------------------------------------------------------ */
-  router.post("/purchase/:productId", controllers.purchase);
-  router.post("/license/validate", controllers.validateLicense);
+//   //
+//   // -------------------------
+//   // PRODUCT MANAGEMENT
+//   // -------------------------
+//   //
 
-  /* ------------------------------------------------------
-   * FR-M10 — Reviews
-   * POST /api/marketplace/products/:productId/review
-   * ------------------------------------------------------ */
-  router.post("/products/:productId/review", controllers.addReview);
+//   // Create product
+//   router.post("/products", controllers.product.create);
 
-  /* ------------------------------------------------------
-   * FR-M9 — Analytics Overview
-   * GET /api/marketplace/analytics/overview
-   * ------------------------------------------------------ */
-  router.get("/analytics/overview", controllers.analytics);
+//   // Update product info
+//   router.put("/products/:productId", controllers.product.update);
 
-  return router;
-};
+//   //
+//   // -------------------------
+//   // VERSION MANAGEMENT
+//   // -------------------------
+//   //
+
+//   // // Upload plugin ZIP
+//   // router.post(
+//   //   "/products/:productId/upload",
+//   //   upload.single("file"),
+//   //   controllers.version.uploadVersion
+//   // );
+
+//   // // Submit version for review
+//   // router.post(
+//   //   "/products/:productId/versions/:versionId/submit",
+//   //   controllers.version.submitVersion
+//   // );
+
+//   // // Verify plugin (runtime verifier)
+//   // router.post(
+//   //   "/versions/:versionId/verify",
+//   //   controllers.version.verifyVersion
+//   // );
+
+//   //
+//   // -------------------------
+//   // PURCHASE + LICENSING
+//   // -------------------------
+//   //
+
+//   // // Purchase plugin
+//   // router.post(
+//   //   "/products/:productId/purchase",
+//   //   controllers.purchase.purchasePlugin
+//   // );
+
+//   // // Validate license
+//   // router.post(
+//   //   "/licenses/validate",
+//   //   controllers.purchase.validateLicense
+//   // );
+
+//   //
+//   // -------------------------
+//   // SELLER PANEL BASIC ROUTES
+//   // // -------------------------
+//   // //
+
+//   // router.get("/seller/dashboard", controllers.seller.dashboard);
+//   // router.get("/seller/payouts", controllers.seller.payouts);
+
+//   return router;
+// };

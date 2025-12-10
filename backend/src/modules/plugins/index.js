@@ -2,12 +2,14 @@
 
 const path = require("path");
 const PluginLoader = require("./pluginEngine/loader");
-const registry = require("./pluginEngine/registry");   // <-- FIXED: Singleton instance
+const registry = require("./pluginEngine/registry");
+
 const VMExecutor = require("./pluginEngine/vmExecutor");
+const WASMExecutor = require("./pluginEngine/wasmExecutor");
+
 const pluginsRoutes = require("./routes/plugins.routes");
 const pluginUIRoutes = require("./routes/pluginUI.routes");
 
-const WASMExecutor = require("./pluginEngine/wasmExecutor");
 module.exports = async function initPluginModule({
   app,
   prisma,
@@ -19,52 +21,124 @@ module.exports = async function initPluginModule({
 
   logger.info("🔌 Initializing Plugin Module...");
 
-  // Loader now uses shared registry instance
+  const pluginsDir = path.join(process.cwd(), "plugins", "actions");
+
+  // Create loader with injected dependencies
   const loader = new PluginLoader({
-    pluginsDir: path.join(process.cwd(), "plugins", "actions"),
+    pluginsDir,
     logger,
     ajv,
     registry,
     publicKeyPem
   });
 
+  // Load plugins initially
   const plugins = await loader.loadAll();
-const wasmExecutor = new WASMExecutor({ logger });
-  // Create VM executor
-  const vmExecutor = new VMExecutor({ logger });
 
-  // REST API routes
+  // Executors
+  const vmExecutor = new VMExecutor({ logger });
+  const wasmExecutor = new WASMExecutor({ logger });
+
+  // -----------------------------------------
+  // ROUTES
+  // -----------------------------------------
   const router = pluginsRoutes({
     logger,
     ajv,
     publicKeyPem,
     prisma,
     loader,
-    registry
+    registry,
+    app
   });
 
-  // mount API endpoints
   app.use("/api/plugins", router);
-
-  // mount UI routes
   app.use("/plugins/ui", pluginUIRoutes({ logger }));
 
-  // expose plugin engine to automation module
-  app.locals.pluginEngine = {
+  // -----------------------------------------
+  // ENGINE FUNCTIONS
+  // -----------------------------------------
+
+  function getAction(pluginId, actionName) {
+    return registry.getAction(pluginId, actionName);
+  }
+
+  /**
+   * Action executor with DISABLE ENFORCEMENT
+   */
+  async function runAction(pluginId, actionName, meta = {}) {
+
+    // 🔒 ENFORCE DISABLE STATE
+    const pluginMeta = registry.get(pluginId);
+    if (pluginMeta && pluginMeta.enabled === false) {
+      throw new Error(`Plugin '${pluginId}' is disabled and cannot run actions.`);
+    }
+
+    const action = registry.getAction(pluginId, actionName);
+    if (!action) {
+      throw new Error(`Plugin action not found: ${pluginId}::${actionName}`);
+    }
+
+    const pluginDir = path.join(pluginsDir, pluginId);
+
+    const isWasm =
+      action.runtime === "wasm" ||
+      action.type === "wasm" ||
+      (action.file && action.file.endsWith(".wasm"));
+
+    if (isWasm) {
+      return await wasmExecutor.run({
+        pluginId,
+        pluginDir,
+        wasmFile: action.file,
+        exportName: action.export || "run",
+        meta
+      });
+    }
+
+    return await vmExecutor.run({
+      pluginId,
+      pluginDir,
+      actionFile: action.file,
+      fnName: action.fnName || "run",
+      meta
+    });
+  }
+
+  /**
+   * Unified engine reload function:
+   * - reloads plugins via loader
+   * - updates engine.plugins reference
+   */
+  async function reload() {
+    logger.info("PluginModule: reload requested");
+    const loaded = await loader.loadAll();
+    engine.plugins = loaded;
+    logger.info(
+      `PluginModule: reload finished — ${Object.keys(loaded || {}).length} plugins loaded`
+    );
+    return loaded;
+  }
+
+  // -----------------------------------------
+  // SHARED ENGINE OBJECT
+  // -----------------------------------------
+
+  const engine = {
     loader,
     registry,
     vmExecutor,
     wasmExecutor,
-    plugins
+    plugins,
+    getAction,
+    runAction,
+    reload
   };
+
+  // expose engine to the entire app (installers, workers, etc.)
+  app.locals.pluginEngine = engine;
 
   logger.info("✅ Plugin Module Ready");
 
-  return {
-    loader,
-    registry,
-    vmExecutor,
-    wasmExecutor,
-    plugins
-  };
+  return engine;
 };

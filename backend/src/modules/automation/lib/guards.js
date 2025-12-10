@@ -1,21 +1,11 @@
-// src/modules/automation/lib/guards.js
-const AutomationError = require("./AutomationError");
-
-function assertNumber(value, name = "value") {
-  const num = Number(value);
-
-  if (!Number.isFinite(num) || !Number.isInteger(num) || num <= 0) {
-    throw new AutomationError(`${name} must be a positive integer`, { value });
-  }
-
-  return num;
+function assertNumber(v, name) {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`${name} must be a positive integer`);
+  return n;
 }
 
-function isPlainObject(obj) {
-  return obj !== null && typeof obj === "object" && !Array.isArray(obj);
+function isPlainObject(o) {
+  return o && typeof o === 'object' && !Array.isArray(o);
 }
 
-module.exports = {
-  assertNumber,
-  isPlainObject,
-};
+module.exports = { assertNumber, isPlainObject };

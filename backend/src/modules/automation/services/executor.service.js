@@ -1,69 +1,167 @@
-// src/modules/automation/services/executor.service.js
-const path = require("path");
+const BuiltInActions = require("./builtInActions.service");
 
+/**
+ * ExecutorService
+ * ------------------------------------------------------------
+ * Responsible for executing ANY automation action:
+ *   - Built-in actions (e.g., "test_action")
+ *   - Plugin actions (plugin:<pluginId>:<actionName>)
+ *   - No-op behavior for unknown action types
+ *
+ * This service is used by:
+ *   - Workers (run-profile, run-task)
+ *   - Test endpoints (POST /test-plugin-run)
+ * ------------------------------------------------------------
+ */
 class ExecutorService {
   constructor({ prisma, logger, audit, app }) {
     this.prisma = prisma;
-    this.logger = logger || console;
+    this.logger = logger;
     this.audit = audit;
-    this.app = app;   // REQUIRED for plugin engine (registry + vmExecutor)
+    this.app = app;
+
+    // Built-in system-level action handlers
+    this.builtIns = new BuiltInActions({ logger, prisma });
   }
 
+  /**
+   * run()
+   * ------------------------------------------------------------
+   * Main entry point for executing an action.
+   * Each `AutomationTask` maps to exactly 1 call of this method.
+   *
+   * @param {String} actionType  - e.g. "test_action" or "plugin:foo:doThing"
+   * @param {Object} actionMeta  - JSON metadata for the action
+   * ------------------------------------------------------------
+   */
   async run({ actionType, actionMeta }) {
-    // ------------------------------------------
-    // PLUGIN EXECUTION
-    // ------------------------------------------
-    if (typeof actionType === "string" && actionType.startsWith("plugin:")) {
+    if (!actionType) throw new Error("Invalid actionType");
+
+    // ------------------------------------------------------------
+    // 1) PLUGIN ACTION HANDLING
+    // ------------------------------------------------------------
+    // Format expected:
+    //   plugin:<pluginId>:<actionName>
+    //
+    // Example:
+    //   plugin:axios_ping:ping
+    //
+    // You can change this format later if needed.
+    // ------------------------------------------------------------
+    if (actionType.startsWith("plugin:")) {
       const parts = actionType.split(":");
 
+      // Must be at least plugin:id:action
       if (parts.length < 3) {
-        throw new Error(
-          "Invalid plugin actionType. Expected plugin:<pluginId>:<actionName>"
-        );
+        throw new Error("Invalid plugin actionType format (expected plugin:id:action)");
       }
 
+      // Extract plugin identifiers
       const pluginId = parts[1];
-      const actionName = parts.slice(2).join(":");
+      const actionName = parts.slice(2).join(":"); // supports nested actions
 
-      const pluginEngine = this.app.locals.pluginEngine;
-      if (!pluginEngine) {
-        throw new Error("Plugin engine missing (app.locals.pluginEngine)");
-      }
+      // pluginEngine injected via app.locals inside app.js init()
+      const pluginEngine = this.app?.locals?.pluginEngine;
+      if (!pluginEngine) throw new Error("Plugin engine missing (check init order)");
 
-      const { registry, vmExecutor, plugins } = pluginEngine;
-      const action = registry.getAction(pluginId, actionName);
-
+      /**
+       * The current code expects the pluginEngine API to expose:
+       *
+       *   pluginEngine.getAction(pluginId, actionName)
+       *
+       * If your plugin engine does NOT support this call yet,
+       * you can modify ExecutorService OR update pluginEngine to match it.
+       *
+       * NOTE:
+       *   We do NOT execute the returned "action" object directly.
+       *   Actual execution is always done via:
+       *       pluginEngine.runAction(...)
+       *   OR
+       *       pluginEngine.runFile(...)
+       */
+      const action = pluginEngine.getAction(pluginId, actionName);
       if (!action) {
         throw new Error(`Plugin action not registered: ${pluginId}::${actionName}`);
       }
 
-      const pluginEntry = plugins[pluginId];
-      const pluginDir = pluginEntry
-        ? pluginEntry.base
-        : path.join(process.cwd(), "plugins", "actions", pluginId);
+      let result;
 
-      const result = await vmExecutor.run({
+      /**
+       * Execution fallback chain:
+       * ------------------------------------------------
+       * 1. If pluginEngine exposes runAction() → use it
+       * 2. Else if pluginEngine exposes runFile() → use it
+       * 3. Otherwise → plugin engine is not compatible
+       * ------------------------------------------------
+       */
+      if (typeof pluginEngine.runAction === "function") {
+        result = await pluginEngine.runAction(
+          pluginId,
+          actionName,
+          actionMeta || {}
+        );
+
+      } else if (typeof pluginEngine.runFile === "function") {
+        // runFile requires action.file + optional export function name
+        result = await pluginEngine.runFile(
+          action.file,
+          action.fnName || null,
+          actionMeta || {}
+        );
+
+      } else {
+        throw new Error("Plugin engine missing runAction/runFile");
+      }
+
+      // ------------------------------------------------------------
+      // AUDIT: plugin.action.execute
+      // ------------------------------------------------------------
+      await this.audit.automation("plugin.action.execute", {
         pluginId,
-        pluginDir,
-        actionFile: action.file,
-        fnName: action.fnName || null,
-        meta: actionMeta || {}
+        actionName,
+        meta: actionMeta,
+        result,
       });
 
       return result;
     }
 
-    // ------------------------------------------
-    // BUILT-IN ACTIONS
-    // ------------------------------------------
-    return this.runBuiltin({ actionType, actionMeta });
-  }
+    // ------------------------------------------------------------
+    // 2) BUILT-IN ACTION HANDLING
+    // ------------------------------------------------------------
+    //
+    // If `actionType` directly matches a function in BuiltInActions,
+    // we treat it as a built-in automation action.
+    // ------------------------------------------------------------
+    if (typeof this.builtIns[actionType] === "function") {
+      const result = await this.builtIns[actionType](actionMeta || {});
 
-  async runBuiltin({ actionType }) {
-    this.logger.info(`Executing built-in action: ${actionType}`);
-    return { ok: true };
+      // AUDIT for built-in action execution
+      await this.audit.automation("builtin.action.execute", {
+        actionType,
+        meta: actionMeta,
+        result,
+      });
+
+      return result;
+    }
+
+    // ------------------------------------------------------------
+    // 3) UNKNOWN ACTION → NO-OP
+    // ------------------------------------------------------------
+    //
+    // Instead of throwing errors, WHMCS-like systems simply ignore
+    // unknown actions so profiles continue executing next tasks.
+    // ------------------------------------------------------------
+    this.logger.warn(`Unknown built-in actionType: ${actionType}`);
+
+    await this.audit.automation("action.noop", {
+      actionType,
+      meta: actionMeta,
+    });
+
+    return { ok: true, noOp: true };
   }
 }
 
-// IMPORTANT: export class directly
 module.exports = ExecutorService;

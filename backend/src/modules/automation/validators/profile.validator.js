@@ -1,4 +1,3 @@
-// src/modules/automation/validators/profile.validator.js
 module.exports = {
   type: 'object',
   properties: {

@@ -1,10 +1,3 @@
-// src/modules/automation/controllers/profile.controller.js
-const Ajv = require("ajv");
-const profileSchema = require("../validators/profile.validator");
-const ajv = new Ajv();
-
-const validateProfile = ajv.compile(profileSchema);
-
 class ProfileController {
   constructor({ profileStore, scheduler, logger, audit }) {
     this.profileStore = profileStore;
@@ -14,160 +7,108 @@ class ProfileController {
   }
 
   async list(req, res) {
-    const profiles = await this.profileStore.listAll();
-    return res.success(profiles);
+    const list = await this.profileStore.listAll();
+    return res.success(list);
   }
 
-  async create(req, res, next) {
+  async create(req, res) {
+    const data = req.body;
+
     try {
-      const body = req.body;
-      if (!validateProfile(body)) {
-        return res.fail("Invalid profile data", 400, "validation_error", validateProfile.errors);
-      }
+      const p = await this.profileStore.create(data);
 
-      const created = await this.profileStore.create(body);
+      if (p.enabled) this.scheduler.scheduleProfile(p);
 
-      await this.audit.log(
-        "automation",
-        "profile.create",
-        req.user?.username || "system",
-        { profileId: created.id }
-      );
-
-      if (created.enabled) this.scheduler.scheduleProfile(created);
-
-      res.status(201);
-      return res.success(created);
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  async get(req, res, next) {
-    try {
-      const id = Number(req.params.id);
-      const profile = await this.profileStore.getById(id);
-
-      if (!profile) {
-        const error = new Error("Profile not found");
-        error.status = 404;
-        error.code = "profile_not_found";
-        throw error;
-      }
-
-      return res.success(profile);
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  async update(req, res, next) {
-    try {
-      const id = Number(req.params.id);
-      const body = req.body;
-
-      if (!validateProfile(body)) {
-        return res.fail("Invalid profile data", 400, "validation_error", validateProfile.errors);
-      }
-
-      const existing = await this.profileStore.getById(id);
-      if (!existing) {
-        const error = new Error("Profile not found");
-        error.status = 404;
-        error.code = "profile_not_found";
-        throw error;
-      }
-
-      const updated = await this.profileStore.update(id, body);
-
-      await this.audit.log("automation", "profile.update", req.user?.username || "system", {
-        profileId: id
+      // SYSTEM AUDIT — because user triggered creation
+      await this.audit.system("automation.profile.create", {
+        userId: req.auditContext.userId,
+        entity: "AutomationProfile",
+        entityId: p.id,
+        ip: req.auditContext.ip,
+        userAgent: req.auditContext.userAgent,
+        data: p
       });
 
-      this.scheduler.scheduleProfile(updated);
-
-      return res.success(updated);
+      return res.success(p);
     } catch (err) {
-      next(err);
+      return res.fail(err.message || "Create failed", 400);
     }
   }
 
-  async delete(req, res, next) {
-    try {
-      const id = Number(req.params.id);
+  async get(req, res) {
+    const id = Number(req.params.id);
+    const p = await this.profileStore.getById(id);
+    if (!p) return res.fail("Not found", 404);
 
-      const existing = await this.profileStore.getById(id);
-      if (!existing) {
-        const error = new Error("Profile not found");
-        error.status = 404;
-        error.code = "profile_not_found";
-        throw error;
-      }
-
-      await this.profileStore.delete(id);
-
-      await this.audit.log("automation", "profile.delete", req.user?.username || "system", {
-        profileId: id
-      });
-
-      this.scheduler.stopProfile(id);
-
-      return res.success({ deleted: id });
-    } catch (err) {
-      next(err);
-    }
+    return res.success(p);
   }
 
-  async enable(req, res, next) {
-    try {
-      const id = Number(req.params.id);
+  async update(req, res) {
+    const id = Number(req.params.id);
+    const data = req.body;
 
-      const profile = await this.profileStore.getById(id);
-      if (!profile) {
-        const error = new Error("Profile not found");
-        error.status = 404;
-        error.code = "profile_not_found";
-        throw error;
-      }
+    const p = await this.profileStore.update(id, data);
 
-      const updated = await this.profileStore.setEnabled(id, true);
+    // Reschedule profile if modified
+    if (p.enabled) this.scheduler.scheduleProfile(p);
+    else this.scheduler.stopProfile(id);
 
-      await this.audit.log("automation", "profile.enable", req.user?.username || "system", {
-        profileId: id
-      });
+    // SYSTEM AUDIT
+    await this.audit.system("automation.profile.update", {
+      userId: req.auditContext.userId,
+      entity: "AutomationProfile",
+      entityId: id,
+      ip: req.auditContext.ip,
+      userAgent: req.auditContext.userAgent,
+      data
+    });
 
-      this.scheduler.scheduleProfile(updated);
-
-      return res.success(updated);
-    } catch (err) {
-      next(err);
-    }
+    return res.success(p);
   }
 
-  async disable(req, res, next) {
-    try {
-      const id = Number(req.params.id);
+  async delete(req, res) {
+    const id = Number(req.params.id);
 
-      const profile = await this.profileStore.getById(id);
-      if (!profile) {
-        const error = new Error("Profile not found");
-        error.status = 404;
-        error.code = "profile_not_found";
-        throw error;
-      }
+    await this.profileStore.delete(id);
+    this.scheduler.stopProfile(id);
 
-      const updated = await this.profileStore.setEnabled(id, false);
+    // SYSTEM AUDIT
+    await this.audit.system("automation.profile.delete", {
+      userId: req.auditContext.userId,
+      entity: "AutomationProfile",
+      entityId: id,
+      ip: req.auditContext.ip,
+      userAgent: req.auditContext.userAgent,
+      data: null
+    });
 
-      await this.audit.log("automation", "profile.disable", req.user?.username || "system", {
-        profileId: id
-      });
+    return res.success({ deleted: true });
+  }
 
-      this.scheduler.stopProfile(id);
+  async enable(req, res) {
+    const id = Number(req.params.id);
 
-      return res.success(updated);
-    } catch (err) {
-      next(err);
-    }
+    await this.profileStore.setEnabled(id, true);
+    const p = await this.profileStore.getById(id);
+
+    this.scheduler.scheduleProfile(p);
+
+    // AUTOMATION AUDIT
+    await this.audit.automation("profile.enable", { profileId: id }, req.auditContext.userId);
+
+    return res.success({ enabled: true });
+  }
+
+  async disable(req, res) {
+    const id = Number(req.params.id);
+
+    await this.profileStore.setEnabled(id, false);
+    this.scheduler.stopProfile(id);
+
+    // AUTOMATION AUDIT
+    await this.audit.automation("profile.disable", { profileId: id }, req.auditContext.userId);
+
+    return res.success({ disabled: true });
   }
 }
 

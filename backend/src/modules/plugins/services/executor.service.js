@@ -6,96 +6,123 @@ class ExecutorService {
     this.prisma = prisma;
     this.logger = logger || console;
     this.audit = audit;
-    this.app = app;   // <-- required!
+    this.app = app;
   }
 
+  /**
+   * Main execution entrypoint
+   */
   async run({ id, taskId, actionType, actionMeta }) {
-    // ------------------------------------------
-    // WASM ACTIONS: "wasm:<pluginId>:<actionName>"
-    // ------------------------------------------
-    if (typeof actionType === "string" && actionType.startsWith("wasm:")) {
-      const parts = actionType.split(":");
-      if (parts.length < 3) {
-        throw new Error("Invalid wasm actionType. Expected wasm:<pluginId>:<actionName>");
-      }
-      const pluginId = parts[1];
-      const actionName = parts.slice(2).join(":");
+    if (!actionType) throw new Error("Missing actionType");
 
-      const pluginEngine = this.app.locals.pluginEngine;
-      if (!pluginEngine) throw new Error("Plugin engine missing");
+    // Normalized meta
+    const meta = actionMeta || {};
 
-      const { registry, wasmExecutor, plugins } = pluginEngine;
+    // Plugin Engine (shared global instance)
+    const pluginEngine = this.app?.locals?.pluginEngine;
+
+    // ------------------------------------------
+    // 1) WASM ACTION  (wasm:<pluginId>:<action>)
+    // ------------------------------------------
+    if (actionType.startsWith("wasm:")) {
+      if (!pluginEngine)
+        throw new Error("Plugin engine missing for WASM action");
+
+      const { registry } = pluginEngine;
+
+      const [_, pluginId, ...rest] = actionType.split(":");
+      const actionName = rest.join(":");
+
       const action = registry.getAction(pluginId, actionName);
-      if (!action) throw new Error(`Plugin action not registered: ${pluginId}::${actionName}`);
+      if (!action)
+        throw new Error(`WASM action not registered: ${pluginId}::${actionName}`);
 
-      const pluginEntry = plugins[pluginId];
-      const pluginDir = pluginEntry ? pluginEntry.base || pluginEntry.root : path.join(process.cwd(), "plugins", "actions", pluginId);
+      const pluginEntry = pluginEngine.plugins[pluginId];
+      const pluginDir =
+        pluginEntry?.base ||
+        pluginEntry?.root ||
+        path.join(process.cwd(), "plugins", "actions", pluginId);
 
-      // action.meta should contain { file: 'plugin.wasm', exportName: 'run' } or registry set the file.
-      const wasmFile = (action.file || (action.meta && action.meta.file) || action.wasmFile) ;
-      const exportName = action.export || (action.fnName || "run");
+      const wasmFile = action.file;
+      const exportName = action.fnName || action.export || "run";
 
-      if (!wasmFile) throw new Error("WASM file not specified for action");
-
-      const result = await wasmExecutor.run({
+      const result = await pluginEngine.wasmExecutor.run({
         pluginId,
         pluginDir,
         wasmFile,
         exportName,
-        meta: actionMeta || {}
+        meta
+      });
+
+      await this.audit.automation("plugin.wasm.execute", {
+        pluginId,
+        actionName,
+        meta,
+        result
       });
 
       return result;
     }
 
     // ------------------------------------------
-    // PLUGIN EXECUTION (JS) - existing behavior
+    // 2) JS PLUGIN ACTION (plugin:<pluginId>:<action>)
     // ------------------------------------------
-    if (typeof actionType === "string" && actionType.startsWith("plugin:")) {
-      const parts = actionType.split(":");
-      if (parts.length < 3) {
-        throw new Error("Invalid plugin actionType. Expected plugin:<pluginId>:<actionName>");
-      }
+    if (actionType.startsWith("plugin:")) {
+      if (!pluginEngine)
+        throw new Error("Plugin engine missing for JS plugin action");
 
-      const pluginId = parts[1];
-      const actionName = parts.slice(2).join(":");
+      const { registry } = pluginEngine;
 
-      const pluginEngine = this.app.locals.pluginEngine;
-      if (!pluginEngine) {
-        throw new Error("Plugin engine missing");
-      }
+      const [_, pluginId, ...rest] = actionType.split(":");
+      const actionName = rest.join(":");
 
-      const { registry, vmExecutor, plugins } = pluginEngine;
       const action = registry.getAction(pluginId, actionName);
-
-      if (!action) {
+      if (!action)
         throw new Error(`Plugin action not registered: ${pluginId}::${actionName}`);
-      }
 
-      const pluginEntry = plugins[pluginId];
-      const pluginDir = pluginEntry
-        ? pluginEntry.base || pluginEntry.root
-        : path.join(process.cwd(), "plugins", "actions", pluginId);
+      const pluginEntry = pluginEngine.plugins[pluginId];
+      const pluginDir =
+        pluginEntry?.base ||
+        pluginEntry?.root ||
+        path.join(process.cwd(), "plugins", "actions", pluginId);
 
-      const result = await vmExecutor.run({
+      const result = await pluginEngine.vmExecutor.run({
         pluginId,
         pluginDir,
         actionFile: action.file,
-        fnName: action.fnName || null,
-        meta: actionMeta || {}
+        fnName: action.fnName || "run",
+        meta
+      });
+
+      await this.audit.automation("plugin.action.execute", {
+        pluginId,
+        actionName,
+        meta,
+        result
       });
 
       return result;
     }
 
     // ------------------------------------------
-    // BUILT-IN ACTIONS
+    // 3) BUILT-IN ACTIONS
     // ------------------------------------------
-    return this.runBuiltin({ id, taskId, actionType, actionMeta });
+    return await this.runBuiltin({ id, taskId, actionType, actionMeta: meta });
   }
 
+  /**
+   * Built-in local actions (your defaults)
+   */
   async runBuiltin({ id, taskId, actionType, actionMeta }) {
-    this.logger.info(`Executing built-in action ${actionType}`);
+    this.logger.info(`Executing built-in action: ${actionType}`);
+
+    // TODO: extend your built-ins here if needed
+
+    await this.audit.automation("builtin.action.execute", {
+      actionType,
+      meta: actionMeta
+    });
+
     return { ok: true };
   }
 }
