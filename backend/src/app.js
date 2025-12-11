@@ -136,14 +136,17 @@ app.use("/api/v1/email", emailRoutes);
 /* ================================================================
    MARKETPLACE MODULE
 ================================================================ */
-// const MarketplaceModule = require("./modules/marketplace");
+const MarketplaceModule = require("./modules/marketplace");
 
-// const marketplace = MarketplaceModule({
-//   prisma,
-//   idGen: () => crypto.randomUUID(),
-// });
+const marketplace = MarketplaceModule({
+  prisma,
+  idGen: () => crypto.randomUUID(),
+});
 
-// app.use("/api/marketplace", marketplace.routes);
+app.use("/api/marketplace", marketplace.routes);
+const dependencyRoutes = require("./modules/marketplace/admin/adminDependency.routes");
+app.use("/api/admin/marketplace", dependencyRoutes({ prisma }));
+
 
 /* ================================================================
    HEALTH CHECK

@@ -12,10 +12,10 @@ module.exports = function marketplaceRoutes({ logger = console, prisma, registry
 
   // tmp uploads for extraction
   const uploadsTmp = path.join(os.tmpdir(), "marketplace-uploads");
-  const storageDest = path.join(process.cwd(), "uploads", "marketplace"); // your chosen path
+  const storageDest = path.join(process.cwd(), "uploads", "marketplace"); // chosen path for final storage
 
-  // multer will place uploaded zip in tmp dir
-  const upload = multer({ dest: uploadsTmp, limits: { fileSize: 200 * 1024 * 1024 } }); // 200MB cap
+  // multer will place uploaded zip in tmp dir (200MB cap)
+  const upload = multer({ dest: uploadsTmp, limits: { fileSize: 200 * 1024 * 1024 } });
 
   // POST /api/marketplace/products/:productId/upload-version
   router.post(
@@ -29,6 +29,5 @@ module.exports = function marketplaceRoutes({ logger = console, prisma, registry
     uploadController.uploadVersion
   );
 
-  // other marketplace routes will be added elsewhere (product CRUD, submissions, etc.)
   return router;
 };

@@ -1,19 +1,65 @@
-// manifest.schema.js
-// AJV schema for plugin manifest. Merge/replace your existing validator file.
-// Adds ui.pages, ui.theme and hooks fields (non-breaking).
-
 module.exports = {
   type: "object",
-  additionalProperties: false,
+
+  // WHMCS-grade manifest MUST allow expansion
+  additionalProperties: true,
 
   properties: {
+    // ----------------------------------------------------
+    // Core Required Fields
+    // ----------------------------------------------------
     id: { type: "string", minLength: 1 },
-    name: { type: "string" },
-    version: { type: "string" },
+    name: { type: "string", nullable: true },
+    version: { type: "string", nullable: true },
     description: { type: "string", nullable: true },
 
     // ----------------------------------------------------
-    // JS ACTIONS (Existing)
+    // Core Plugin Runtime Fields
+    // ----------------------------------------------------
+    main: { type: "string", nullable: true },
+
+    type: {
+      type: "string",
+      enum: ["ui", "action", "provisioning", "wasm", "auth", "utility"],
+      nullable: true
+    },
+
+    dependencies: {
+      type: "object",
+      nullable: true,
+      additionalProperties: {
+        type: "string", // semver ranges
+      }
+    },
+
+    configSchema: { type: "object", nullable: true },
+
+    // ----------------------------------------------------
+    // Media / UI Metadata
+    // ----------------------------------------------------
+    screenshots: {
+      type: "array",
+      items: { type: "string" },
+      nullable: true
+    },
+
+    tags: {
+      type: "array",
+      items: { type: "string" },
+      nullable: true
+    },
+
+    homepage: { type: "string", nullable: true },
+    author: { type: "string", nullable: true },
+
+    // ----------------------------------------------------
+    // Compatibility Info
+    // ----------------------------------------------------
+    minSystemVersion: { type: "string", nullable: true },
+    maxSystemVersion: { type: "string", nullable: true },
+
+    // ----------------------------------------------------
+    // Existing JS ACTIONS (unchanged)
     // ----------------------------------------------------
     actions: {
       type: "object",
@@ -22,7 +68,6 @@ module.exports = {
         "^[a-zA-Z0-9_\\-:]+$": {
           oneOf: [
             { type: "string" },
-
             {
               type: "object",
               additionalProperties: false,
@@ -42,7 +87,7 @@ module.exports = {
     },
 
     // ----------------------------------------------------
-    // WASM ACTIONS (NEW)
+    // WASM ACTIONS (unchanged)
     // ----------------------------------------------------
     wasm: {
       type: "object",
@@ -63,54 +108,46 @@ module.exports = {
     },
 
     // ----------------------------------------------------
-    // UI extension (pages & theme preferences)
+    // UI block (pages, menu, theme)
     // ----------------------------------------------------
-ui: {
-  type: "object",
-  nullable: true,
-  additionalProperties: false,
-  properties: {
-    pages: {
+    ui: {
       type: "object",
       nullable: true,
-      additionalProperties: false,
-      patternProperties: {
-        "^[a-zA-Z0-9_\\-]+$": { type: "string" }
+      additionalProperties: true,
+      properties: {
+        pages: {
+          type: "object",
+          nullable: true,
+          patternProperties: {
+            "^[a-zA-Z0-9_\\-]+$": { type: "string" }
+          }
+        },
+
+        menu: {
+          type: "object",
+          nullable: true,
+          properties: {
+            title: { type: "string" },
+            icon: { type: "string", nullable: true },
+            path: { type: "string" }
+          },
+          required: ["title", "path"]
+        },
+
+        configSchema: { type: "object", nullable: true },
+
+        theme: {
+          type: "object",
+          nullable: true,
+          properties: {
+            prefer: { type: "string", enum: ["light", "dark", "auto"], nullable: true }
+          }
+        }
       }
     },
 
-    menu: {
-      type: "object",
-      nullable: true,
-      additionalProperties: false,
-      properties: {
-        title: { type: "string" },
-        icon: { type: "string", nullable: true },
-        path: { type: "string" }
-      },
-      required: ["title", "path"]
-    },
-
-    configSchema: {
-      type: "object",
-      nullable: true
-    },
-
-    theme: {
-      type: "object",
-      nullable: true,
-      additionalProperties: false,
-      properties: {
-        prefer: { type: "string", enum: ["light", "dark", "auto"], nullable: true }
-      }
-    }
-  }
-}
-
-,
-
     // ----------------------------------------------------
-    // Hooks: manifest-declared server hooks
+    // Hooks
     // ----------------------------------------------------
     hooks: {
       type: "object",
@@ -121,15 +158,12 @@ ui: {
           type: "object",
           additionalProperties: false,
           properties: {
-            action: { type: "string" } // relative path to action file inside plugin
+            action: { type: "string" }
           },
           required: ["action"]
         }
       }
-    },
-
-    // Type (ui, action, etc.)
-    type: { type: "string", nullable: true }
+    }
   },
 
   required: ["id"]
