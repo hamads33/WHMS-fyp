@@ -1,4 +1,18 @@
 /**
+ * jobQueue
+ * ------------------------------------------------------------------
+ * Centralized BullMQ queue initialization.
+ *
+ * Responsibilities:
+ *  - Configure Redis connection correctly (BullMQ v5)
+ *  - Provide queue instances to scheduler and workers
+ *
+ * Why centralized:
+ *  - Prevents misconfiguration
+ *  - Ensures consistent retry and backoff behavior
+ */
+
+/**
  * jobQueue.js
  * -----------------------------------------
  * BullMQ v5-compatible queue initialization.

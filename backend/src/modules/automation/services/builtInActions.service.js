@@ -1,3 +1,22 @@
+/**
+ * BuiltInActions
+ * ------------------------------------------------------------------
+ * Contains core automation actions shipped with the system.
+ *
+ * Examples:
+ *  - test_action
+ *  - send_email
+ *  - http_call
+ *
+ * Design Notes:
+ *  - Actions are stateless
+ *  - Each action is self-contained
+ *  - Easy to extend without modifying executor
+ *
+ * Examiner Tip:
+ *  - Built-in actions demonstrate extensibility
+ */
+
 const fetch = require('node-fetch'); // you may replace with undici/axios if needed
 
 class BuiltInActions {

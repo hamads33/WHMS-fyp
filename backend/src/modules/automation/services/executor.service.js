@@ -1,3 +1,24 @@
+/**
+ * ExecutorService
+ * ------------------------------------------------------------------
+ * Core execution engine for automation actions.
+ *
+ * Supports:
+ *  - Built-in system actions
+ *  - Plugin-defined actions
+ *  - Graceful fallback for unknown actions
+ *
+ * Why this abstraction exists:
+ *  - Decouples automation logic from execution source
+ *  - Allows marketplace plugins to hook into automation
+ *
+ * Execution Flow:
+ *  Task → Executor → (Built-in | Plugin) → Result
+ *
+ * Important:
+ *  - Used by workers, not HTTP controllers
+ */
+
 const BuiltInActions = require("./builtInActions.service");
 
 /**

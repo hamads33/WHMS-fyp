@@ -1,3 +1,14 @@
+/**
+ * Validation Middleware
+ * ------------------------------------------------------------------
+ * AJV-based request validation.
+ *
+ * Enforces:
+ *  - Strict input schemas
+ *  - API-first correctness
+ *  - Early error detection
+ */
+
 const Ajv = require("ajv").default;
 const addFormats = require("ajv-formats");
 

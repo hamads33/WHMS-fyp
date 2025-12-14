@@ -1,3 +1,22 @@
+/**
+ * Automation Worker
+ * ------------------------------------------------------------------
+ * Background worker responsible for executing automation jobs.
+ *
+ * Responsibilities:
+ *  - Consume jobs from Redis queue
+ *  - Execute tasks using ExecutorService
+ *  - Update execution logs
+ *  - Emit audit events
+ *
+ * Key Principle:
+ *  - Worker runs independently of HTTP server
+ *
+ * Why this matters:
+ *  - Prevents API blocking
+ *  - Enables horizontal scaling
+ */
+
 const { Worker } = require("bullmq");
 const IORedis = require("ioredis");
 const { createQueue } = require("../queue/jobQueue");

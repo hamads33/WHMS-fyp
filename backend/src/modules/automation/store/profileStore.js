@@ -1,3 +1,21 @@
+/**
+ * ProfileStore
+ * ------------------------------------------------------------------
+ * Data access layer for Automation Profiles.
+ *
+ * Responsibilities:
+ *  - Encapsulate all database access
+ *  - Enforce basic domain validation
+ *  - Prevent controllers/services from using Prisma directly
+ *
+ * Architectural Benefit:
+ *  - Centralized persistence logic
+ *  - Easier future migration to another ORM or database
+ *
+ * Design Pattern:
+ *  - Repository / Store pattern
+ */
+
 const { NotFoundError, ValidationError } = require('../lib/errors');
 const { assertNumber } = require('../lib/guards');
 

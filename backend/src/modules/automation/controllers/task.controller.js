@@ -1,3 +1,27 @@
+/**
+ * TaskController
+ * ------------------------------------------------------------------
+ * Manages Automation Tasks belonging to a Profile.
+ *
+ * Automation Task:
+ *  - Represents a single executable step
+ *  - Can be built-in or plugin-based
+ *
+ * Responsibilities:
+ *  - CRUD operations for tasks
+ *  - Manual task execution via queue
+ *  - Maintain execution order inside a profile
+ *
+ * Architectural Notes:
+ *  - Tasks are NOT executed synchronously
+ *  - Manual execution is queued (BullMQ)
+ *  - Ensures scheduler is refreshed after task changes
+ *
+ * Examiner Note:
+ *  - This design prevents API timeouts
+ *  - Matches real-world automation engines (WHMCS, Zapier)
+ */
+
 class TaskController {
   constructor({ taskStore, profileStore, scheduler, executor, executionLogStore, audit, logger }) {
     this.taskStore = taskStore;

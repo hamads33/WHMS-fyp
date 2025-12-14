@@ -1,3 +1,22 @@
+/**
+ * TaskStore
+ * ------------------------------------------------------------------
+ * Data access layer for Automation Tasks.
+ *
+ * Responsibilities:
+ *  - Manage task persistence
+ *  - Validate task payload structure
+ *  - Ensure tasks belong to valid profiles
+ *
+ * Important:
+ *  - No execution logic here
+ *  - Strict separation of data and behavior
+ *
+ * Why this matters:
+ *  - Keeps business logic testable
+ *  - Prevents accidental side effects
+ */
+
 const { NotFoundError, ValidationError } = require('../lib/errors');
 const { assertNumber, isPlainObject } = require('../lib/guards');
 

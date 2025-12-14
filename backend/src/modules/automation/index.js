@@ -1,3 +1,26 @@
+
+/**
+ * Automation Module Bootstrap
+ * ------------------------------------------------------------------
+ * This file initializes the Automation module in an API-first manner.
+ *
+ * Responsibilities:
+ *  - Wire together Stores, Services, Controllers (Dependency Injection)
+ *  - Initialize scheduler and load persisted automation profiles
+ *  - Register REST API routes under /api/automation
+ *
+ * Architectural Notes:
+ *  - Follows modular-monolith pattern (similar to WHMCS)
+ *  - Controllers do NOT contain business logic
+ *  - Scheduler is initialized once during system startup
+ *  - Execution is asynchronous via Redis + BullMQ workers
+ *
+ * Design Rationale:
+ *  - Keeps automation isolated from core system modules
+ *  - Allows future extraction into a microservice if needed
+ *  - Strict API-first compliance (no UI assumptions)
+ */
+
 const express = require("express");
 
 // Logger

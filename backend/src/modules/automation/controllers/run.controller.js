@@ -1,3 +1,21 @@
+/**
+ * RunController
+ * ------------------------------------------------------------------
+ * Provides endpoints to manually trigger automation execution.
+ *
+ * Responsibilities:
+ *  - Allow on-demand execution of a profile
+ *  - Delegate execution to Scheduler
+ *  - Never execute tasks directly
+ *
+ * Why this exists:
+ *  - Supports manual runs (testing, emergency actions)
+ *  - Same execution path as scheduled runs (consistency)
+ *
+ * Design Principle:
+ *  - Single execution pipeline (cron and manual runs behave the same)
+ */
+
 class RunController {
   constructor({ profileStore, executor, executionLogStore, audit, scheduler }) {
     this.profileStore = profileStore;

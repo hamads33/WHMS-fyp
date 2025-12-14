@@ -1,3 +1,21 @@
+/**
+ * ExecutionLogStore
+ * ------------------------------------------------------------------
+ * Manages AutomationRun records.
+ *
+ * AutomationRun:
+ *  - Represents execution state of a profile or task
+ *  - Used for monitoring, debugging, and audit trails
+ *
+ * Responsibilities:
+ *  - Track lifecycle (pending → running → success/failed)
+ *  - Persist execution results and timestamps
+ *
+ * Design Rationale:
+ *  - Enables observability
+ *  - Required for production-grade automation systems
+ */
+
 const { assertNumber } = require('../lib/guards');
 
 class ExecutionLogStore {

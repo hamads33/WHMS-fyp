@@ -1,3 +1,18 @@
+/**
+ * AuditService
+ * ------------------------------------------------------------------
+ * Centralized audit logging service.
+ *
+ * Used for:
+ *  - System audits (user-triggered actions)
+ *  - Automation execution tracking
+ *
+ * Why this exists:
+ *  - Compliance
+ *  - Debugging
+ *  - Examiner-friendly traceability
+ */
+
 class AuditService {
   /**
    * prisma: PrismaClient

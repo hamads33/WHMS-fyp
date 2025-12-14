@@ -1,3 +1,27 @@
+/**
+ * ProfileController
+ * ------------------------------------------------------------------
+ * Handles HTTP requests related to Automation Profiles.
+ *
+ * Automation Profile:
+ *  - Represents a scheduled automation configuration
+ *  - Contains cron expression and enable/disable state
+ *
+ * Responsibilities:
+ *  - Validate and process API requests
+ *  - Delegate persistence to ProfileStore
+ *  - Trigger scheduler updates when profiles change
+ *  - Emit audit logs for compliance and traceability
+ *
+ * Important:
+ *  - Controller NEVER executes automation logic
+ *  - Execution is always delegated to Scheduler/Worker
+ *
+ * API-First Design:
+ *  - No UI logic
+ *  - Stateless request handling
+ */
+
 class ProfileController {
   constructor({ profileStore, scheduler, logger, audit }) {
     this.profileStore = profileStore;

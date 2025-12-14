@@ -1,3 +1,25 @@
+/**
+ * SchedulerRedisService
+ * ------------------------------------------------------------------
+ * Responsible for scheduling automation profiles.
+ *
+ * Key Responsibilities:
+ *  - Interpret cron expressions
+ *  - Enqueue execution jobs into Redis queues
+ *  - Never execute tasks directly
+ *
+ * Important Architectural Rule:
+ *  - Scheduling ≠ Execution
+ *
+ * Design Choices:
+ *  - node-cron for time triggering
+ *  - BullMQ for distributed execution
+ *
+ * Scalability Note:
+ *  - Leader election simplified for single-node deployment
+ *  - Can be extended for multi-node systems
+ */
+
 const cron = require("node-cron");
 const { createQueue } = require("../queue/jobQueue");
 const { NotFoundError } = require("../lib/errors");
