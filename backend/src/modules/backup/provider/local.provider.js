@@ -1,4 +1,3 @@
-// src/modules/backup/provider/local.provider.js
 const fs = require("fs-extra");
 const path = require("path");
 const BaseProvider = require("./baseProvider");
@@ -39,6 +38,15 @@ class LocalProvider extends BaseProvider {
       rs.on("error", reject);
       writableStream.on("error", reject);
     });
+  }
+
+  /**
+   * REQUIRED by BaseProvider
+   * Used by restore flow
+   */
+  async downloadStream(remotePath) {
+    const src = path.join(this.basePath, remotePath);
+    return fs.createReadStream(src);
   }
 
   async delete(remotePath) {

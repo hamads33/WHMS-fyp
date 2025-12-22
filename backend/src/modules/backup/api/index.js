@@ -1,12 +1,30 @@
-// src/modules/backup/api/index.js
 const express = require("express");
 const router = express.Router();
 
-// Load built-in providers ONCE
+/*
+|--------------------------------------------------------------------------
+| BOOTSTRAP (MUST RUN ONCE)
+|--------------------------------------------------------------------------
+| Loads built-in backup providers (local, s3, etc.)
+| This MUST execute before any route is hit
+*/
 require("../bootstrap");
 
-// Mount routes
-router.use("/backups", require("./backup.controller"));
-router.use("/storage-configs", require("./storageConfig.controller"));
+/*
+|--------------------------------------------------------------------------
+| AUTH
+|--------------------------------------------------------------------------
+| All backup routes REQUIRE authentication
+| Controllers depend on req.user
+*/
+const authGuard = require("../../auth/middlewares/auth.guard");
+
+/*
+|--------------------------------------------------------------------------
+| ROUTES
+|--------------------------------------------------------------------------
+*/
+router.use("/backups", authGuard, require("./backup.controller"));
+router.use("/storage-configs", authGuard, require("./storageConfig.controller"));
 
 module.exports = router;

@@ -1,15 +1,14 @@
-// src/modules/auth/services/webhook.service.js
 const crypto = require("crypto");
 const prisma = require("../../../../prisma");
 
-// Max attempts before giving up
+// Max retry attempts
 const MAX_ATTEMPTS = 5;
 
 // Exponential backoff: 1s → 2s → 4s → 8s → 16s
-const RETRY_BACKOFF_MS = attempt => 1000 * Math.pow(2, attempt);
+const RETRY_BACKOFF_MS = (attempt) => 1000 * Math.pow(2, attempt);
 
 /**
- * Generate HMAC SHA256 signature for secure webhook verification
+ * Generate HMAC SHA256 signature
  */
 function signPayload(secret, payload) {
   return crypto
@@ -20,52 +19,52 @@ function signPayload(secret, payload) {
 
 const WebhookService = {
   /**
-   * Return all webhooks that listen to a specific event.
+   * Get all active webhooks subscribed to an event
    */
   async getActiveForEvent(event) {
     return prisma.webhook.findMany({
       where: {
         active: true,
-        events: { has: event } // Array includes event
-      }
+        events: { has: event },
+      },
     });
   },
 
   /**
-   * Trigger a webhook event (fire & forget, but fully logged).
+   * Trigger webhook event (non-blocking)
    */
   async trigger(event, payload = {}) {
     const hooks = await this.getActiveForEvent(event);
     if (!hooks.length) return;
 
     for (const hook of hooks) {
-      const logEntry = await prisma.webhookLog.create({
+      const log = await prisma.webhookLog.create({
         data: {
           webhookId: hook.id,
           event,
-          payload,       // JSON field
+          payload,
           status: "queued",
-          attempts: 0
-        }
+          attempts: 0,
+        },
       });
 
-      // Deliver in the background (non-blocking for auth flow)
-      this._deliver(hook, logEntry, payload).catch(err => {
-        console.error("[Webhook Dispatch Error]", err.message);
+      // Fire in background
+      this._deliver(hook, log, payload).catch((err) => {
+        console.error("[Webhook Error]", err.message);
       });
     }
   },
 
   /**
-   * Internal deliver mechanism with retry + exponential backoff.
+   * Internal delivery with retry + backoff
    */
-  async _deliver(hook, logRecord, payload) {
+  async _deliver(hook, log, payload) {
     let attempts = 0;
 
     const body = {
-      event: logRecord.event,
+      event: log.event,
       payload,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
     const signature = signPayload(hook.secret, body);
@@ -74,48 +73,43 @@ const WebhookService = {
       attempts++;
 
       try {
-        const response = await fetch(hook.url, {
+        const res = await fetch(hook.url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-Webhook-Event": logRecord.event,
-            "X-Webhook-Signature": signature
+            "X-Webhook-Event": log.event,
+            "X-Webhook-Signature": signature,
           },
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
         });
 
         await prisma.webhookLog.update({
-          where: { id: logRecord.id },
+          where: { id: log.id },
           data: {
             attempts,
-            httpStatus: response.status,
-            status: response.ok ? "success" : "failed",
-            lastError: response.ok ? null : `HTTP ${response.status}`
-          }
+            httpStatus: res.status,
+            status: res.ok ? "success" : "failed",
+            lastError: res.ok ? null : `HTTP ${res.status}`,
+          },
         });
 
-        if (response.ok) return; // stop retries
+        if (res.ok) return;
       } catch (err) {
         await prisma.webhookLog.update({
-          where: { id: logRecord.id },
+          where: { id: log.id },
           data: {
             attempts,
             status: "failed",
-            lastError: err.message
-          }
+            lastError: err.message,
+          },
         });
       }
 
-      // Wait before retrying
-      await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS(attempts)));
+      await new Promise((r) =>
+        setTimeout(r, RETRY_BACKOFF_MS(attempts))
+      );
     }
-
-    // Mark final failure
-    await prisma.webhookLog.update({
-      where: { id: logRecord.id },
-      data: { status: "failed" }
-    });
-  }
+  },
 };
 
 module.exports = WebhookService;

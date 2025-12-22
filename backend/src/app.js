@@ -9,6 +9,11 @@ const { PrismaClient } = require("@prisma/client");
 
 const app = express();
 const prisma = new PrismaClient();
+app.set("trust proxy", false);
+// 🔧 FIX: Allow JSON.stringify(BigInt)
+BigInt.prototype.toJSON = function () {
+  return this.toString();
+};
 
 /* ================================================================
    GLOBAL MIDDLEWARES
@@ -102,6 +107,7 @@ app.use(
    AUTH MODULE ROUTES
 ================================================================ */
 app.use("/api/auth", require("./modules/auth/routes/auth.routes"));
+app.use("/api/auth/sessions", require("./modules/auth/routes/session.routes"));
 app.use("/api/auth/email", require("./modules/auth/routes/email.routes"));
 app.use("/api/auth/password", require("./modules/auth/routes/password.routes"));
 app.use("/api/auth/mfa", require("./modules/auth/routes/mfa.routes"));

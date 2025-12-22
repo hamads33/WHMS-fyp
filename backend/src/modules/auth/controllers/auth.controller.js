@@ -1,6 +1,7 @@
 // src/modules/auth/controllers/auth.controller.js
 
 const AuthService = require("../services/auth.service");
+const AuthEvents = require("../services/authEvents");
 
 class AuthController {
   // ======================================================
@@ -18,6 +19,9 @@ class AuthController {
 
       const user = await AuthService.register({ email, password });
 
+      // 🔔 AUTH EVENT
+      AuthEvents.register(user);
+
       return res.status(201).json({
         message: "Registration successful",
         user,
@@ -29,7 +33,7 @@ class AuthController {
   }
 
   // ======================================================
-  // LOGIN — Cookies + return tokens for Postman
+  // LOGIN — Cookies + Tokens (Postman friendly)
   // ======================================================
   static async login(req, res) {
     try {
@@ -41,45 +45,47 @@ class AuthController {
           .json({ error: "Email and password are required" });
       }
 
-      // AuthService returns: { accessToken, refreshToken, user }
-      const { accessToken, refreshToken, user } = await AuthService.login({
-        email,
-        password,
+      const { accessToken, refreshToken, user } =
+        await AuthService.login({
+          email,
+          password,
+          ip: req.ip,
+          userAgent: req.get("User-Agent"),
+        });
+
+      // 🔔 AUTH EVENT (SUCCESS)
+      AuthEvents.loginSuccess(user, {
         ip: req.ip,
         userAgent: req.get("User-Agent"),
       });
 
-      // Cookie config for localhost
       const cookieOptions = {
         httpOnly: true,
-        secure: false, // set true in production HTTPS
+        secure: false, // true in production (HTTPS)
         sameSite: "lax",
         path: "/",
       };
 
-      // Set cookies
       res.cookie("access_token", accessToken, {
         ...cookieOptions,
-        maxAge: 1000 * 60 * 15, // 15 minutes
+        maxAge: 1000 * 60 * 15,
       });
 
       res.cookie("refresh_token", refreshToken, {
         ...cookieOptions,
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+        maxAge: 1000 * 60 * 60 * 24 * 7,
       });
 
-      console.log("✔ LOGIN SUCCESS — Cookies set.");
-
-      // IMPORTANT FIX:
-      // Return tokens in body for Postman AND keep cookies for frontend
       return res.status(200).json({
         message: "Login successful",
         user,
         accessToken,
         refreshToken,
       });
-
     } catch (err) {
+      // 🔔 AUTH EVENT (FAILURE)
+      AuthEvents.loginFailed(req.body?.email, err.message);
+
       console.error("LOGIN ERROR:", err.message);
       return res.status(401).json({ error: err.message });
     }
@@ -107,7 +113,6 @@ class AuthController {
         path: "/",
       };
 
-      // Rotate cookies
       res.cookie("access_token", accessToken, {
         ...cookieOptions,
         maxAge: 1000 * 60 * 15,
@@ -118,13 +123,10 @@ class AuthController {
         maxAge: 1000 * 60 * 60 * 24 * 7,
       });
 
-      console.log("✔ REFRESH TOKEN ROTATED");
-
       return res.json({
         accessToken,
         refreshToken: newRefresh,
       });
-
     } catch (err) {
       console.error("REFRESH ERROR:", err.message);
       return res.status(401).json({ error: err.message });
@@ -145,17 +147,18 @@ class AuthController {
 
       await AuthService.logout(refreshToken);
 
-      // Clear cookies
+      // 🔔 AUTH EVENT
+      if (req.user?.id) {
+        AuthEvents.logout(req.user.id);
+      }
+
       res.clearCookie("access_token");
       res.clearCookie("refresh_token");
-
-      console.log("✔ LOGOUT — Tokens removed");
 
       return res.json({
         success: true,
         message: "Logged out successfully",
       });
-
     } catch (err) {
       console.error("LOGOUT ERROR:", err.message);
       return res.status(400).json({ error: err.message });
@@ -172,11 +175,10 @@ class AuthController {
       }
 
       return res.json({
-        user: req.user, // includes impersonation fields
+        user: req.user,
       });
-
     } catch (err) {
-      console.error("ME ERROR:", err);
+      console.error("ME ERROR:", err.message);
       return res.status(500).json({ error: "Something went wrong" });
     }
   }

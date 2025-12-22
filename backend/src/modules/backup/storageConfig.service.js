@@ -55,6 +55,18 @@ async function getStorageConfig(id) {
   if (!rec) return null;
   return rec;
 }
+async function updateStorageConfig(id, { provider, config }) {
+  const encrypted = encryptConfig(config);
+  return prisma.storageConfig.update({
+    where: { id },
+    data: {
+      provider,
+      config: encrypted,
+      updatedAt: new Date()
+    }
+  });
+}
+
 
 async function decryptAndReturnConfig(id) {
   const rec = await getStorageConfig(id);
@@ -70,5 +82,6 @@ module.exports = {
   decryptConfig,
   createStorageConfig,
   getStorageConfig,
+   updateStorageConfig,
   decryptAndReturnConfig,
 };

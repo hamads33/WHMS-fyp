@@ -1,100 +1,60 @@
-// src/modules/backup/utils/streamTarGz.js
 const tar = require("tar-stream");
 const zlib = require("zlib");
 const fs = require("fs");
 const path = require("path");
-const { pipeline } = require("stream");
-const { promisify } = require("util");
-const pipe = promisify(pipeline);
-const pack = tar.pack();
 
-/**
- * Recursively add directory to tar pack
- * baseSrc: absolute path, baseName: name inside tar
- */
-async function addDirectoryToPack(packInstance, baseSrc, baseName) {
-  const items = await fs.promises.readdir(baseSrc);
+async function addDirectory(pack, dirPath, tarPath) {
+  const items = await fs.promises.readdir(dirPath);
   for (const item of items) {
-    const itemPath = path.join(baseSrc, item);
-    const stat = await fs.promises.stat(itemPath);
+    const fullPath = path.join(dirPath, item);
+    const stat = await fs.promises.stat(fullPath);
+    const entryName = path.join(tarPath, item);
+
     if (stat.isDirectory()) {
-      // create directory entry (some tar consumers want directory entries)
-      packInstance.entry({ name: path.join(baseName, item) + "/", mode: stat.mode, type: "directory" }, (err) => {
-        if (err) throw err;
-      });
-      await addDirectoryToPack(packInstance, itemPath, path.join(baseName, item));
-    } else if (stat.isFile()) {
+      pack.entry({ name: entryName + "/", type: "directory", mode: stat.mode });
+      await addDirectory(pack, fullPath, entryName);
+    } else {
       await new Promise((resolve, reject) => {
-        const rs = fs.createReadStream(itemPath);
-        const entry = packInstance.entry(
-          { name: path.join(baseName, item), size: stat.size, mode: stat.mode, mtime: stat.mtime },
-          (err) => {
-            if (err) return reject(err);
-            resolve();
-          }
-        );
-        rs.pipe(entry);
-        rs.on("error", reject);
+        const entry = pack.entry({ name: entryName, size: stat.size, mode: stat.mode, mtime: stat.mtime }, (err) => (err ? reject(err) : resolve()));
+        fs.createReadStream(fullPath).on("error", reject).pipe(entry);
       });
-    } // ignore other types (symlinks, etc.) or handle as needed
+    }
   }
 }
 
-/**
- * Accepts:
- *  - files: array of absolute paths to files or directories
- *  - dbDumpStreamEntries: optional array of { name: "db.sql.gz", stream: Readable }
- *
- * Returns: Readable (gzip) stream of the tar.gz archive
- */
-async function tarGzFromFilesStream(files = [], dbDumpStreamEntries = []) {
-  const packInstance = tar.pack();
+function tarGzFromFilesStream(files = [], dbDumpStreamEntries = []) {
+  const pack = tar.pack();
 
-  (async () => {
+  // FIX: Controlled execution flow ensures the stream doesn't close prematurely
+  const run = async () => {
     try {
       for (const f of files) {
         const stat = await fs.promises.stat(f);
-        if (stat.isDirectory()) {
-          await addDirectoryToPack(packInstance, f, path.basename(f));
-        } else if (stat.isFile()) {
+        const base = path.basename(f);
+        if (stat.isDirectory()) await addDirectory(pack, f, base);
+        else {
           await new Promise((resolve, reject) => {
-            const rs = fs.createReadStream(f);
-            const entry = packInstance.entry(
-              { name: path.basename(f), size: stat.size, mode: stat.mode, mtime: stat.mtime },
-              (err) => {
-                if (err) return reject(err);
-                resolve();
-              }
-            );
-            rs.pipe(entry);
-            rs.on("error", reject);
+            const entry = pack.entry({ name: base, size: stat.size, mode: stat.mode, mtime: stat.mtime }, (err) => (err ? reject(err) : resolve()));
+            fs.createReadStream(f).on("error", reject).pipe(entry);
           });
         }
       }
 
-      // Add db dump stream entries (like db.sql.gz) by piping stream into entry
       for (const dbEntry of dbDumpStreamEntries) {
         await new Promise((resolve, reject) => {
-          const entry = packInstance.entry({ name: dbEntry.name }, (err) => {
-            if (err) return reject(err);
-            resolve();
-          });
-          dbEntry.stream.pipe(entry);
-          dbEntry.stream.on("error", (e) => {
-            entry.destroy(e);
-            reject(e);
-          });
+          const entry = pack.entry({ name: dbEntry.name, type: "file" }, (err) => (err ? reject(err) : resolve()));
+          entry.on("finish", resolve);
+          dbEntry.stream.on("error", (e) => { entry.destroy(e); reject(e); }).pipe(entry);
         });
       }
-
-      packInstance.finalize();
+      pack.finalize();
     } catch (err) {
-      packInstance.destroy(err);
+      pack.destroy(err);
     }
-  })();
+  };
 
-  const gzip = zlib.createGzip({ level: 6 });
-  return packInstance.pipe(gzip);
+  run();
+  return pack.pipe(zlib.createGzip({ level: 6 }));
 }
 
 module.exports = { tarGzFromFilesStream };

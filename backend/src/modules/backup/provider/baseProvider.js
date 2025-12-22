@@ -1,4 +1,5 @@
 // src/modules/backup/provider/baseProvider.js
+
 class BaseProvider {
   constructor(config = {}) {
     this.config = config;
@@ -21,8 +22,17 @@ class BaseProvider {
 
   /**
    * Download remotePath into a Writable stream - MUST throw on error.
+   * (Used by HTTP download endpoint)
    */
   async downloadToStream(remotePath, writableStream) {
+    throw new Error("Not implemented");
+  }
+
+  /**
+   * Download remotePath and return a Readable stream.
+   * (Used by restore flow)
+   */
+  async downloadStream(remotePath) {
     throw new Error("Not implemented");
   }
 

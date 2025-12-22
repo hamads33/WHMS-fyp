@@ -9,93 +9,69 @@ const tar = require("tar-stream");
 const { createProviderInstance } = require("../provider/registry");
 const storageConfigService = require("../storageConfig.service");
 const eventBus = require("../eventBus");
+const { PassThrough } = require("stream");
 
 async function performRestoreJob(backupId, payload = {}) {
   try {
-    // Step 1: Lookup backup record
-    const backup = await prisma.backup.findUnique({
-      where: { id: backupId }
-    });
+    const backup = await prisma.backup.findUnique({ where: { id: backupId } });
     if (!backup) throw new Error("Backup not found");
 
     const { destination, restoreFiles = true, restoreDb = false } = payload;
-
-    // Step Log: restore_started
-    await prisma.backupStepLog.create({
-      data: { backupId, step: "restore_started", status: "running" }
+    
+    await prisma.backupStepLog.create({ 
+      data: { backupId, step: "restore_started", status: "running" } 
     });
     eventBus.emit("backup.restore.started", { backupId });
 
-    // Step 2: Create provider instance
-    const conf = await storageConfigService.decryptAndReturnConfig(
-      backup.storageConfigId
-    );
-
-    const provider = createProviderInstance(conf.provider, conf);
-
-    // Step Log: download_started
-    await prisma.backupStepLog.create({
-      data: { backupId, step: "download_started", status: "running" }
-    });
-
-    // Step 3: Download backup archive stream
-    const archiveStream = await provider.downloadStream(backup.filePath);
-
-    // Step Log: extract_started
-    await prisma.backupStepLog.create({
-      data: { backupId, step: "extract_started", status: "running" }
-    });
-
-    // Step 4: Extract tar.gz
-    await extractTarGzStream(archiveStream, destination);
-
-    // Step Log: extract_completed
-    await prisma.backupStepLog.create({
-      data: { backupId, step: "extract_completed", status: "success" }
-    });
-
-    // Optional: Database restore
-    if (restoreDb) {
-      // Placeholder — Postgres restore logic can be added here
-      await prisma.backupStepLog.create({
-        data: { backupId, step: "db_restore_skipped", status: "success" }
-      });
+    /* ---------------------------------------------------------
+       FIX: Handle Local provider (null storageConfigId)
+    --------------------------------------------------------- */
+    let provider;
+    if (backup.storageConfigId) {
+      const conf = await storageConfigService.decryptAndReturnConfig(backup.storageConfigId);
+      provider = createProviderInstance(conf.provider, conf);
+    } else {
+      // Fallback to local provider if no config ID exists
+      provider = createProviderInstance("local", {});
     }
 
-    // Step Log: restore_finished
-    await prisma.backupStepLog.create({
-      data: { backupId, step: "restore_finished", status: "success" }
+    await prisma.backupStepLog.create({ 
+      data: { backupId, step: "download_started", status: "running" } 
+    });
+
+    const archiveStream = new PassThrough();
+    provider.downloadToStream(backup.filePath, archiveStream)
+      .catch(err => archiveStream.destroy(err));
+
+    await prisma.backupStepLog.create({ 
+      data: { backupId, step: "extract_started", status: "running" } 
+    });
+
+    await extractTarGzStream(archiveStream, destination);
+
+    await prisma.backupStepLog.create({ 
+      data: { backupId, step: "restore_finished", status: "success" } 
     });
     eventBus.emit("backup.restore.success", { backupId });
 
     return { success: true };
   } catch (err) {
     console.error("[restoreRunner] Error:", err);
-
-    await prisma.backupStepLog.create({
-      data: {
-        backupId,
-        step: "restore_failed",
-        status: "error",
-        meta: { error: err.message }
-      }
+    await prisma.backupStepLog.create({ 
+      data: { backupId, step: "restore_failed", status: "error", message: err.message } 
     });
-
     eventBus.emit("backup.restore.failed", { backupId, error: err.message });
     throw err;
   }
 }
 
-/**
- * Extract tar.gz from stream
- */
 async function extractTarGzStream(stream, destination) {
   return new Promise((resolve, reject) => {
     const extract = tar.extract();
-
+    
     extract.on("entry", async (header, entryStream, next) => {
       const destPath = path.join(destination, header.name);
-
+      
       if (header.type === "directory") {
         await fse.ensureDir(destPath);
         entryStream.resume();
@@ -104,17 +80,15 @@ async function extractTarGzStream(stream, destination) {
         await fse.ensureDir(path.dirname(destPath));
         const writeStream = fs.createWriteStream(destPath);
         entryStream.pipe(writeStream);
-
         writeStream.on("finish", () => next());
+        writeStream.on("error", reject);
       }
     });
 
-    extract.on("finish", () => resolve());
+    extract.on("finish", resolve);
+    extract.on("error", reject);
 
-    stream
-      .pipe(zlib.createGunzip())
-      .pipe(extract)
-      .on("error", reject);
+    stream.pipe(zlib.createGunzip()).pipe(extract).on("error", reject);
   });
 }
 

@@ -1,38 +1,49 @@
 const prisma = require("../../../../prisma/index");
 
+const DEFAULT_SOURCE = "system";
+const DEFAULT_ACTOR = "system";
+
 const AuditService = {
-  // Main log function
-  async log({ userId, action, entity, entityId, ip, userAgent, data }) {
+  async log({
+    userId,
+    actor = DEFAULT_ACTOR,   // ✅ REQUIRED FIX
+    action,
+    entity,
+    entityId,
+    ip,
+    userAgent,
+    data,
+    source = DEFAULT_SOURCE,
+  }) {
     return prisma.auditLog.create({
       data: {
-        userId: userId || null,
+        source,
         action,
+        actor,                // ✅ ALWAYS PRESENT
+        userId: userId || null,
         entity: entity || null,
         entityId: entityId || null,
         ip: ip || null,
         userAgent: userAgent || null,
-        data: data || null
-      }
+        data: data || null,
+      },
     });
   },
 
-  // Fail-safe wrapper — avoids crashes
   async safeLog(payload) {
     try {
       await this.log(payload);
     } catch (err) {
-      console.error("Audit log error:", err);
-      // never throw
+      console.error("Audit log error:", err.message);
     }
   },
 
-  // For admin panels
   list(query = {}) {
     return prisma.auditLog.findMany({
       where: query,
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
     });
-  }
+  },
 };
 
 module.exports = AuditService;

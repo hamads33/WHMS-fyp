@@ -116,7 +116,7 @@ async function main() {
 
   console.log("✅ SUPERADMIN READY");
   console.log("Login Email:", email);
-  console.log("Password: SuperAdmin123!");
+  console.log("Password: SuperAdmin123!");  
 }
 
 main()

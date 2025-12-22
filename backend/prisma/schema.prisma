@@ -114,6 +114,7 @@ model Session {
   token     String @unique
   userAgent String?
   ip        String?
+  updatedAt DateTime @updatedAt  
   createdAt DateTime @default(now())
   expiresAt DateTime
 
