@@ -1,52 +1,34 @@
 /**
  * AuditService
- * ------------------------------------------------------------------
- * Centralized audit logging service.
+ * ---------------------------------------------------------
+ * Centralized audit logging + querying service.
  *
- * Used for:
- *  - System audits (user-triggered actions)
- *  - Automation execution tracking
+ * Used by:
+ *  - Automation module
+ *  - System actions
+ *  - Workers / background jobs
  *
- * Why this exists:
- *  - Compliance
- *  - Debugging
- *  - Examiner-friendly traceability
+ * Guarantees:
+ *  - Non-blocking writes
+ *  - Structured metadata
+ *  - Queryable logs (global + per profile)
  */
 
 class AuditService {
-  /**
-   * prisma: PrismaClient
-   * logger: injected logger (pino)
-   */
   constructor({ prisma, logger }) {
     this.prisma = prisma;
     this.logger = logger;
   }
 
-  /**
-   * General-purpose Audit Logger (supports both automation + system format)
-   *
-   * @param {Object} opts
-   * @param {String} opts.source      - "automation", "billing", "system", etc
-   * @param {String} opts.action      - type of action (e.g., "task.failed")
-   * @param {String|null} opts.actor  - user id, "system", "worker", etc.
-   * @param {Json} opts.meta          - structured data for automation
-   * @param {String} opts.level       - INFO | WARN | ERROR
-   *
-   * Optional system fields:
-   * @param {String|null} opts.userId - when logging on behalf of a real user
-   * @param {String|null} opts.entity - entity type (e.g., "Order", "Invoice")
-   * @param {String|null} opts.entityId
-   * @param {String|null} opts.ip
-   * @param {String|null} opts.userAgent
-   * @param {Json|null} opts.data     - extended metadata
-   */
+  // ------------------------------------------------------
+  // WRITE AUDIT LOG
+  // ------------------------------------------------------
   async write({
     source = "automation",
     action = "unknown",
     actor = "system",
-    meta = null,
     level = "INFO",
+    meta = null,
 
     userId = null,
     entity = null,
@@ -61,7 +43,6 @@ class AuditService {
       actor,
       level,
       meta,
-
       userId,
       entity,
       entityId,
@@ -70,26 +51,32 @@ class AuditService {
       data
     };
 
-    // DB write (non-blocking)
+    // DB write (fail-safe)
     try {
       if (this.prisma?.auditLog) {
         await this.prisma.auditLog.create({ data: payload });
       }
     } catch (err) {
-      this.logger.error("Audit DB write failed: %s", err.stack || err);
+      this.logger.error("Audit DB write failed", err);
     }
 
-    // Log to console / file
+    // File / console log
     try {
-      this.logger.info("AUDIT [%s] %s by %s %o", source, action, actor, payload);
+      this.logger.info(
+        "AUDIT [%s] %s by %s",
+        source,
+        action,
+        actor
+      );
     } catch (err) {
-      console.error("AUDIT LOGGING FAILURE", err);
+      console.error("AUDIT LOGGER FAILURE", err);
     }
   }
 
-  /**
-   * Shortcut for automation logs
-   */
+  // ------------------------------------------------------
+  // SHORTCUTS
+  // ------------------------------------------------------
+
   async automation(action, meta = {}, actor = "system", level = "INFO") {
     return this.write({
       source: "automation",
@@ -100,9 +87,6 @@ class AuditService {
     });
   }
 
-  /**
-   * Shortcut for system audit logs (user actions)
-   */
   async system(action, { userId, entity, entityId, ip, userAgent, data } = {}) {
     return this.write({
       source: "system",
@@ -115,6 +99,27 @@ class AuditService {
       userAgent,
       data,
       level: "INFO"
+    });
+  }
+
+  // ------------------------------------------------------
+  // READ: LIST LOGS
+  // ------------------------------------------------------
+  async list(filters = {}, limit = 50, offset = 0) {
+    return this.prisma.auditLog.findMany({
+      where: filters,
+      take: limit,
+      skip: offset,
+      orderBy: { createdAt: "desc" }
+    });
+  }
+
+  // ------------------------------------------------------
+  // READ: COUNT LOGS
+  // ------------------------------------------------------
+  async count(filters = {}) {
+    return this.prisma.auditLog.count({
+      where: filters
     });
   }
 }

@@ -20,9 +20,10 @@ module.exports = {
   taskIdParamSchema: {
     type: "object",
     properties: {
-      id: { type: "integer", minimum: 1 }
+      taskId: { type: "integer", minimum: 1 }
     },
-    required: ["id"],
+    required: ["taskId"],
     additionalProperties: false
   }
+
 };
