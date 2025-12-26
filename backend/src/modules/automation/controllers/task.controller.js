@@ -48,10 +48,37 @@ class TaskController {
     const profileId = Number(req.params.profileId);
     const payload = req.body;
 
+    // DEBUG: Log what we received
+    this.logger.info("📥 CREATE TASK - Request received:", {
+      profileId,
+      payload,
+      payloadKeys: Object.keys(payload),
+      payloadType: typeof payload,
+      hasActionType: 'actionType' in payload,
+      actionTypeValue: payload.actionType
+    });
+
     const profile = await this.profileStore.getById(profileId);
     if (!profile) return res.fail("Profile not found", 404);
 
-    const task = await this.taskStore.create(profileId, payload);
+    // Ensure payload has required fields
+    if (!payload.actionType) {
+      this.logger.error("❌ actionType missing from payload");
+      return res.fail("actionType is required", 400);
+    }
+
+    // Create task with explicit defaults
+    const taskData = {
+      actionType: payload.actionType,
+      actionMeta: payload.actionMeta || {},
+      order: typeof payload.order === 'number' ? payload.order : 0
+    };
+
+    this.logger.info("📝 Creating task with data:", taskData);
+
+    const task = await this.taskStore.create(profileId, taskData);
+
+    this.logger.info("✅ Task created successfully:", task);
 
     if (profile.enabled) {
       this.scheduler.scheduleProfile(profile);
@@ -87,6 +114,13 @@ class TaskController {
   async update(req, res) {
     const taskId = Number(req.params.taskId);
     const payload = req.body;
+
+    // DEBUG: Log what we received
+    this.logger.info("📥 UPDATE TASK - Request received:", {
+      taskId,
+      payload,
+      payloadKeys: Object.keys(payload)
+    });
 
     const task = await this.taskStore.getById(taskId);
     if (!task) return res.fail("Task not found", 404);

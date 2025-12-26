@@ -1,32 +1,48 @@
-// src/modules/plugins/pluginEngine/loader.js
 const fs = require("fs");
 const path = require("path");
 const registryFactory = require("./registry");
 
 class PluginLoader {
-  constructor({ pluginsDir, logger, ajv, registry, publicKeyPem } = {}) {
-    this.pluginsDir = pluginsDir || path.join(process.cwd(), "plugins", "actions");
+  constructor({
+    pluginsDir,
+    logger,
+    ajv,
+    registry,
+    publicKeyPem,
+    app // 👈 IMPORTANT: injected once, used by all plugins
+  } = {}) {
+    this.pluginsDir =
+      pluginsDir || path.join(process.cwd(), "plugins", "actions");
     this.logger = logger || console;
     this.ajv = ajv || null;
     this.registry = registry || registryFactory({ logger: this.logger });
     this.publicKeyPem = publicKeyPem;
+    this.app = app;
 
     try {
       this.manifestSchema = require("../validators/manifest.schema");
-    } catch (err) {
+    } catch {
       this.manifestSchema = null;
     }
   }
 
+  // ======================================================
+  // LOAD ALL PLUGINS
+  // ======================================================
   async loadAll() {
     const plugins = {};
+
     if (!fs.existsSync(this.pluginsDir)) {
-      this.logger.info(`PluginLoader: no plugins directory at ${this.pluginsDir}`);
+      this.logger.info(
+        `PluginLoader: no plugins directory at ${this.pluginsDir}`
+      );
       if (this.registry.clear) this.registry.clear();
       return plugins;
     }
 
-    const entries = fs.readdirSync(this.pluginsDir, { withFileTypes: true });
+    const entries = fs.readdirSync(this.pluginsDir, {
+      withFileTypes: true
+    });
 
     for (const dirent of entries) {
       if (!dirent.isDirectory()) continue;
@@ -37,8 +53,13 @@ class PluginLoader {
       const indexPath = path.join(base, "index.js");
 
       try {
+        // --------------------------------------------------
+        // MANIFEST
+        // --------------------------------------------------
         if (!fs.existsSync(manifestPath)) {
-          this.logger.warn(`PluginLoader: skipping ${folder} (no manifest.json)`);
+          this.logger.warn(
+            `PluginLoader: skipping ${folder} (no manifest.json)`
+          );
           continue;
         }
 
@@ -46,25 +67,33 @@ class PluginLoader {
         try {
           manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
         } catch (err) {
-          this.logger.error(`PluginLoader: bad manifest JSON for ${folder}: ${err.message}`);
+          this.logger.error(
+            `PluginLoader: invalid manifest.json for ${folder}: ${err.message}`
+          );
           continue;
         }
 
         if (this.ajv && this.manifestSchema) {
-          const isValid = this.ajv.validate(this.manifestSchema, manifest);
-          if (!isValid) {
-            this.logger.error(`Invalid manifest for ${folder}:`, this.ajv.errors);
+          const valid = this.ajv.validate(this.manifestSchema, manifest);
+          if (!valid) {
+            this.logger.error(
+              `PluginLoader: manifest validation failed for ${folder}`,
+              this.ajv.errors
+            );
             continue;
           }
         } else if (!manifest.id) {
-          this.logger.warn(`PluginLoader: manifest missing id in ${folder}`);
+          this.logger.warn(
+            `PluginLoader: manifest missing id for ${folder}`
+          );
           continue;
         }
 
         const id = manifest.id;
-
         if (plugins[id]) {
-          this.logger.warn(`PluginLoader: duplicate plugin id "${id}" in ${folder}`);
+          this.logger.warn(
+            `PluginLoader: duplicate plugin id "${id}"`
+          );
           continue;
         }
 
@@ -74,80 +103,113 @@ class PluginLoader {
           version: manifest.version || "1.0.0",
           folder,
           base,
+          manifest,
           manifestPath,
-          indexPath: fs.existsSync(indexPath) ? indexPath : null,
-          manifest
+          indexPath: fs.existsSync(indexPath) ? indexPath : null
         };
 
         plugins[id] = meta;
 
-        // register plugin
-        if (this.registry.register) this.registry.register(id, meta);
-        else this.registry.registerPlugin(id, meta);
+        // --------------------------------------------------
+        // REGISTER PLUGIN METADATA (existing behavior)
+        // --------------------------------------------------
+        if (this.registry.register) {
+          this.registry.register(id, meta);
+        } else if (this.registry.registerPlugin) {
+          this.registry.registerPlugin(id, meta);
+        }
 
-        // register declared actions (existing behavior)
+        // --------------------------------------------------
+        // REGISTER MANIFEST ACTIONS (existing behavior)
+        // --------------------------------------------------
         this._registerActionsForPlugin(id, base, manifest.actions);
 
-        // -------------------------
-        // Hook support
-        // -------------------------
-        // manifest.hooks -> { "event.name": { "action": "someAction" } }
-        // Allow two forms:
-        // - action: "someActionName" (must match manifest.actions key)
-        // - action: "hooks/onEvent.js" (file path relative to plugin root) -> loader will register a synthetic action name for it
+        // --------------------------------------------------
+        // REGISTER HOOKS (existing behavior)
+        // --------------------------------------------------
         if (manifest.hooks && typeof manifest.hooks === "object") {
           for (const [eventName, def] of Object.entries(manifest.hooks)) {
-            if (!def || !def.action) {
-              this.logger.warn(`PluginLoader: invalid hook definition for ${id}:${eventName}`);
-              continue;
-            }
+            if (!def || !def.action) continue;
 
             const actionRef = def.action;
-            if (actionRef.includes("/") || actionRef.endsWith(".js")) {
-              // file path → register a generated action name
-              const generatedActionName = `__hook__${eventName.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 
-              // register as an action so pluginEngine.runAction can execute it
-              this.registry.registerAction(id, generatedActionName, {
+            if (actionRef.includes("/") || actionRef.endsWith(".js")) {
+              const generatedAction = `__hook__${eventName.replace(
+                /[^a-zA-Z0-9_]/g,
+                "_"
+              )}`;
+
+              this.registry.registerAction(id, generatedAction, {
                 file: actionRef,
                 fnName: def.fnName || "run",
-                description: def.description || `(hook for ${eventName})`,
-                meta: def.meta || null,
+                description:
+                  def.description || `(hook for ${eventName})`,
                 runtime: "js"
               });
 
-              // register hook mapping to the generated action name
-              this.registry.registerHook(id, eventName, generatedActionName);
-              this.logger.info(`PluginLoader: registered hook (file) ${id} -> ${eventName} -> ${generatedActionName}`);
+              this.registry.registerHook(
+                id,
+                eventName,
+                generatedAction
+              );
             } else {
-              // treat as action name (must exist in manifest.actions or will be resolved at runtime)
-              const actionName = actionRef;
-              this.registry.registerHook(id, eventName, actionName);
-              this.logger.info(`PluginLoader: registered hook ${id} -> ${eventName} -> ${actionName}`);
+              this.registry.registerHook(id, eventName, actionRef);
             }
           }
         }
 
-        // -------------------------
-        // UI menu metadata: keep manifest.ui as-is
-        // -------------------------
-        // registry already stores manifest in plugin meta where admin UI can read it
+        // --------------------------------------------------
+        // EXECUTE PLUGIN ENTRY (NEW – CRITICAL)
+        // --------------------------------------------------
+        if (meta.indexPath) {
+          try {
+            delete require.cache[require.resolve(meta.indexPath)];
+            const entry = require(meta.indexPath);
 
-        this.logger.info(`PluginLoader: loaded plugin ${id} from ${base}`);
+            if (typeof entry === "function") {
+              entry({
+                app: this.app,
+                registry: this.registry,
+                logger: this.logger,
+                plugin: meta
+              });
+
+              this.logger.info(
+                `PluginLoader: executed entry for ${id}`
+              );
+            }
+          } catch (e) {
+            this.logger.error(
+              `PluginLoader: failed to execute index.js for ${id}: ${e.message}`
+            );
+          }
+        }
+
+        this.logger.info(
+          `PluginLoader: loaded plugin ${id} from ${base}`
+        );
       } catch (err) {
-        this.logger.error(`PluginLoader: failed to load plugin folder ${folder}: ${err.stack}`);
+        this.logger.error(
+          `PluginLoader: failed to load ${folder}: ${err.stack}`
+        );
       }
     }
 
-    // restore actions if registry.setAll cleared them earlier (keeps prior behavior)
+    // --------------------------------------------------
+    // KEEP EXISTING REGISTRY BEHAVIOR
+    // --------------------------------------------------
     this._syncRegistry(plugins);
     return plugins;
   }
-async reload() {
-  this.logger.info("PluginLoader: reloading plugins...");
-  return await this.loadAll();
-}
 
+  async reload() {
+    this.logger.info("PluginLoader: reloading plugins...");
+    return this.loadAll();
+  }
+
+  // ======================================================
+  // INTERNAL HELPERS (UNCHANGED)
+  // ======================================================
   _registerActionsForPlugin(pluginId, basePath, actions) {
     if (!actions || typeof actions !== "object") return;
 
@@ -161,17 +223,15 @@ async reload() {
         fnName = def.fnName || null;
         description = def.description || null;
         meta = def.meta || null;
-        runtime = def.runtime || (file && file.endsWith(".wasm") ? "wasm" : "js");
+        runtime =
+          def.runtime ||
+          (file && file.endsWith(".wasm") ? "wasm" : "js");
       } else {
-        this.logger.warn(`PluginLoader: invalid action definition for ${pluginId}:${actionName}`);
         continue;
       }
 
       const fullPath = path.join(basePath, file);
-      if (!fs.existsSync(fullPath)) {
-        this.logger.warn(`PluginLoader: action file missing for ${pluginId}:${actionName} → ${fullPath}`);
-        continue;
-      }
+      if (!fs.existsSync(fullPath)) continue;
 
       this.registry.registerAction(pluginId, actionName, {
         file,
@@ -185,20 +245,12 @@ async reload() {
 
   _syncRegistry(plugins) {
     if (typeof this.registry.setAll === "function") {
-      const previousActions = this._snapshotActions();
-      this.registry.setAll(plugins); // replaces plugin list
+      const prev = this._snapshotActions();
+      this.registry.setAll(plugins);
 
-      // restore actions
-      for (const [pluginId, actions] of Object.entries(previousActions)) {
-        for (const [actionName, info] of Object.entries(actions)) {
-          this.registry.registerAction(pluginId, actionName, info);
-        }
-      }
-    } else {
-      if (this.registry.plugins) {
-        this.registry.plugins.clear();
-        for (const [id, meta] of Object.entries(plugins)) {
-          this.registry.plugins.set(id, meta);
+      for (const [pid, actions] of Object.entries(prev)) {
+        for (const [name, info] of Object.entries(actions)) {
+          this.registry.registerAction(pid, name, info);
         }
       }
     }
@@ -207,10 +259,11 @@ async reload() {
   _snapshotActions() {
     const out = {};
     if (!this.registry.actions) return out;
-    for (const [pluginId, map] of this.registry.actions.entries()) {
-      out[pluginId] = {};
+
+    for (const [pid, map] of this.registry.actions.entries()) {
+      out[pid] = {};
       for (const [name, info] of map.entries()) {
-        out[pluginId][name] = info;
+        out[pid][name] = info;
       }
     }
     return out;

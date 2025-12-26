@@ -1,8 +1,7 @@
-// src/modules/automation/actions/builtin/echo.action.js
 module.exports = {
-  key: "echo",
+  name: "echo",
   type: "builtin",
-  description: "Echo input (testing)",
+  description: "Echo input for testing",
 
   schema: {
     type: "object",
@@ -12,6 +11,6 @@ module.exports = {
   },
 
   async execute(meta) {
-    return { echo: meta?.message ?? null };
+    return { echo: meta };
   },
 };
