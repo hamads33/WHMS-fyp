@@ -39,7 +39,7 @@ model User {
   trustedDevices TrustedDevice[]
   emailTokens    EmailToken[]
   auditLogs      AuditLog[]
-
+domains   Domain[] 
   // Impersonation
   impersonationsStarted  Impersonation[] @relation("Impersonator")
   impersonationsReceived Impersonation[] @relation("Impersonated")
@@ -415,47 +415,161 @@ model EmailEvent {
 // DOMAINS
 ////////////////////////////////////////////////////////////
 
+enum DomainStatus {
+  pending_registration
+  active
+  expired
+  grace
+  redemption
+  transfer_pending
+  transfer_failed
+  transferred_out
+  cancelled
+}
+
+enum DomainContactType {
+  registrant
+  admin
+  tech
+  billing
+}
+
+enum DomainTransferStatus {
+  pending
+  approved
+  rejected
+  completed
+}
 model Domain {
-  id          Int       @id @default(autoincrement())
-  name        String    @unique
-  provider    String?
-  status      String    @default("active")
-  expiryDate  DateTime?
-  nameservers String[]  @default([])
-  metadata    Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  deleted     Boolean   @default(false)
-  deletedAt   DateTime?
+  id        Int    @id @default(autoincrement())
+  name      String @unique
 
-  dnsRecords DNSRecord[]
-  logs       DomainLog[]
-}
+  // Ownership
+  ownerId   String
+  owner     User   @relation(fields: [ownerId], references: [id])
 
-model DNSRecord {
-  id       Int    @id @default(autoincrement())
-  domainId Int
-  domain   Domain @relation(fields: [domainId], references: [id])
+  // Registrar
+  registrar String?
+  providerConfigId Int?
+  providerConfig   ProviderConfig? @relation(fields: [providerConfigId], references: [id])
 
-  type       String
-  name       String
-  value      String
-  ttl        Int      @default(3600)
-  providerId String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
+  // Lifecycle
+  status    DomainStatus @default(pending_registration)
+  expiryDate DateTime?
+  autoRenew  Boolean @default(true)
 
-model DomainLog {
-  id       Int    @id @default(autoincrement())
-  domainId Int
-  domain   Domain @relation(fields: [domainId], references: [id])
+  // Billing snapshot (price locked at time of invoice)
+  registrationPrice Int?
+  renewalPrice      Int?
+  currency           String @default("USD")
 
-  action    String
-  message   String?
-  meta      Json?
+  // DNS
+  nameservers String[] @default([])
+
+  // Extra registrar / TLD specific fields
+  metadata Json?
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  dnsRecords      DNSRecord[]
+  contacts        DomainContact[]
+  transfers       DomainTransfer[]
+  registrarLogs   DomainRegistrarCommand[]
+  logs            DomainLog[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([expiryDate])
 }
+model DomainContact {
+  id       Int @id @default(autoincrement())
+  domainId Int
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  type     DomainContactType
+  name     String
+  email    String
+  phone    String
+  country  String
+
+  createdAt DateTime @default(now())
+
+  @@unique([domainId, type])
+}
+model DomainTransfer {
+  id        Int @id @default(autoincrement())
+  domainId  Int
+  domain    Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  authCode  String
+  status    DomainTransferStatus @default(pending)
+
+  requestedAt DateTime @default(now())
+  completedAt DateTime?
+
+  providerResponse Json?
+
+  @@index([status])
+}
+model DNSRecord {
+  id       Int @id @default(autoincrement())
+  domainId Int
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  type  String   // A, AAAA, MX, TXT, CNAME
+  name  String
+  value String
+  ttl   Int      @default(3600)
+
+  providerRecordId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([domainId])
+}
+model DomainRegistrarCommand {
+  id       Int @id @default(autoincrement())
+  domainId Int
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  action   String   // register, renew, transfer, update_ns
+  request  Json?
+  response Json?
+  success  Boolean
+
+  createdAt DateTime @default(now())
+
+  @@index([domainId])
+  @@index([action])
+}
+model DomainLog {
+  id       Int @id @default(autoincrement())
+  domainId Int
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  action  String
+  message String?
+  meta    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([domainId])
+}
+model TldPricing {
+  id           Int      @id @default(autoincrement())
+  tld          String   @unique
+  registration Decimal  @db.Decimal(10, 2)
+  renewal      Decimal  @db.Decimal(10, 2)
+  transfer     Decimal  @db.Decimal(10, 2)
+  provider     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+
 
 ////////////////////////////////////////////////////////////
 // PROVIDER CONFIG
@@ -468,6 +582,7 @@ model ProviderConfig {
   secret    String?
   endpoint  String?
   active    Boolean  @default(true)
+   domains   Domain[] 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

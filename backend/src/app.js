@@ -125,7 +125,9 @@ app.use("/api/ip-rules", ipRulesRoutes);
    OTHER MODULE ROUTES
 ================================================================ */
 app.use("/api/v1/clients", require("./modules/clients/clients.routes"));
-app.use("/api/domains", require("./modules/domains"));
+app.use("/domains", require("./modules/domains"));
+
+
 
 /* ================================================================
    BACKUP MODULE (AUTO-LOADS PROVIDERS + ROUTES)
