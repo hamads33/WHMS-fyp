@@ -127,6 +127,12 @@ app.use("/api/ip-rules", ipRulesRoutes);
 app.use("/api/v1/clients", require("./modules/clients/clients.routes"));
 app.use("/domains", require("./modules/domains"));
 
+/////services
+app.use("/api/admin", require("./modules/services").adminRoutes);
+app.use("/api/client", require("./modules/services").clientRoutes);
+///orders//
+app.use("/api/client", require("./modules/orders").clientRoutes);
+app.use("/api/admin", require("./modules/orders").adminRoutes);
 
 
 /* ================================================================

@@ -9,7 +9,8 @@
     "prisma:migrate": "npx prisma migrate dev",
     "test": "cross-env NODE_ENV=test jest --runInBand",
     "gen:openapi": "node openapi.js",
-    "backup": "node src/modules/backup/worker/runner.js"
+    "backup": "node src/modules/backup/worker/runner.js",
+    "test:services": "jest src/modules/services/tests/services.e2e.test.js --runInBand"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.2.0",
