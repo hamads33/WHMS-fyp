@@ -1,4 +1,5 @@
 // src/modules/backup/worker/restoreQueue.js
+require("../bootstrap");
 const { Queue, Worker } = require("bullmq");
 const IORedis = require("ioredis");
 const connection = new IORedis(process.env.REDIS_URL || "redis://localhost:6379", { maxRetriesPerRequest: null });

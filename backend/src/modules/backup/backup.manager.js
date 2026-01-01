@@ -16,6 +16,47 @@ const { pgDumpToTempFile } = require("./db/pgDumptofile");
 const { enqueueBackupJob } = require("./worker/queue");
 
 /* =========================================================
+   SECURITY: PATH VALIDATION
+   FIX: Added to prevent path traversal attacks
+========================================================= */
+function validateFilePath(filePath) {
+  if (!filePath || typeof filePath !== "string") {
+    throw new Error("Invalid file path");
+  }
+
+  const normalized = path.normalize(filePath);
+
+  // Prevent path traversal
+  if (normalized.includes("..")) {
+    throw new Error("Path traversal not allowed");
+  }
+
+  // Prevent accessing sensitive system files
+  const sensitivePatterns = [
+    "/etc/shadow",
+    "/etc/passwd",
+    "/.ssh/",
+    "/root/",
+  ];
+
+  for (const pattern of sensitivePatterns) {
+    if (normalized.includes(pattern)) {
+      throw new Error("Access to sensitive paths not allowed");
+    }
+  }
+
+  return normalized;
+}
+
+/* =========================================================
+   CONFIGURATION: SIZE LIMITS
+   FIX: Added to prevent disk exhaustion
+========================================================= */
+const MAX_BACKUP_SIZE = process.env.MAX_BACKUP_SIZE_GB
+  ? parseInt(process.env.MAX_BACKUP_SIZE_GB) * 1024 * 1024 * 1024
+  : 10 * 1024 * 1024 * 1024; // 10GB default
+
+/* =========================================================
    STEP LOGGER (NON-BLOCKING)
 ========================================================= */
 async function recordStep(
@@ -111,7 +152,7 @@ async function performBackupJob(backupId, jobPayload = {}) {
         rec.storageConfigId
       );
       if (!conf) throw new Error("Could not decrypt storage configuration");
-      
+
       providerId = conf.provider;
       providerInstance = createProviderInstance(providerId, conf);
     } else {
@@ -123,11 +164,23 @@ async function performBackupJob(backupId, jobPayload = {}) {
     });
 
     /* ---------------------------------------
-       2. NORMALIZE FILE INPUTS
+       2. NORMALIZE & VALIDATE FILE INPUTS
+       FIX: Added path validation
     ---------------------------------------- */
     const filePaths = Array.isArray(jobPayload.files)
       ? jobPayload.files
-          .map((f) => (typeof f === "string" ? f : f.path))
+          .map((f) => {
+            const rawPath = typeof f === "string" ? f : f.path;
+            if (!rawPath) return null;
+
+            try {
+              // Validate path for security
+              return validateFilePath(rawPath);
+            } catch (err) {
+              console.error(`Invalid path skipped: ${rawPath}`, err.message);
+              return null;
+            }
+          })
           .filter(Boolean)
       : [];
 
@@ -142,7 +195,7 @@ async function performBackupJob(backupId, jobPayload = {}) {
       // FIX: Use your pgDumptofile utility to create a physical temp file
       const dbFile = await pgDumpToTempFile(jobPayload.dbOptions || {});
       archiveFiles.push(dbFile);
-      
+
       // Track directory for cleanup in the 'finally' block
       tempDirs.push(path.dirname(dbFile));
 
@@ -172,9 +225,25 @@ async function performBackupJob(backupId, jobPayload = {}) {
     try {
       if (typeof providerInstance.stat === "function") {
         const st = await providerInstance.stat(remotePath);
-        if (st?.size) sizeBytes = st.size;
+        if (st?.size) {
+          sizeBytes = st.size;
+
+          // FIX: Check size limits
+          if (sizeBytes > MAX_BACKUP_SIZE) {
+            throw new Error(
+              `Backup size ${(sizeBytes / 1024 / 1024 / 1024).toFixed(2)}GB exceeds limit of ${(MAX_BACKUP_SIZE / 1024 / 1024 / 1024).toFixed(2)}GB`
+            );
+          }
+        }
       }
-    } catch (_) { /* ignore stat errors */ }
+    } catch (err) {
+      // If it's a size limit error, re-throw it
+      if (err.message.includes("exceeds limit")) {
+        throw err;
+      }
+      // Otherwise just log and continue (stat is optional)
+      console.warn("stat() failed:", err.message);
+    }
 
     await prisma.backup.update({
       where: { id: rec.id },
@@ -236,7 +305,9 @@ async function performBackupJob(backupId, jobPayload = {}) {
     for (const dir of tempDirs) {
       try {
         await fs.remove(dir);
-      } catch (_) { /* ignore cleanup errors */ }
+      } catch (_) {
+        /* ignore cleanup errors */
+      }
     }
   }
 }

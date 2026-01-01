@@ -1,6 +1,14 @@
 const WebhookEmitter = require("./simpleWebhookEmitter");
 
 module.exports = {
+  register(user) {
+  return WebhookEmitter.emit("auth.register", {
+    userId: user.id,
+    email: user.email,
+    roles: user.roles,
+  });
+},
+
   loginSuccess(user, meta = {}) {
     return WebhookEmitter.emit("auth.login.success", {
       userId: user.id,

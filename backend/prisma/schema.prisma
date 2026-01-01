@@ -21,7 +21,7 @@ model User {
   passwordHash String
 
   emailVerified Boolean @default(false)
-
+disabled      Boolean  @default(false)
   mfaEnabled     Boolean  @default(false)
   mfaSecret      String?
   mfaBackupCodes String[] @default([])
@@ -115,10 +115,13 @@ model Session {
   token     String   @unique
   userAgent String?
   ip        String?
+  deviceHash     String?      // 🔐 hashed device fingerprint
+  country        String?      // 🌍 geo-IP (country only)
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
   expiresAt DateTime
 
+ lastActivity DateTime @default(now())
   isImpersonation     Boolean @default(false)
   impersonatorId      String?
   impersonationReason String?
@@ -601,6 +604,10 @@ model StorageConfig {
   createdById String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // FIX: Added indexes for better query performance
+  @@index([createdById])
+  @@index([provider])
 }
 
 ////////////////////////////////////////////////////////////
@@ -625,7 +632,14 @@ model Backup {
 
   versions BackupVersion[]
   stepLogs BackupStepLog[]
+
+  // FIX: Added composite index for retention policy queries
+  // This dramatically improves performance when finding expired backups
+  @@index([deleted, status, finishedAt])
+  @@index([createdById])
+  @@index([status])
 }
+
 
 model BackupVersion {
   id        String   @id @default(uuid())
@@ -636,8 +650,11 @@ model BackupVersion {
   createdAt DateTime @default(now())
 
   backup Backup @relation(fields: [backupId], references: [id])
-}
 
+  // FIX: Added indexes for version queries
+  @@index([backupId])
+  @@index([createdAt])
+}
 model BackupStepLog {
   id        String   @id @default(uuid())
   backupId  String
@@ -648,6 +665,11 @@ model BackupStepLog {
   createdAt DateTime @default(now())
 
   backup Backup @relation(fields: [backupId], references: [id])
+
+  // FIX: Added indexes for log queries
+  @@index([backupId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 ////////////////////////////////////////////////////////////
@@ -1234,26 +1256,33 @@ model ServiceSnapshot {
 /////////orders//////////
 enum OrderStatus {
   pending
-  confirmed
-  cancelled
+  active
+  suspended
+  terminated
+   cancelled 
 }
 
 model Order {
-  id String @id @default(uuid())
+  id        String   @id @default(uuid())
+  clientId  String
+  client    User     @relation(fields: [clientId], references: [id])
 
-  // Ownership
-  clientId String
-  client   User   @relation(fields: [clientId], references: [id])
-
-  // Service snapshot (LOCKED)
   snapshotId Int
   snapshot   ServiceSnapshot @relation(fields: [snapshotId], references: [id])
 
-  status OrderStatus @default(pending)
+  status     OrderStatus @default(pending)
+
+  // NEW
+  startedAt       DateTime?
+  nextRenewalAt   DateTime?
+  suspendedAt     DateTime?
+  terminatedAt    DateTime?
+  cancelledAt     DateTime? 
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([clientId])
   @@index([status])
+  @@index([nextRenewalAt])
 }

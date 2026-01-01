@@ -8,43 +8,45 @@ const SALT = 12;
 
 const PasswordResetService = {
   ////////////////////////////////////////////////////////////////
-  // REQUEST PASSWORD RESET EMAIL
+  // ADMIN-FORCED PASSWORD RESET (REPURPOSED METHOD)
   ////////////////////////////////////////////////////////////////
   async requestReset(email) {
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) return true; // do nothing to prevent email enumeration
+    if (!user) return true; // avoid enumeration
 
-    // create raw token
-    const raw = crypto.randomBytes(32).toString("hex");
-    const hash = await bcrypt.hash(raw, SALT);
+    const tempPassword = crypto.randomBytes(6).toString("hex");
+    const passwordHash = await bcrypt.hash(tempPassword, SALT);
 
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 mins
-
-    await prisma.emailToken.create({
+    // update password + force change
+    await prisma.user.update({
+      where: { id: user.id },
       data: {
-        userId: user.id,
-        tokenHash: hash,
-        type: "password_reset",
-        expiresAt
+        passwordHash,
+        forcePasswordChange: true
       }
     });
 
-    const link = `${process.env.APP_URL}/api/auth/password/reset?token=${raw}`;
+    // revoke all sessions
+    await prisma.session.deleteMany({
+      where: { userId: user.id }
+    });
 
-    const html = `
-      <p>Hello ${user.email},</p>
-      <p>You requested to reset your password.</p>
-      <p><a href="${link}">Click here to reset your password</a></p>
-      <p>This link expires in 30 minutes.</p>
-    `;
-
-    await sendMail(user.email, "Reset Your Password", html);
+    // notify user (FIXED sendMail SIGNATURE)
+    await sendMail({
+      to: user.email,
+      subject: "Your password was reset by an administrator",
+      html: `
+        <p>Your account password has been reset by an administrator.</p>
+        <p><b>Temporary password:</b> ${tempPassword}</p>
+        <p>Please log in and change it immediately.</p>
+      `
+    });
 
     // audit
     try {
       await AuditService.log({
         userId: user.id,
-        action: "password.reset.email_sent",
+        action: "admin.password.reset",
         entity: "user",
         entityId: user.id
       });
@@ -54,7 +56,7 @@ const PasswordResetService = {
   },
 
   ////////////////////////////////////////////////////////////////
-  // VERIFY TOKEN (for GET /reset?token=)
+  // VERIFY TOKEN (USED BY USER RESET PAGE REDIRECT)
   ////////////////////////////////////////////////////////////////
   async verifyToken(raw) {
     const rows = await prisma.emailToken.findMany({
@@ -71,7 +73,7 @@ const PasswordResetService = {
   },
 
   ////////////////////////////////////////////////////////////////
-  // RESET PASSWORD
+  // RESET PASSWORD (USER SELF RESET FINAL STEP)
   ////////////////////////////////////////////////////////////////
   async resetPassword(rawToken, newPassword) {
     const tokenRow = await this.verifyToken(rawToken);
@@ -79,24 +81,20 @@ const PasswordResetService = {
 
     const passwordHash = await bcrypt.hash(newPassword, SALT);
 
-    // update password
     await prisma.user.update({
       where: { id: tokenRow.userId },
       data: { passwordHash }
     });
 
-    // mark token as used
     await prisma.emailToken.update({
       where: { id: tokenRow.id },
       data: { used: true }
     });
 
-    // invalidate existing sessions (logout everywhere)
     await prisma.session.deleteMany({
       where: { userId: tokenRow.userId }
     });
 
-    // audit
     try {
       await AuditService.log({
         userId: tokenRow.userId,

@@ -5,29 +5,27 @@ const crypto = require("crypto");
 const TokenService = require("./token.service");
 const RolePolicyService = require("./rolePolicy.service");
 const AuditService = require("./audit.service");
+const { resolveCountry } = require("../utils/geoip");
+const { hashDevice } = require("..//utils/deviceFingerprint");
 
-// Mailer (existing fallback pattern)
 // Mailer (safe fallback with correct path)
 let Mailer;
 
 try {
-  // Correct relative path from services → utils
   Mailer = require("../utils/mailer");
 } catch (e1) {
   try {
-    // Keep your old attempt in case other modules rely on it
     Mailer = require("../../../utils/mailer");
   } catch (e2) {
     Mailer = {
       sendMail: async () => {
-        console.warn("📨 Fallback Mailer used — email dropped (OK in dev)");
+        console.warn("📨 Fallback Mailer used – email dropped (OK in dev)");
       }
     };
   }
 }
 
-
-// Webhook emitter — try a few relative paths then fallback to noop
+// Webhook emitter – try a few relative paths then fallback to noop
 let Webhook = { emit: async () => {} };
 try {
   Webhook = require("../../../module/services/webhook.service");
@@ -38,30 +36,24 @@ try {
     try {
       Webhook = require("../../../../module/services/webhook.service");
     } catch (e3) {
-      // keep noop emitter
       Webhook = { emit: async () => {} };
     }
   }
 }
 
 const SALT_ROUNDS = 12;
-
-// Email token lifetime (ms). 24 hours.
 const EMAIL_TOKEN_TTL_MS = 1000 * 60 * 60 * 24;
 
 const AuthService = {
   ////////////////////////////////////////////////////////
-  // REGISTER — Create user + assign default client role
+  // REGISTER – Create user + assign default client role
   ////////////////////////////////////////////////////////
   async register({ email, password }) {
-    // 1) prevent duplicate
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) throw new Error("Email already registered");
 
-    // 2) hash password
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // 3) create user (emailVerified stays false by default)
     const user = await prisma.user.create({
       data: {
         email,
@@ -69,7 +61,6 @@ const AuthService = {
       },
     });
 
-    // 4) assign default role = client (if exists)
     const clientRole = await prisma.role.findUnique({ where: { name: "client" } });
     if (clientRole) {
       await prisma.userRole.create({
@@ -80,18 +71,14 @@ const AuthService = {
       });
     }
 
-    // 5) create client profile idempotently
     await prisma.clientProfile.create({ data: { userId: user.id } }).catch(() => {});
 
-    // emit webhook (register)
     try {
       await Webhook.emit("auth.register", { userId: user.id, email: user.email });
     } catch (err) {
-      // swallowing webhook errors intentionally (non-blocking)
       console.warn("Webhook emit (auth.register) failed:", err?.message || err);
     }
 
-    // 6) return minimal safe payload
     return {
       id: user.id,
       email: user.email,
@@ -99,9 +86,6 @@ const AuthService = {
     };
   },
 
-  // ---------------------------------------------------------------------
-  // Basic User Fetch Helpers Needed by Controllers & Tests
-  // ---------------------------------------------------------------------
   async findUserById(id) {
     return prisma.user.findUnique({ where: { id } });
   },
@@ -113,8 +97,6 @@ const AuthService = {
   ////////////////////////////////////////////////////////
   // EMAIL VERIFICATION HELPERS
   ////////////////////////////////////////////////////////
-
-  // Create and persist an email verification token (plaintext token stored).
   async createEmailVerificationToken(userId, ttlMs = EMAIL_TOKEN_TTL_MS) {
     const token = crypto.randomBytes(20).toString("hex");
     const expiresAt = new Date(Date.now() + ttlMs);
@@ -131,14 +113,12 @@ const AuthService = {
     return { token, expiresAt };
   },
 
-  // Send verification email
   async sendVerificationEmail(userId, { origin } = {}) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error("User not found");
 
     const { token } = await this.createEmailVerificationToken(userId);
 
-    // prefer origin param, fallback to env or localhost
     const base = origin || process.env.FRONTEND_URL || process.env.APP_URL || "http://localhost:3000";
     const verifyUrl = `${base.replace(/\/$/, "")}/api/auth/verify-email?token=${token}`;
 
@@ -153,7 +133,6 @@ const AuthService = {
 
     await Mailer.sendMail({ to: user.email, subject, text, html });
 
-    // emit webhook (email.sent)
     try {
       await Webhook.emit("auth.email.verify.sent", { userId: user.id, email: user.email, verifyUrl });
     } catch (err) {
@@ -163,11 +142,9 @@ const AuthService = {
     return { success: true, verifyUrl };
   },
 
-  // Verify token, mark user.emailVerified true and delete token
   async verifyEmailToken(token) {
     if (!token) throw new Error("Token is required");
 
-    // find token record
     const record = await prisma.emailToken.findFirst({
       where: {
         token,
@@ -182,13 +159,11 @@ const AuthService = {
       throw new Error("Token expired");
     }
 
-    // mark user verified
     const user = await prisma.user.update({
       where: { id: record.userId },
       data: { emailVerified: true },
     });
 
-    // cleanup tokens
     await prisma.emailToken.deleteMany({
       where: {
         userId: record.userId,
@@ -196,7 +171,6 @@ const AuthService = {
       },
     });
 
-    // create audit entry
     await AuditService.log({
       userId: record.userId,
       action: "user.email_verified",
@@ -207,7 +181,6 @@ const AuthService = {
       userAgent: null,
     });
 
-    // emit webhook (email.verified)
     try {
       await Webhook.emit("auth.email.verified", { userId: user.id, email: user.email });
     } catch (err) {
@@ -218,146 +191,298 @@ const AuthService = {
   },
 
   ////////////////////////////////////////////////////////
-  // LOGIN — Multi-role + MFA-aware + RolePolicy enforcement
+  // LOGIN – Multi-role + MFA-aware + RolePolicy enforcement
   ////////////////////////////////////////////////////////
   async login({ email, password, ip, userAgent }) {
-    // 1) load user with roles & profiles
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        roles: {
-          include: {
-            role: {
-              include: {
-                permissions: {
-                  include: { permission: true },
-                },
+  // ------------------------------------------------------
+  // 0) Normalize request context (CRITICAL)
+  // ------------------------------------------------------
+  const normalizedIp = ip || null;
+  const normalizedUserAgent = userAgent || null;
+
+  // ------------------------------------------------------
+  // 1) Load user with roles & profiles
+  // ------------------------------------------------------
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: {
+      roles: {
+        include: {
+          role: {
+            include: {
+              permissions: {
+                include: { permission: true },
               },
             },
           },
         },
-        clientProfile: true,
-        adminProfile: true,
-        resellerProfile: true,
-        developerProfile: true,
       },
-    });
+      clientProfile: true,
+      adminProfile: true,
+      resellerProfile: true,
+      developerProfile: true,
+    },
+  });
 
-    if (!user) {
-      await this.logLoginAttempt(null, email, false, ip, userAgent, "user_not_found");
-      // emit webhook (login failure)
-      try {
-        await Webhook.emit("auth.login.failure", { email, reason: "user_not_found", ip, userAgent });
-      } catch (err) {
-        console.warn("Webhook emit (auth.login.failure) failed:", err?.message || err);
-      }
-      throw new Error("Invalid email or password");
-    }
+  if (!user) {
+    await this.logLoginAttempt(
+      null,
+      email,
+      false,
+      normalizedIp,
+      normalizedUserAgent,
+      "user_not_found"
+    );
 
-    // 2) Verify Password
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
-    if (!isValidPassword) {
-      await this.logLoginAttempt(user.id, email, false, ip, userAgent, "invalid_password");
-      try {
-        await Webhook.emit("auth.login.failure", { userId: user.id, email, reason: "invalid_password", ip, userAgent });
-      } catch (err) {
-        console.warn("Webhook emit (auth.login.failure) failed:", err?.message || err);
-      }
-      throw new Error("Invalid email or password");
-    }
-
-    // 3) Reload minimal fresh record (for flags like emailVerified)
-    const fresh = await prisma.user.findUnique({ where: { id: user.id } });
-    user.emailVerified = Boolean(fresh?.emailVerified);
-
-    // 4) Ensure profiles exist based on roles (Self-healing)
-    await Promise.all(this._ensurePortalProfiles(user));
-
-    // 5) Generate Tokens
-    const accessToken = TokenService.signAccessToken({ userId: user.id });
-    const refreshToken = TokenService.signRefreshToken({ userId: user.id });
-
-    // 6) Create Session
-    await prisma.session.create({
-      data: {
-        userId: user.id,
-        token: refreshToken,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), // 7 days
-        ip,
-        userAgent,
-      },
-    });
-
-    // 7) Log Success
-    await this.logLoginAttempt(user.id, email, true, ip, userAgent, "login_success");
-
-    // emit webhook (login success)
     try {
-      await Webhook.emit("auth.login.success", { userId: user.id, email: user.email, ip, userAgent });
-    } catch (err) {
-      console.warn("Webhook emit (auth.login.success) failed:", err?.message || err);
-    }
+      await Webhook.emit("auth.login.failure", {
+        email,
+        reason: "user_not_found",
+        ip: normalizedIp,
+        userAgent: normalizedUserAgent,
+      });
+    } catch {}
 
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        emailVerified: user.emailVerified,
-        roles: (user.roles || []).map((r) => r.role && r.role.name).filter(Boolean),
-      },
-      accessToken,
-      refreshToken,
-    };
-  },
+    throw new Error("Invalid email or password");
+  }
 
-  ////////////////////////////////////////////////////////
-  // REFRESH — Rotate refresh token
-  ////////////////////////////////////////////////////////
-  async refresh({ refreshToken }) {
-    const payload = TokenService.verifyRefreshToken(refreshToken);
-    if (!payload) throw new Error("Invalid refresh token");
+  // ------------------------------------------------------
+  // 2) Verify password
+  // ------------------------------------------------------
+  const isValidPassword = await bcrypt.compare(
+    password,
+    user.passwordHash
+  );
 
-    const session = await prisma.session.findUnique({ where: { token: refreshToken } });
-    if (!session) throw new Error("Session expired or invalid");
+  if (!isValidPassword) {
+    await this.logLoginAttempt(
+      user.id,
+      email,
+      false,
+      normalizedIp,
+      normalizedUserAgent,
+      "invalid_password"
+    );
 
-    const user = await prisma.user.findUnique({ where: { id: payload.userId } });
-    if (!user) throw new Error("User not found");
-
-    // rotate tokens
-    await prisma.session.deleteMany({ where: { token: refreshToken } });
-
-    const newRefresh = TokenService.signRefreshToken({ userId: user.id });
-    const newAccess = TokenService.signAccessToken({ userId: user.id });
-
-    await prisma.session.create({
-      data: {
+    try {
+      await Webhook.emit("auth.login.failure", {
         userId: user.id,
-        token: newRefresh,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+        email,
+        reason: "invalid_password",
+        ip: normalizedIp,
+        userAgent: normalizedUserAgent,
+      });
+    } catch {}
+
+    throw new Error("Invalid email or password");
+  }
+
+  // ------------------------------------------------------
+  // 3) Reload fresh flags (emailVerified, disabled, etc.)
+  // ------------------------------------------------------
+  const fresh = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { emailVerified: true },
+  });
+
+  user.emailVerified = Boolean(fresh?.emailVerified);
+
+  // ------------------------------------------------------
+  // 4) Ensure portal profiles (self-healing)
+  // ------------------------------------------------------
+  await Promise.all(this._ensurePortalProfiles(user));
+
+  // ------------------------------------------------------
+  // 5) Generate tokens
+  // ------------------------------------------------------
+  const accessToken = TokenService.signAccessToken({
+    userId: user.id,
+  });
+
+  const refreshToken = TokenService.signRefreshToken({
+    userId: user.id,
+  });
+
+  // ------------------------------------------------------
+  // 6) Device fingerprint + Geo-IP (SAFE & PRIVACY-AWARE)
+  // ------------------------------------------------------
+  const country = resolveCountry(normalizedIp);
+
+  const deviceHash = hashDevice({
+    userAgent: normalizedUserAgent,
+    ip: normalizedIp,
+  });
+
+  // ------------------------------------------------------
+  // 7) Detect new device
+  // ------------------------------------------------------
+  let isNewDevice = false;
+
+  if (deviceHash) {
+    const knownDevice = await prisma.session.findFirst({
+      where: {
+        userId: user.id,
+        deviceHash,
+      },
+      select: { id: true },
+    });
+
+    isNewDevice = !knownDevice;
+  }
+
+  // ------------------------------------------------------
+  // 8) Remove existing session for SAME DEVICE only
+  // (prevents duplicates without killing other sessions)
+  // ------------------------------------------------------
+  if (deviceHash) {
+    await prisma.session.deleteMany({
+      where: {
+        userId: user.id,
+        deviceHash,
+      },
+    });
+  }
+
+  // ------------------------------------------------------
+  // 9) Create session (authoritative source of truth)
+  // ------------------------------------------------------
+  await prisma.session.create({
+    data: {
+      userId: user.id,
+      token: accessToken,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), // 24h
+      ip: normalizedIp,
+      userAgent: normalizedUserAgent,
+      deviceHash,
+      country,
+      lastActivity: new Date(),
+    },
+  });
+
+  // ------------------------------------------------------
+  // 10) Log success
+  // ------------------------------------------------------
+  await this.logLoginAttempt(
+    user.id,
+    email,
+    true,
+    normalizedIp,
+    normalizedUserAgent,
+    "login_success"
+  );
+
+  try {
+    await Webhook.emit("auth.login.success", {
+      userId: user.id,
+      email: user.email,
+      ip: normalizedIp,
+      userAgent: normalizedUserAgent,
+      country,
+    });
+  } catch {}
+
+  // ------------------------------------------------------
+  // 11) New device security alert (NON-BLOCKING)
+  // ------------------------------------------------------
+  if (isNewDevice) {
+    await AuditService.log({
+      userId: user.id,
+      action: "security.new_device",
+      entity: "session",
+      entityId: user.id,
+      data: {
+        ip: normalizedIp,
+        country,
+        userAgent: normalizedUserAgent,
+      },
+      ip: normalizedIp,
+      userAgent: normalizedUserAgent,
+    });
+
+    try {
+      await Webhook.emit("security.new_device", {
+        userId: user.id,
+        email: user.email,
+        ip: normalizedIp,
+        country,
+      });
+    } catch {}
+  }
+
+  // ------------------------------------------------------
+  // 12) Return response (unchanged contract)
+  // ------------------------------------------------------
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      roles: (user.roles || [])
+        .map((r) => r.role && r.role.name)
+        .filter(Boolean),
+    },
+    accessToken,
+    refreshToken,
+  };
+}
+,
+
+  ////////////////////////////////////////////////////////
+  // REFRESH – Rotate refresh token
+  // ✅ FIXED: Now accepts ip and userAgent + cleans up old sessions
+  ////////////////////////////////////////////////////////
+  async refresh({ refreshToken, ip, userAgent }) {
+    // 1) Verify the refresh token JWT
+    const payload = TokenService.verifyRefreshToken(refreshToken);
+    if (!payload?.userId) throw new Error("Invalid refresh token");
+
+    // 2) Load user and check if active
+    const user = await prisma.user.findUnique({ where: { id: payload.userId } });
+    if (!user || user.disabled) throw new Error("User not found or disabled");
+
+    // 3) Generate new tokens
+    const newAccessToken = TokenService.signAccessToken({ userId: user.id });
+    const newRefreshToken = TokenService.signRefreshToken({ userId: user.id });
+
+    // ✅ FIX: Delete any existing sessions for this user from this device/IP
+    await prisma.session.deleteMany({
+      where: {
+        userId: user.id,
+        ip: ip || null,
+        userAgent: userAgent || null,
       },
     });
 
-    // emit webhook (refresh)
+    // 4) ✅ Create session with ip and userAgent
+    await prisma.session.create({
+      data: {
+        userId: user.id,
+        token: newAccessToken,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), // 24 hours
+        ip: ip || null,
+        userAgent: userAgent || null,
+        lastActivity: new Date(),
+      },
+    });
+
     try {
       await Webhook.emit("auth.refresh", { userId: user.id });
     } catch (err) {
       console.warn("Webhook emit (auth.refresh) failed:", err?.message || err);
     }
 
-    return { accessToken: newAccess, refreshToken: newRefresh };
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
   },
 
   ////////////////////////////////////////////////////////
-  // LOGOUT — Revoke refresh token(s)
+  // LOGOUT – Revoke refresh token(s)
   ////////////////////////////////////////////////////////
   async logout(refreshToken) {
     if (!refreshToken) return;
-    // find session first for userId to include in webhook
     const session = await prisma.session.findUnique({ where: { token: refreshToken } });
     const userId = session ? session.userId : null;
     await prisma.session.deleteMany({ where: { token: refreshToken } });
 
-    // emit webhook (logout)
     try {
       await Webhook.emit("auth.logout", { userId });
     } catch (err) {
@@ -368,7 +493,7 @@ const AuthService = {
   },
 
   ////////////////////////////////////////////////////////
-  // LOGIN LOGGING (also writes to AuditLog via AuditService)
+  // LOGIN LOGGING
   ////////////////////////////////////////////////////////
   async logLoginAttempt(userId, email, success, ip, userAgent, reason) {
     await prisma.loginLog.create({

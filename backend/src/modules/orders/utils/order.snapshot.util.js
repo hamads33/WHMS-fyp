@@ -1,3 +1,6 @@
+
+// Path: src/modules/orders/utils/order.snapshot.util.js
+
 const prisma = require("../../../../prisma");
 
 /**
@@ -36,3 +39,4 @@ async function createOrderSnapshot({ serviceId, planId, pricingId }) {
 }
 
 module.exports = { createOrderSnapshot };
+

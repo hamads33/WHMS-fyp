@@ -89,7 +89,17 @@ const ImpersonationService = {
       console.warn("Webhook start error:", err.message);
     }
 
-    return { accessToken, refreshToken, session, targetUser };
+    return {
+  accessToken,
+  refreshToken,
+  session,
+  targetUser: {
+    id: targetUser.id,
+    email: targetUser.email,
+    roles: targetUser.roles.map(r => r.role.name),
+  },
+};
+
   },
 
   ////////////////////////////////////////////////////////////

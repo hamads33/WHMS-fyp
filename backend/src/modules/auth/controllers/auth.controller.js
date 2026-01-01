@@ -1,7 +1,7 @@
 // src/modules/auth/controllers/auth.controller.js
-
 const AuthService = require("../services/auth.service");
 const AuthEvents = require("../services/authEvents");
+const EmailTokenService = require("../services/emailToken.service");
 
 class AuthController {
   // ======================================================
@@ -17,13 +17,21 @@ class AuthController {
           .json({ error: "Email and password are required" });
       }
 
+      // 1 Create user (core business logic)
       const user = await AuthService.register({ email, password });
 
-      // 🔔 AUTH EVENT
+      // 2 Emit auth domain event
       AuthEvents.register(user);
 
+      // 3 Send verification email (side-effect, correct layer)
+      await EmailTokenService.sendVerificationEmail(
+        user,
+        process.env.FRONTEND_ORIGIN
+      );
+
+      // 4️⃣ Respond (do NOT expose token)
       return res.status(201).json({
-        message: "Registration successful",
+        message: "Registration successful. Please verify your email.",
         user,
       });
     } catch (err) {
@@ -33,7 +41,7 @@ class AuthController {
   }
 
   // ======================================================
-  // LOGIN — Cookies + Tokens (Postman friendly)
+  // LOGIN – Cookies + Tokens (Postman friendly)
   // ======================================================
   static async login(req, res) {
     try {
@@ -93,6 +101,7 @@ class AuthController {
 
   // ======================================================
   // REFRESH TOKEN
+  // ✅ UPDATED: Now passes ip and userAgent to service
   // ======================================================
   static async refresh(req, res) {
     try {
@@ -103,8 +112,13 @@ class AuthController {
         return res.status(400).json({ error: "refreshToken is required" });
       }
 
+      // ✅ Pass ip and userAgent to service
       const { accessToken, refreshToken: newRefresh } =
-        await AuthService.refresh({ refreshToken });
+        await AuthService.refresh({ 
+          refreshToken,
+          ip: req.ip,
+          userAgent: req.get("User-Agent")
+        });
 
       const cookieOptions = {
         httpOnly: true,
@@ -166,7 +180,7 @@ class AuthController {
   }
 
   // ======================================================
-  // ME — Protected
+  // ME – Protected
   // ======================================================
   static async me(req, res) {
     try {

@@ -5,9 +5,10 @@ const SessionController = {
   /////////////////////////////////////////////////////////////////
   // GET /sessions  → List all active user sessions
   /////////////////////////////////////////////////////////////////
-async listSessions(req, res) {
+  async listSessions(req, res) {
   try {
     const userId = req.user.id;
+    const currentToken = req.auth.token; // Current access token
 
     const sessions = await prisma.session.findMany({
       where: { userId },
@@ -16,28 +17,43 @@ async listSessions(req, res) {
         id: true,
         userAgent: true,
         ip: true,
+        country: true,        // 🌍 geo-IP (optional)
         createdAt: true,
         expiresAt: true,
-        token: true,
+        lastActivity: true,
+        token: true,          // used ONLY to detect current session
       },
     });
 
     const mapped = sessions.map((s) => ({
-      ...s,
+      id: s.id,
+
+      // Device info (frontend parses userAgent safely)
       device: s.userAgent || "Unknown Device",
+      userAgent: s.userAgent || null,
+
+      // Network context
+      ip: s.ip || null,
+      country: s.country || "Unknown",
+
+      // Timestamps
       startedAt: s.createdAt,
-      lastActivity: s.expiresAt, // TEMP semantic mapping
-      isCurrent: s.token === req.auth.token,
+      lastActivity: s.lastActivity || s.createdAt,
+      expiresAt: s.expiresAt,
+
+      // Session state
+      isCurrent: s.token === currentToken,
     }));
 
-    res.json({ sessions: mapped });
+    return res.json({ sessions: mapped });
   } catch (err) {
-    console.error("listSessions error", err);
-    res.status(500).json({ error: "Failed to load sessions" });
+    console.error("listSessions error:", err);
+    return res.status(500).json({
+      error: "Failed to load sessions",
+    });
   }
 }
-
-  ,
+,
   /////////////////////////////////////////////////////////////////
   // DELETE /sessions/:sessionId → Logout a specific session
   /////////////////////////////////////////////////////////////////
@@ -46,7 +62,9 @@ async listSessions(req, res) {
       const sessionId = req.params.sessionId;
       const userId = req.user.id;
 
-      const session = await prisma.session.findUnique({ where: { id: sessionId } });
+      const session = await prisma.session.findUnique({ 
+        where: { id: sessionId } 
+      });
 
       if (!session || session.userId !== userId) {
         return res.status(404).json({ error: "Session not found" });
@@ -54,7 +72,10 @@ async listSessions(req, res) {
 
       await prisma.session.delete({ where: { id: sessionId } });
 
-      res.json({ success: true, message: "Session revoked" });
+      res.json({ 
+        success: true, 
+        message: "Session revoked successfully" 
+      });
     } catch (err) {
       console.error("revokeSession error", err);
       res.status(500).json({ error: "Failed to revoke session" });
@@ -64,40 +85,33 @@ async listSessions(req, res) {
   /////////////////////////////////////////////////////////////////
   // DELETE /sessions/others → Logout all other devices except current
   /////////////////////////////////////////////////////////////////
- async revokeOtherSessions(req, res) {
-  try {
-    const userId = req.user.id;
+  async revokeOtherSessions(req, res) {
+    try {
+      const userId = req.user.id;
+      const currentToken = req.auth.token; // ✅ Get current access token from auth guard
 
-    // Extract current access token from cookies (NOT headers)
-    const currentToken =
-      req.cookies?.access_token ||
-      req.cookies?.accessToken ||
-      null;
+      if (!currentToken) {
+        return res.status(400).json({ error: "Current session not found" });
+      }
 
-    if (!currentToken) {
-      return res.status(400).json({ error: "Current session not found" });
+      // ✅ Delete all sessions except the current one
+      const result = await prisma.session.deleteMany({
+        where: {
+          userId,
+          token: { not: currentToken }, // Keep only current session
+        },
+      });
+
+      res.json({
+        success: true,
+        message: "Other sessions revoked successfully",
+        count: result.count, // Number of sessions revoked
+      });
+    } catch (err) {
+      console.error("revokeOtherSessions error", err);
+      res.status(500).json({ error: "Failed to revoke other sessions" });
     }
-
-    await prisma.session.deleteMany({
-      where: {
-        userId,
-        token: { not: currentToken },
-      },
-    });
-
-    res.json({
-      success: true,
-      message: "Other sessions revoked",
-    });
-  } catch (err) {
-    console.error("revokeOtherSessions error", err);
-    res.status(500).json({ error: "Failed to revoke other sessions" });
-  }
-}
-
-,
-
-
+  },
 
   /////////////////////////////////////////////////////////////////
   // GET /security/logs → View login logs (success & failed)
@@ -127,46 +141,44 @@ async listSessions(req, res) {
     }
   },
 
+  ///////////////////////////////////////////////////////////////
+  // GET /session → Get current auth session context
+  ///////////////////////////////////////////////////////////////
+  async getCurrentSession(req, res) {
+    try {
+      const user = req.user;
+      const roles = user.roles || [];
 
-///////////////////////////////////////////////////////////////
-// GET /session → Get current auth session context
-///////////////////////////////////////////////////////////////
-async getCurrentSession(req, res) {
-  try {
-    const user = req.user;
-    const roles = user.roles || [];
+      // 🎯 PORTAL RESOLUTION (EXPLICIT & PRIORITIZED)
+      let portal = "client"; // default
 
-    // 🎯 PORTAL RESOLUTION (EXPLICIT & PRIORITIZED)
-    let portal = "client"; // default
+      if (roles.includes("superadmin") || roles.includes("admin") || roles.includes("staff")) {
+        portal = "admin";
+      } else if (roles.includes("developer")) {
+        portal = "developer";
+      }
 
-    if (roles.includes("superadmin") || roles.includes("admin") || roles.includes("staff")) {
-      portal = "admin";
-    } else if (roles.includes("developer")) {
-      portal = "developer";
+      // Impersonation overrides everything
+      if (req.impersonator) {
+        portal = "client";
+      }
+
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          roles: user.roles,
+          permissions: user.permissions,
+        },
+        portal,
+        impersonating: Boolean(req.impersonator),
+        impersonator: req.impersonator || null,
+      });
+    } catch (err) {
+      console.error("getCurrentSession error", err);
+      res.status(500).json({ error: "Failed to load session" });
     }
-
-    // Impersonation overrides everything
-    if (req.impersonator) {
-      portal = "client";
-    }
-
-    res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        roles: user.roles,
-        permissions: user.permissions,
-      },
-      portal,
-      impersonating: Boolean(req.impersonator),
-      impersonator: req.impersonator || null,
-    });
-  } catch (err) {
-    console.error("getCurrentSession error", err);
-    res.status(500).json({ error: "Failed to load session" });
   }
-}
-
 };
 
 module.exports = SessionController;

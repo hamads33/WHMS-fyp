@@ -126,6 +126,81 @@ async function run() {
     console.log("✅ NEG-08: Inactive service update rejected");
   }
 
+// Test FR-SRV-07: Duplicate plan name
+async function testDuplicatePlanName() {
+  try {
+    const serviceRes = await axios.post(`${BASE_ADMIN}/services`, {
+      code: "test_unique_plan",
+      name: "Test Service",
+      description: "Testing unique plan names",
+    });
+    const serviceId = serviceRes.data.id;
+
+    // Create first plan
+    await axios.post(`${BASE_ADMIN}/services/${serviceId}/plans`, {
+      name: "Basic",
+      summary: "First basic plan",
+    });
+
+    // Try to create duplicate plan name
+    await axios.post(`${BASE_ADMIN}/services/${serviceId}/plans`, {
+      name: "Basic",
+      summary: "Duplicate basic plan",
+    });
+
+    console.error("❌ FAIL: Duplicate plan name was allowed (FR-SRV-07)");
+    return false;
+  } catch (err) {
+    if (err.response?.status === 409) {
+      console.log("✅ FR-SRV-07: Duplicate plan name rejected");
+      return true;
+    }
+    throw err;
+  }
+}
+
+// Test FR-SRV-11: Duplicate pricing
+async function testDuplicatePricing() {
+  try {
+    const serviceRes = await axios.post(`${BASE_ADMIN}/services`, {
+      code: "test_unique_pricing",
+      name: "Test Service",
+      description: "Testing unique pricing",
+    });
+    const serviceId = serviceRes.data.id;
+
+    const planRes = await axios.post(
+      `${BASE_ADMIN}/services/${serviceId}/plans`,
+      {
+        name: "Basic",
+        summary: "Test plan",
+      }
+    );
+    const planId = planRes.data.id;
+
+    // Create first pricing
+    await axios.post(`${BASE_ADMIN}/plans/${planId}/pricing`, {
+      cycle: "monthly",
+      price: 9.99,
+    });
+
+    // Try to create duplicate monthly pricing
+    await axios.post(`${BASE_ADMIN}/plans/${planId}/pricing`, {
+      cycle: "monthly",
+      price: 19.99,
+    });
+
+    console.error("❌ FAIL: Duplicate pricing was allowed (FR-SRV-11)");
+    return false;
+  } catch (err) {
+    if (err.response?.status === 409) {
+      console.log("✅ FR-SRV-11: Duplicate pricing rejected");
+      return true;
+    }
+    throw err;
+  }
+}
+
   console.log("\n🎯 ALL NEGATIVE TESTS PASSED");
   process.exit(0);
 }

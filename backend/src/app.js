@@ -117,7 +117,7 @@ app.use("/api/auth/impersonate", require("./modules/auth/routes/impersonation.ro
 
 app.use("/api/admin/impersonation", require("./modules/auth/routes/impersonationLogs.routes"));
 app.use("/api/admin/users", require("./modules/auth/routes/adminUsers.routes"));
-
+app.use("/api/admin/roles", require("./modules/auth/routes/roles.routes"));
 const ipRulesRoutes = require("./modules/auth/routes/ipRules.routes");
 app.use("/api/ip-rules", ipRulesRoutes);
 
@@ -131,7 +131,7 @@ app.use("/domains", require("./modules/domains"));
 app.use("/api/admin", require("./modules/services").adminRoutes);
 app.use("/api/client", require("./modules/services").clientRoutes);
 ///orders//
-app.use("/api/client", require("./modules/orders").clientRoutes);
+app.use("/api/orders", require("./modules/orders").clientRoutes);
 app.use("/api/admin", require("./modules/orders").adminRoutes);
 
 
