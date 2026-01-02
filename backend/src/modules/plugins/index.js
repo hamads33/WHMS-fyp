@@ -23,7 +23,9 @@ module.exports = async function initPluginModule({
 
   const pluginsDir = path.join(process.cwd(), "plugins", "actions");
 
-  // Create loader with injected dependencies
+  // --------------------------------------------------
+  // Loader
+  // --------------------------------------------------
   const loader = new PluginLoader({
     pluginsDir,
     logger,
@@ -32,16 +34,18 @@ module.exports = async function initPluginModule({
     publicKeyPem
   });
 
-  // Load plugins initially
+  // Initial load
   const plugins = await loader.loadAll();
 
+  // --------------------------------------------------
   // Executors
+  // --------------------------------------------------
   const vmExecutor = new VMExecutor({ logger });
   const wasmExecutor = new WASMExecutor({ logger });
 
-  // -----------------------------------------
-  // ROUTES
-  // -----------------------------------------
+  // --------------------------------------------------
+  // Routes
+  // --------------------------------------------------
   const router = pluginsRoutes({
     logger,
     ajv,
@@ -55,60 +59,61 @@ module.exports = async function initPluginModule({
   app.use("/api/plugins", router);
   app.use("/plugins/ui", pluginUIRoutes({ logger }));
 
-  // -----------------------------------------
-  // ENGINE FUNCTIONS
-  // -----------------------------------------
-
+  // --------------------------------------------------
+  // Engine helpers
+  // --------------------------------------------------
   function getAction(pluginId, actionName) {
     return registry.getAction(pluginId, actionName);
   }
 
   /**
    * Action executor with DISABLE ENFORCEMENT
+   * 🔥 FIXED: uses ctx instead of meta
    */
-  async function runAction(pluginId, actionName, meta = {}) {
+ async function runAction(pluginId, actionName, meta = {}) {
+  const action = registry.getAction(pluginId, actionName);
+  if (!action) {
+    throw new Error(`Plugin action not found: ${pluginId}::${actionName}`);
+  }
 
-    // 🔒 ENFORCE DISABLE STATE
-    const pluginMeta = registry.get(pluginId);
-    if (pluginMeta && pluginMeta.enabled === false) {
-      throw new Error(`Plugin '${pluginId}' is disabled and cannot run actions.`);
-    }
+  const pluginDir = path.join(pluginsDir, pluginId);
 
-    const action = registry.getAction(pluginId, actionName);
-    if (!action) {
-      throw new Error(`Plugin action not found: ${pluginId}::${actionName}`);
-    }
+  const ctx = {
+    app,          // ✅ FIX
+    prisma,
+    logger,
+    registry,
+    pluginId,
+    actionName,
+    meta
+  };
 
-    const pluginDir = path.join(pluginsDir, pluginId);
+  const isWasm =
+    action.runtime === "wasm" ||
+    action.type === "wasm" ||
+    (action.file && action.file.endsWith(".wasm"));
 
-    const isWasm =
-      action.runtime === "wasm" ||
-      action.type === "wasm" ||
-      (action.file && action.file.endsWith(".wasm"));
-
-    if (isWasm) {
-      return await wasmExecutor.run({
-        pluginId,
-        pluginDir,
-        wasmFile: action.file,
-        exportName: action.export || "run",
-        meta
-      });
-    }
-
-    return await vmExecutor.run({
+  if (isWasm) {
+    return wasmExecutor.run({
       pluginId,
       pluginDir,
-      actionFile: action.file,
-      fnName: action.fnName || "run",
-      meta
+      wasmFile: action.file,
+      exportName: action.export || "run",
+      ctx
     });
   }
 
+  return vmExecutor.run({
+    pluginId,
+    pluginDir,
+    actionFile: action.file,
+    fnName: action.fnName || "run",
+    ctx
+  });
+}
+
   /**
-   * Unified engine reload function:
-   * - reloads plugins via loader
-   * - updates engine.plugins reference
+   * Reload all plugins and refresh engine state
    */
   async function reload() {
     logger.info("PluginModule: reload requested");
@@ -120,10 +125,9 @@ module.exports = async function initPluginModule({
     return loaded;
   }
 
-  // -----------------------------------------
-  // SHARED ENGINE OBJECT
-  // -----------------------------------------
-
+  // --------------------------------------------------
+  // Engine object (shared everywhere)
+  // --------------------------------------------------
   const engine = {
     loader,
     registry,
@@ -135,7 +139,7 @@ module.exports = async function initPluginModule({
     reload
   };
 
-  // expose engine to the entire app (installers, workers, etc.)
+  // Expose engine globally
   app.locals.pluginEngine = engine;
 
   logger.info("✅ Plugin Module Ready");

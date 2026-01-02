@@ -3,27 +3,22 @@
  * ------------------------------------------------------------------
  * Manages Automation Tasks belonging to a Profile.
  *
- * Automation Task:
- *  - Represents a single executable step
- *  - Can be built-in or plugin-based
- *
  * Responsibilities:
  *  - CRUD operations for tasks
  *  - Manual task execution via queue
  *  - Maintain execution order inside a profile
- *
- * Architectural Notes:
- *  - Tasks are NOT executed synchronously
- *  - Manual execution is queued (BullMQ)
- *  - Ensures scheduler is refreshed after task changes
- *
- * Examiner Note:
- *  - This design prevents API timeouts
- *  - Matches real-world automation engines (WHMCS, Zapier)
  */
 
 class TaskController {
-  constructor({ taskStore, profileStore, scheduler, executor, executionLogStore, audit, logger }) {
+  constructor({
+    taskStore,
+    profileStore,
+    scheduler,
+    executor,
+    executionLogStore,
+    audit,
+    logger
+  }) {
     this.taskStore = taskStore;
     this.profileStore = profileStore;
     this.scheduler = scheduler;
@@ -33,78 +28,142 @@ class TaskController {
     this.logger = logger;
   }
 
+  // --------------------------------------------------
+  // LIST TASKS FOR PROFILE
+  // --------------------------------------------------
   async listForProfile(req, res) {
     const profileId = Number(req.params.profileId);
+
+    const profile = await this.profileStore.getById(profileId);
+    if (!profile) return res.fail("Profile not found", 404);
+
     const tasks = await this.taskStore.listForProfile(profileId);
     return res.success(tasks);
   }
 
+  // --------------------------------------------------
+  // CREATE TASK
+  // --------------------------------------------------
   async createForProfile(req, res) {
     const profileId = Number(req.params.profileId);
-    const data = req.body;
+    const payload = req.body;
 
-    const t = await this.taskStore.create(profileId, data);
+    // DEBUG: Log what we received
+    this.logger.info("📥 CREATE TASK - Request received:", {
+      profileId,
+      payload,
+      payloadKeys: Object.keys(payload),
+      payloadType: typeof payload,
+      hasActionType: 'actionType' in payload,
+      actionTypeValue: payload.actionType
+    });
 
-    const p = await this.profileStore.getById(profileId);
-    if (p?.enabled) this.scheduler.scheduleProfile(p);
+    const profile = await this.profileStore.getById(profileId);
+    if (!profile) return res.fail("Profile not found", 404);
 
-    // SYSTEM AUDIT
+    // Ensure payload has required fields
+    if (!payload.actionType) {
+      this.logger.error("❌ actionType missing from payload");
+      return res.fail("actionType is required", 400);
+    }
+
+    // Create task with explicit defaults
+    const taskData = {
+      actionType: payload.actionType,
+      actionMeta: payload.actionMeta || {},
+      order: typeof payload.order === 'number' ? payload.order : 0
+    };
+
+    this.logger.info("📝 Creating task with data:", taskData);
+
+    const task = await this.taskStore.create(profileId, taskData);
+
+    this.logger.info("✅ Task created successfully:", task);
+
+    if (profile.enabled) {
+      this.scheduler.scheduleProfile(profile);
+    }
+
     await this.audit.system("automation.task.create", {
       userId: req.auditContext.userId,
       entity: "AutomationTask",
-      entityId: t.id,
+      entityId: task.id,
       ip: req.auditContext.ip,
       userAgent: req.auditContext.userAgent,
-      data: t
+      data: task
     });
 
-    return res.success(t);
+    return res.success(task);
   }
 
+  // --------------------------------------------------
+  // GET TASK
+  // --------------------------------------------------
   async get(req, res) {
-    const id = Number(req.params.taskId);
-    const t = await this.taskStore.getById(id);
-    if (!t) return res.fail("Not found", 404);
+    const taskId = Number(req.params.taskId);
 
-    return res.success(t);
+    const task = await this.taskStore.getById(taskId);
+    if (!task) return res.fail("Task not found", 404);
+
+    return res.success(task);
   }
 
+  // --------------------------------------------------
+  // UPDATE TASK
+  // --------------------------------------------------
   async update(req, res) {
-    const id = Number(req.params.taskId);
-    const data = req.body;
+    const taskId = Number(req.params.taskId);
+    const payload = req.body;
 
-    const t = await this.taskStore.update(id, data);
+    // DEBUG: Log what we received
+    this.logger.info("📥 UPDATE TASK - Request received:", {
+      taskId,
+      payload,
+      payloadKeys: Object.keys(payload)
+    });
 
-    const p = await this.profileStore.getById(t.profileId);
-    if (p?.enabled) this.scheduler.scheduleProfile(p);
+    const task = await this.taskStore.getById(taskId);
+    if (!task) return res.fail("Task not found", 404);
 
-    // SYSTEM AUDIT
+    const updated = await this.taskStore.update(taskId, payload);
+
+    const profile = await this.profileStore.getById(task.profileId);
+    if (profile?.enabled) {
+      this.scheduler.scheduleProfile(profile);
+    }
+
     await this.audit.system("automation.task.update", {
       userId: req.auditContext.userId,
       entity: "AutomationTask",
-      entityId: id,
+      entityId: taskId,
       ip: req.auditContext.ip,
       userAgent: req.auditContext.userAgent,
-      data
+      data: payload
     });
 
-    return res.success(t);
+    return res.success(updated);
   }
 
+  // --------------------------------------------------
+  // DELETE TASK
+  // --------------------------------------------------
   async delete(req, res) {
-    const id = Number(req.params.taskId);
+    const taskId = Number(req.params.taskId);
 
-    const t = await this.taskStore.getById(id);
-    await this.taskStore.delete(id);
+    const task = await this.taskStore.getById(taskId);
+    if (!task) return res.fail("Task not found", 404);
 
-    const p = await this.profileStore.getById(t.profileId);
-    if (p?.enabled) this.scheduler.scheduleProfile(p);
+    await this.taskStore.delete(taskId);
 
-    // SYSTEM AUDIT
+    const profile = await this.profileStore.getById(task.profileId);
+    if (profile?.enabled) {
+      this.scheduler.scheduleProfile(profile);
+    }
+
     await this.audit.system("automation.task.delete", {
       userId: req.auditContext.userId,
       entity: "AutomationTask",
-      entityId: id,
+      entityId: taskId,
       ip: req.auditContext.ip,
       userAgent: req.auditContext.userAgent,
       data: null
@@ -113,13 +172,17 @@ class TaskController {
     return res.success({ deleted: true });
   }
 
+  // --------------------------------------------------
+  // RUN TASK NOW (ASYNC)
+  // --------------------------------------------------
   async runNow(req, res) {
-    const id = Number(req.params.taskId);
+    const taskId = Number(req.params.taskId);
 
-    const t = await this.taskStore.getById(id);
-    if (!t) return res.fail("Task not found", 404);
+    const task = await this.taskStore.getById(taskId);
+    if (!task) return res.fail("Task not found", 404);
 
-    const runRecord = await this.executionLogStore.createPending(t.profileId, t.id);
+    const runRecord =
+      await this.executionLogStore.createPending(task.profileId, task.id);
 
     const { createQueue } = require("../queue/jobQueue");
     const { queue } = createQueue("automation");
@@ -127,8 +190,8 @@ class TaskController {
     await queue.add(
       "run-task",
       {
-        profileId: t.profileId,
-        taskId: t.id,
+        profileId: task.profileId,
+        taskId: task.id,
         runId: runRecord.id
       },
       {
@@ -137,10 +200,13 @@ class TaskController {
       }
     );
 
-    // AUTOMATION AUDIT
     await this.audit.automation(
       "task.run_now",
-      { profileId: t.profileId, taskId: t.id, runId: runRecord.id },
+      {
+        profileId: task.profileId,
+        taskId: task.id,
+        runId: runRecord.id
+      },
       req.auditContext.userId
     );
 

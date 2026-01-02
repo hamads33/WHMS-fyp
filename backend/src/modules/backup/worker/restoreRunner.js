@@ -1,4 +1,8 @@
 // src/modules/backup/worker/restoreRunner.js
+
+// 🔴 IMPORTANT: Register backup providers in worker process
+require("../bootstrap");
+
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const fs = require("fs");
@@ -16,19 +20,39 @@ async function performRestoreJob(backupId, payload = {}) {
     const backup = await prisma.backup.findUnique({ where: { id: backupId } });
     if (!backup) throw new Error("Backup not found");
 
-    const { destination, restoreFiles = true, restoreDb = false } = payload;
+    // Use provided destination or default to a restore directory
+    let { destination, restoreFiles = true, restoreDb = false } = payload;
     
+    // Handle null, undefined, or empty string
+    if (!destination || typeof destination !== 'string' || destination.trim() === '') {
+      // Default destination: ./storage/restores/backup-{id}-{timestamp}
+      destination = path.join(
+        process.cwd(), 
+        "storage", 
+        "restores", 
+        `backup-${backupId}-${Date.now()}`
+      );
+      console.log(`[restore] No destination provided, using default: ${destination}`);
+    } else {
+      // Normalize and validate provided destination
+      destination = path.resolve(destination);
+      console.log(`[restore] Using provided destination: ${destination}`);
+    }
+
     await prisma.backupStepLog.create({ 
       data: { backupId, step: "restore_started", status: "running" } 
     });
     eventBus.emit("backup.restore.started", { backupId });
 
     /* ---------------------------------------------------------
-       FIX: Handle Local provider (null storageConfigId)
+       Handle Local provider (null storageConfigId)
     --------------------------------------------------------- */
     let provider;
     if (backup.storageConfigId) {
       const conf = await storageConfigService.decryptAndReturnConfig(backup.storageConfigId);
+      if (!conf) {
+        throw new Error("Failed to decrypt storage configuration");
+      }
       provider = createProviderInstance(conf.provider, conf);
     } else {
       // Fallback to local provider if no config ID exists
@@ -39,13 +63,15 @@ async function performRestoreJob(backupId, payload = {}) {
       data: { backupId, step: "download_started", status: "running" } 
     });
 
-    const archiveStream = new PassThrough();
-    provider.downloadToStream(backup.filePath, archiveStream)
-      .catch(err => archiveStream.destroy(err));
+    // Use downloadStream instead of downloadToStream for better compatibility
+    const archiveStream = await provider.downloadStream(backup.filePath);
 
     await prisma.backupStepLog.create({ 
       data: { backupId, step: "extract_started", status: "running" } 
     });
+
+    // Ensure destination directory exists
+    await fse.ensureDir(destination);
 
     await extractTarGzStream(archiveStream, destination);
 
@@ -70,25 +96,85 @@ async function extractTarGzStream(stream, destination) {
     const extract = tar.extract();
     
     extract.on("entry", async (header, entryStream, next) => {
-      const destPath = path.join(destination, header.name);
+      // FIX: Validate header.name exists
+      if (!header.name || typeof header.name !== 'string') {
+        console.warn(`[restore] Skipping entry with invalid name:`, header);
+        entryStream.resume(); // Drain the stream
+        next();
+        return;
+      }
+
+      // FIX: Sanitize the path to prevent path traversal
+      const sanitizedName = header.name.replace(/^(\.\.(\/|\\|$))+/, '');
+      const destPath = path.join(destination, sanitizedName);
       
-      if (header.type === "directory") {
-        await fse.ensureDir(destPath);
+      // FIX: Ensure we're still within the destination directory
+      const normalizedDest = path.normalize(destination);
+      const normalizedPath = path.normalize(destPath);
+      
+      if (!normalizedPath.startsWith(normalizedDest)) {
+        console.warn(`[restore] Skipping entry outside destination:`, header.name);
         entryStream.resume();
         next();
-      } else {
-        await fse.ensureDir(path.dirname(destPath));
-        const writeStream = fs.createWriteStream(destPath);
-        entryStream.pipe(writeStream);
-        writeStream.on("finish", () => next());
-        writeStream.on("error", reject);
+        return;
+      }
+
+      try {
+        if (header.type === "directory") {
+          await fse.ensureDir(destPath);
+          entryStream.resume();
+          next();
+        } else if (header.type === "file") {
+          await fse.ensureDir(path.dirname(destPath));
+          const writeStream = fs.createWriteStream(destPath);
+          
+          entryStream.pipe(writeStream);
+          
+          writeStream.on("finish", () => next());
+          writeStream.on("error", (err) => {
+            console.error(`[restore] Write error for ${destPath}:`, err);
+            reject(err);
+          });
+          entryStream.on("error", (err) => {
+            console.error(`[restore] Stream error for ${destPath}:`, err);
+            reject(err);
+          });
+        } else {
+          // Skip other types (symlinks, etc.)
+          console.log(`[restore] Skipping entry type ${header.type}:`, header.name);
+          entryStream.resume();
+          next();
+        }
+      } catch (err) {
+        console.error(`[restore] Error processing entry ${header.name}:`, err);
+        reject(err);
       }
     });
 
-    extract.on("finish", resolve);
-    extract.on("error", reject);
+    extract.on("finish", () => {
+      console.log('[restore] Extract finished successfully');
+      resolve();
+    });
+    
+    extract.on("error", (err) => {
+      console.error('[restore] Extract error:', err);
+      reject(err);
+    });
 
-    stream.pipe(zlib.createGunzip()).pipe(extract).on("error", reject);
+    const gunzip = zlib.createGunzip();
+    
+    gunzip.on("error", (err) => {
+      console.error('[restore] Gunzip error:', err);
+      reject(err);
+    });
+
+    stream
+      .pipe(gunzip)
+      .pipe(extract)
+      .on("error", (err) => {
+        console.error('[restore] Pipeline error:', err);
+        reject(err);
+      });
   });
 }
 

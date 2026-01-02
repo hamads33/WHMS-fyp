@@ -30,10 +30,10 @@ class ProfileController {
     this.audit = audit;
   }
 
-  async list(req, res) {
-    const list = await this.profileStore.listAll();
-    return res.success(list);
-  }
+ async list(req, res) {
+  const list = await this.profileStore.listWithMeta()
+  return res.success(list)
+}
 
   async create(req, res) {
     const data = req.body;

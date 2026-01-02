@@ -1,4 +1,5 @@
 // src/modules/auth/middlewares/auth.guard.js
+// FIXED: Enforces session validation - revoked sessions stop working immediately
 
 const prisma = require("../../../../prisma");
 const TokenService = require("../services/token.service");
@@ -57,30 +58,28 @@ async function authGuard(req, res, next) {
        1) IP RULE BYPASS (CRITICAL SAFETY)
        Prevents self-lockout & circular dependency
     =================================================== */
-  const IP_RULE_BYPASS_ROUTES = [
-  "/api/ip-rules",
-  "/api/admin/ip-rules",
-];
+    const IP_RULE_BYPASS_ROUTES = [
+      "/api/ip-rules",
+      "/api/admin/ip-rules",
+    ];
 
-const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
-  req.path === route || req.path.startsWith(route + "/")
-);
-
+    const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
+      req.path === route || req.path.startsWith(route + "/")
+    );
 
     /* ===================================================
        2) GLOBAL IP ACCESS CONTROL
     =================================================== */
- if (!isIpRuleRequest && clientIp !== "127.0.0.1") {
-  const denied = await IpAccessService.isIpDenied(clientIp);
-  if (denied) {
-    return res.status(403).json({
-      error: "Access blocked from your IP address",
-      code: "IP_BLOCKED",
-      ip: clientIp,
-    });
-  }
-}
-
+    if (!isIpRuleRequest && clientIp !== "127.0.0.1") {
+      const denied = await IpAccessService.isIpDenied(clientIp);
+      if (denied) {
+        return res.status(403).json({
+          error: "Access blocked from your IP address",
+          code: "IP_BLOCKED",
+          ip: clientIp,
+        });
+      }
+    }
 
     /* ===================================================
        3) ACCESS TOKEN
@@ -101,7 +100,55 @@ const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
     const { userId, impersonatorId = null } = payload;
 
     /* ===================================================
-       5) LOAD USER + RELATIONS
+       5) ✅ ENFORCE SESSION VALIDATION (FIXED)
+       Session MUST exist for the token to be valid
+    =================================================== */
+    const currentSession = await prisma.session.findUnique({
+      where: { token },
+      select: { 
+        id: true,
+        expiresAt: true,
+        userId: true,
+      },
+    });
+
+    // ✅ Session must exist
+    if (!currentSession) {
+      return res.status(401).json({
+        error: "Session not found or has been revoked",
+        code: "SESSION_REVOKED",
+      });
+    }
+
+    // ✅ Session must belong to the user
+    if (currentSession.userId !== userId) {
+      return res.status(401).json({
+        error: "Session mismatch",
+        code: "SESSION_MISMATCH",
+      });
+    }
+
+    // ✅ Session must not be expired
+    if (new Date(currentSession.expiresAt) < new Date()) {
+      await prisma.session.delete({ where: { token } }).catch(() => {});
+      return res.status(401).json({
+        error: "Session has expired",
+        code: "SESSION_EXPIRED",
+      });
+    }
+
+    // ✅ Update last activity
+    try {
+      await prisma.session.update({
+        where: { id: currentSession.id },
+        data: { lastActivity: new Date() },
+      });
+    } catch (err) {
+      // Ignore if lastActivity column doesn't exist yet
+    }
+
+    /* ===================================================
+       6) LOAD USER + RELATIONS
     =================================================== */
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -129,13 +176,13 @@ const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
     }
 
     /* ===================================================
-       6) NORMALIZE ROLES
+       7) NORMALIZE ROLES
     =================================================== */
     const roles =
       user.roles?.map((r) => r.role?.name).filter(Boolean) || [];
 
     /* ===================================================
-       7) NORMALIZE PERMISSIONS
+       8) NORMALIZE PERMISSIONS
     =================================================== */
     const permissionSet = new Set();
     user.roles.forEach((r) => {
@@ -146,7 +193,7 @@ const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
     const permissions = [...permissionSet];
 
     /* ===================================================
-       8) PORTAL ACCESS RESOLUTION
+       9) PORTAL ACCESS RESOLUTION
     =================================================== */
     const portals = [];
     if (roles.some((r) => ["superadmin", "admin", "staff"].includes(r)))
@@ -156,7 +203,7 @@ const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
     if (roles.includes("developer")) portals.push("developer");
 
     /* ===================================================
-       9) MFA / TRUSTED DEVICE
+       10) MFA / TRUSTED DEVICE
     =================================================== */
     let mfaVerified = user.mfaEnabled === false;
 
@@ -172,15 +219,6 @@ const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
       );
       if (trusted) mfaVerified = true;
     }
-
-    /* ===================================================
-       10) CURRENT SESSION RESOLUTION
-       (Used by Sessions UI)
-    =================================================== */
-    const currentSession = await prisma.session.findUnique({
-      where: { token },
-      select: { id: true },
-    });
 
     /* ===================================================
        11) ATTACH CONTEXT
@@ -206,7 +244,7 @@ const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
       isImpersonation: Boolean(impersonatorId),
 
       // Session context
-      sessionId: currentSession?.id || null,
+      sessionId: currentSession.id,
       ip: clientIp,
     };
 

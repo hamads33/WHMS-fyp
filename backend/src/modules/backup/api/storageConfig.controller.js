@@ -23,6 +23,11 @@ const {
   TestStorageConfigInputSchema,
 } = require("../../../schemas/backup");
 
+/* =======================
+   FIX: ID NORMALIZATION
+======================= */
+const normalizeIds = require("../middlewares/normalizeIds");
+
 /* ---------------------------
    Helpers
 --------------------------- */
@@ -163,10 +168,11 @@ router.get("/", authGuard, async (req, res) => {
 /* ---------------------------
    GET ONE STORAGE CONFIG
    GET /api/storage-configs/:id
+   FIX: Added normalizeIds middleware
 --------------------------- */
-router.get("/:id", authGuard, async (req, res) => {
+router.get("/:id", authGuard, normalizeIds(["id"]), async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const id = req.params.id; // Already normalized to number by middleware
     const rec = await storageConfigService.getStorageConfig(id);
 
     if (!rec) {
@@ -201,14 +207,16 @@ router.get("/:id", authGuard, async (req, res) => {
 /* ---------------------------
    UPDATE STORAGE CONFIG
    PATCH /api/storage-configs/:id
+   FIX: Added normalizeIds middleware
 --------------------------- */
 router.patch(
   "/:id",
   authGuard,
+  normalizeIds(["id"]),
   validate(UpdateStorageConfigInputSchema),
   async (req, res) => {
     try {
-      const id = Number(req.params.id);
+      const id = req.params.id; // Already normalized to number by middleware
       const payload = req.body;
 
       const rec = await storageConfigService.getStorageConfig(id);
@@ -267,10 +275,11 @@ router.patch(
 /* ---------------------------
    DELETE STORAGE CONFIG
    DELETE /api/storage-configs/:id
+   FIX: Added normalizeIds middleware
 --------------------------- */
-router.delete("/:id", authGuard, async (req, res) => {
+router.delete("/:id", authGuard, normalizeIds(["id"]), async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const id = req.params.id; // Already normalized to number by middleware
     const rec = await storageConfigService.getStorageConfig(id);
 
     if (!rec) {

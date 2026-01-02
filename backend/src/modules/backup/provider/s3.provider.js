@@ -1,8 +1,7 @@
 // src/modules/backup/provider/s3.provider.js
-const { S3Client, HeadBucketCommand } = require("@aws-sdk/client-s3");
+const { S3Client, HeadBucketCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
 const { Upload } = require("@aws-sdk/lib-storage");
 const BaseProvider = require("./baseProvider");
-const stream = require("stream");
 
 class S3Provider extends BaseProvider {
   constructor(config) {
@@ -42,13 +41,17 @@ class S3Provider extends BaseProvider {
   }
 
   async delete(remotePath) {
-    const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: remotePath }));
+    await this.client.send(new DeleteObjectCommand({ 
+      Bucket: this.bucket, 
+      Key: remotePath 
+    }));
   }
 
   async downloadToStream(remotePath, writableStream) {
-    const { GetObjectCommand } = require("@aws-sdk/client-s3");
-    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: remotePath }));
+    const res = await this.client.send(new GetObjectCommand({ 
+      Bucket: this.bucket, 
+      Key: remotePath 
+    }));
     const body = res.Body; // stream
     await new Promise((resolve, reject) => {
       body.pipe(writableStream);
@@ -56,6 +59,37 @@ class S3Provider extends BaseProvider {
       writableStream.on("finish", resolve);
       writableStream.on("error", reject);
     });
+  }
+
+  /**
+   * Download remotePath and return a Readable stream.
+   * (Used by restore flow)
+   * FIX: This method was missing in the original implementation
+   */
+  async downloadStream(remotePath) {
+    const res = await this.client.send(new GetObjectCommand({ 
+      Bucket: this.bucket, 
+      Key: remotePath 
+    }));
+    return res.Body; // Returns readable stream
+  }
+
+  /**
+   * Optional: Get file metadata
+   */
+  async stat(remotePath) {
+    try {
+      const res = await this.client.send(new HeadObjectCommand({
+        Bucket: this.bucket,
+        Key: remotePath
+      }));
+      return {
+        size: res.ContentLength,
+        mtime: res.LastModified
+      };
+    } catch (err) {
+      return null;
+    }
   }
 }
 

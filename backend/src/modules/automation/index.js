@@ -1,4 +1,3 @@
-
 /**
  * Automation Module Bootstrap
  * ------------------------------------------------------------------
@@ -40,6 +39,7 @@ const SchedulerService = require("./services/scheduler.redis.service");
 const ProfileController = require("./controllers/profile.controller");
 const TaskController = require("./controllers/task.controller");
 const RunController = require("./controllers/run.controller");
+const AuditController = require("./controllers/audit.controller"); // 🔹 AUDIT ADDITION
 
 // Middlewares
 const responseFormatter = require("./middleware/responseFormatter");
@@ -116,6 +116,8 @@ module.exports = async function initAutomationModule({
     audit,
     scheduler,
   });
+
+  const auditCtrl = new AuditController({ auditService: audit }); // 🔹 AUDIT ADDITION
 
   // Router
   const router = express.Router();
@@ -218,14 +220,58 @@ module.exports = async function initAutomationModule({
     runCtrl.runNow.bind(runCtrl)
   );
 
+
   // ----------------------------------------------------
-  // BUILT-IN ACTIONS
+// ACTION REGISTRY (Built-in + Plugins later)
+// ----------------------------------------------------
+router.get("/actions", (req, res) => {
+  const ActionRegistry = require("./actions/registry");
+  return res.success(ActionRegistry.list());
+});
+
+  // ----------------------------------------------------
+  // DISABLE CACHE FOR AUDIT ROUTES
+  // ----------------------------------------------------
+  router.use("/audit", (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    next();
+  });
+
+  // ----------------------------------------------------
+  // AUDIT LOGS (READ-ONLY)
   // ----------------------------------------------------
 
-  router.get("/actions", (req, res) => {
-    const builtInActions = require("./services/builtInActions.service");
-    return res.success(builtInActions.listActions());
-  });
+  // GET /api/automation/audit/logs
+  router.get(
+    "/audit/logs",
+    auditCtrl.getLogs.bind(auditCtrl)
+  );
+
+  // GET /api/automation/audit/profiles/:profileId/logs
+  router.get(
+    "/audit/profiles/:profileId/logs",
+    validate(profileIdParamSchema, "params"),
+    auditCtrl.getLogsForProfile.bind(auditCtrl)
+  );
+
+  // ----------------------------------------------------
+  // AUDIT LOG COUNTS
+  // ----------------------------------------------------
+
+  // GET /api/automation/audit/logs/count
+  router.get(
+    "/audit/logs/count",
+    auditCtrl.getTotalLogs.bind(auditCtrl)
+  );
+
+  // GET /api/automation/audit/profiles/:profileId/logs/count
+  router.get(
+    "/audit/profiles/:profileId/logs/count",
+    validate(profileIdParamSchema, "params"),
+    auditCtrl.getProfileLogCount.bind(auditCtrl)
+  );
 
   // ----------------------------------------------------
   // TEST PLUGIN RUN

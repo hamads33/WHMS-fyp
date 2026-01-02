@@ -1,62 +1,77 @@
 // src/modules/plugins/pluginEngine/vmExecutor.js
+console.log("🔥 VMExecutor LOADED FROM:", __filename);
+
 const path = require("path");
 const fs = require("fs");
-const axios = require("axios");
 const { NodeVM } = require("vm2");
 
 /**
  * Executes JS plugin actions inside a sandboxed VM
- * Supports:
- *   - export default function
- *   - module.exports = function
- *   - exports.handler()
- *   - exports.main()
+ * Contract:
+ *   run({ pluginId, pluginDir, actionFile, fnName, meta })
  */
 class VMExecutor {
-  constructor({ logger, allowBuiltin = ["path", "url"] } = {}) {
+  constructor({
+    logger,
+    allowBuiltin = [
+      "path",
+      "url",
+      "util",
+      "events",
+      "stream",
+      "buffer",
+      "querystring"
+    ]
+  } = {}) {
     this.logger = logger || console;
     this.allowBuiltin = allowBuiltin;
   }
 
-  async run({ pluginId, pluginDir, actionFile, fnName = null, meta = {}, timeout = 5000 }) {
-    // Resolve action path
+  async run({
+    pluginId,
+    pluginDir,
+    actionFile,
+    fnName = null,
+    meta = {},
+    timeout = 5000
+  }) {
+    // ---------------------------------------------
+    // HARD SAFETY: JSON ONLY
+    // ---------------------------------------------
+    const safeMeta = JSON.parse(JSON.stringify(meta));
+
     const actionPath = path.isAbsolute(actionFile)
       ? actionFile
       : path.join(pluginDir, actionFile);
 
     if (!fs.existsSync(actionPath)) {
-      const msg = `Action file not found: ${actionPath}`;
-      this.logger.error(msg);
-      throw new Error(msg);
+      throw new Error(`Action file not found: ${actionPath}`);
     }
 
-    // -------------------------------
-    // Construct sandboxed VM
-    // -------------------------------
+    // ---------------------------------------------
+    // VM CONFIGURATION (SAFE)
+    // ---------------------------------------------
     const vm = new NodeVM({
       console: "inherit",
       timeout,
 
       sandbox: {
-        axios,       // Allow axios inside plugin VM
-        PLUGIN_META: meta,
+        PLUGIN_META: safeMeta   // ✅ JSON only
       },
 
       require: {
-        external: true,   // Allow requiring dependencies inside plugin folder
+        external: true,         // axios allowed
         builtin: this.allowBuiltin,
         root: pluginDir,
-        context: "sandbox",
+        context: "sandbox"
       },
 
-      wrapper: "commonjs",
+      wrapper: "commonjs"
     });
 
     try {
-      // Load plugin action file inside VM
       const exported = vm.require(actionPath);
 
-      // Determine callable function
       let fn = null;
       if (typeof exported === "function") fn = exported;
       else if (fnName && typeof exported[fnName] === "function") fn = exported[fnName];
@@ -65,16 +80,21 @@ class VMExecutor {
 
       if (!fn) {
         throw new Error(
-          `No callable export in ${actionPath}. Export a function, handler(), or main().`
+          `No callable export in ${actionPath}. Export function | handler | main`
         );
       }
 
-      // Execute plugin code safely inside VM
-      const result = await Promise.resolve(fn(meta));
-      return result;
+      // ---------------------------------------------
+      // EXECUTE INSIDE VM
+      // ---------------------------------------------
+      return await Promise.resolve(
+        fn({ meta: safeMeta })
+      );
 
     } catch (err) {
-      this.logger.error(`Plugin VM Error [${pluginId}] → ${err.stack || err.message}`);
+      this.logger.error(
+        `Plugin VM Error [${pluginId}] → ${err.stack || err.message}`
+      );
       throw err;
     }
   }

@@ -56,43 +56,55 @@ module.exports = async function initPluginModule({
   function getAction(pluginId, actionName) {
     return registry.getAction(pluginId, actionName);
   }
+async function runAction(pluginId, actionName, meta = {}) {
+  const action = registry.getAction(pluginId, actionName);
+  if (!action) {
+    throw new Error(`Plugin action not found: ${pluginId}::${actionName}`);
+  }
 
-  async function runAction(pluginId, actionName, meta = {}) {
-    const action = registry.getAction(pluginId, actionName);
-    if (!action)
-      throw new Error(`Plugin action not found: ${pluginId}::${actionName}`);
+  const pluginDir = path.join(pluginsDir, pluginId);
 
-    const pluginDir = path.join(pluginsDir, pluginId);
+  const ctx = {
+    meta,
+    prisma,
+    logger,
+    app,
+    registry,
+    pluginId,
+    actionName
+  };
 
-    //----------------------------------------------
-    // Detect WASM properly
-    //----------------------------------------------
-    const isWasm =
-      action.runtime === "wasm" ||
-      action.type === "wasm" ||
-      (action.file && action.file.endsWith(".wasm"));
+  //----------------------------------------------
+  // Detect WASM
+  //----------------------------------------------
+  const isWasm =
+    action.runtime === "wasm" ||
+    action.type === "wasm" ||
+    (action.file && action.file.endsWith(".wasm"));
 
-    if (isWasm) {
-      return await wasmExecutor.run({
-        pluginId,
-        pluginDir,
-        wasmFile: action.file,
-        exportName: action.export || "run",
-        meta
-      });
-    }
-
-    //----------------------------------------------
-    // Otherwise treat as JS action
-    //----------------------------------------------
-    return await vmExecutor.run({
+  if (isWasm) {
+    return await wasmExecutor.run({
       pluginId,
       pluginDir,
-      actionFile: action.file,
-      fnName: action.fnName || "run",
-      meta
+      wasmFile: action.file,
+      exportName: action.export || "run",
+      ctx
     });
   }
+
+  //----------------------------------------------
+  // JS PLUGIN ACTION
+  //----------------------------------------------
+  return await vmExecutor.run({
+    pluginId,
+    pluginDir,
+    actionFile: action.file,
+    fnName: action.fnName || "run",
+    ctx
+  });
+}
+
+
 
   //----------------------------------------------
   // Expose public engine interface
