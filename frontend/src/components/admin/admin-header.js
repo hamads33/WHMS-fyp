@@ -13,24 +13,22 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@/lib/auth/AuthContext";
+import { useAuth } from "@/lib/context/AuthContext"; // ✅ FIXED: Updated import path
 import { useRouter } from "next/navigation";
 
 export function AdminHeader() {
-  const { user, reloadSession } = useAuth();
+  const { user, logout } = useAuth(); // ✅ FIXED: Use logout from context
   const router = useRouter();
 
   async function handleLogout() {
-    await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/auth/logout`,
-      {
-        method: "POST",
-        credentials: "include",
-      }
-    );
-
-    await reloadSession();
-    router.replace("/login");
+    try {
+      await logout(); // ✅ FIXED: Use AuthContext logout (handles everything)
+      // AuthContext will handle redirect to /login
+    } catch (error) {
+      console.error("Logout failed:", error);
+      // Fallback: force redirect
+      router.push("/login");
+    }
   }
 
   return (
@@ -75,7 +73,7 @@ export function AdminHeader() {
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/admin/profile")}>
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>

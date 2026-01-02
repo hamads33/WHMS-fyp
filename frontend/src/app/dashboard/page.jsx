@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth/AuthContext";
+import { useAuth } from "@/lib/context/AuthContext";
 
 export default function DashboardRedirect() {
   const { user, portal, loading } = useAuth();

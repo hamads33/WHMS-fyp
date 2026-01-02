@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Sheet,
   SheetContent,
@@ -10,116 +10,106 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { SchemaForm } from "@/components/schema/schema-form"
 
-export function TaskConfigDrawer({
-  task,
-  isOpen,
-  onClose,
-  onSave,
-}) {
-  /* --------------------------------------------------
-     Derive stable task id (hooks must be unconditional)
-  -------------------------------------------------- */
-  const taskId = task?.id ?? "__none__"
+export function TaskConfigDrawer({ task, isOpen, onClose, onSave }) {
+  const hasSchema =
+    task?.actionSchema &&
+    task.actionSchema.type === "object"
 
-  /* --------------------------------------------------
-     Derive initial JSON safely
-  -------------------------------------------------- */
-  const initialJson = useMemo(() => {
-    if (!task) return ""
-    try {
-      return JSON.stringify(task.actionMeta ?? {}, null, 2)
-    } catch {
-      return "{}"
-    }
-  }, [taskId])
+  const initialMeta = useMemo(
+    () => task?.actionMeta ?? {},
+    [task?.id]
+  )
 
-  /* --------------------------------------------------
-     Local editable state
-  -------------------------------------------------- */
-  const [metaText, setMetaText] = useState(initialJson)
+  const [meta, setMeta] = useState(initialMeta)
+  const [rawJson, setRawJson] = useState("")
   const [error, setError] = useState(null)
+  const [advanced, setAdvanced] = useState(false)
 
-  /* --------------------------------------------------
-     Save handler
-  -------------------------------------------------- */
+  useEffect(() => {
+    setMeta(initialMeta)
+  }, [initialMeta])
+
+  useEffect(() => {
+    try {
+      setRawJson(JSON.stringify(meta, null, 2))
+    } catch {}
+  }, [meta])
+
+  if (!task) return null
+
   const handleSave = () => {
     try {
-      const parsed = JSON.parse(metaText)
-      onSave(task.id, parsed)
+      onSave(task.id, meta)
       onClose()
     } catch (err) {
-      setError("Invalid JSON: " + err.message)
+      setError(err.message)
     }
   }
 
-  /* --------------------------------------------------
-     Guard render AFTER hooks
-  -------------------------------------------------- */
-  if (!task) return null
-
   return (
-    <Sheet
-      open={isOpen}
-      onOpenChange={(open) => !open && onClose()}
-    >
-      {/* Force remount when task changes */}
-      <SheetContent
-        key={taskId}
-        side="right"
-        className="w-full sm:w-[420px]"
-      >
-        <SheetHeader>
-          <SheetTitle>Configure Task</SheetTitle>
-          <SheetDescription>
-            Edit automation task configuration
-          </SheetDescription>
-        </SheetHeader>
+    <Sheet open={isOpen} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="right" className="w-full sm:w-[420px]">
+        {/* 🔑 key goes HERE */}
+        <div key={task.id}>
+          <SheetHeader>
+            <SheetTitle>{task.displayName}</SheetTitle>
+            <SheetDescription>{task.actionType}</SheetDescription>
+          </SheetHeader>
 
-        <div className="space-y-4 py-4">
-          {/* Action Type */}
-          <div>
-            <Label className="text-sm font-medium">Action Type</Label>
-            <div className="mt-1 rounded-md bg-muted px-3 py-2 text-xs font-mono">
-              {task.actionType}
-            </div>
+          <div className="py-4 space-y-6">
+            {hasSchema && !advanced ? (
+              <SchemaForm
+                schema={task.actionSchema}
+                value={meta}
+                onChange={setMeta}
+              />
+            ) : (
+              <Textarea
+                rows={14}
+                className="font-mono text-xs"
+                value={rawJson}
+                onChange={(e) => {
+                  setRawJson(e.target.value)
+                  try {
+                    setMeta(JSON.parse(e.target.value))
+                    setError(null)
+                  } catch {
+                    setError("Invalid JSON")
+                  }
+                }}
+              />
+            )}
+
+            {hasSchema && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAdvanced(!advanced)}
+              >
+                {advanced ? "Use Form View" : "Advanced (JSON)"}
+              </Button>
+            )}
+
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
           </div>
 
-          {/* JSON Metadata */}
-          <div>
-            <Label className="text-sm font-medium">
-              Action Metadata (JSON)
-            </Label>
-            <Textarea
-              value={metaText}
-              onChange={(e) => {
-                setMetaText(e.target.value)
-                setError(null)
-              }}
-              rows={12}
-              className="mt-1 font-mono text-xs"
-              placeholder='{"key": "value"}'
-            />
-          </div>
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+          <SheetFooter>
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave}>
+              Save
+            </Button>
+          </SheetFooter>
         </div>
-
-        <SheetFooter className="gap-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>
-            Save
-          </Button>
-        </SheetFooter>
       </SheetContent>
     </Sheet>
   )

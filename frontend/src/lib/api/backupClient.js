@@ -6,6 +6,6 @@ import { apiFetch } from "@/lib/api/client";
  */
 export function backupApi(path, options) {
   // If the path already starts with /api/backups, don't add it again
-  const targetPath = path.startsWith("/api/backups") ? path : `/api/backups${path}`;
+  const targetPath = path.startsWith("/backups") ? path : `/backups${path}`;
   return apiFetch(targetPath, options);
 }

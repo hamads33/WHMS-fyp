@@ -9,7 +9,6 @@ import { GripVertical, Settings2, Trash2, Play } from "lucide-react"
  * TaskFlow
  * ----------------------------------------------------
  * Displays ordered automation tasks
- * Defensive against incomplete task objects
  */
 export function TaskFlow({
   tasks = [],
@@ -25,33 +24,53 @@ export function TaskFlow({
     )
   }
 
+  const isConfigured = (task) => {
+    const required = task?.actionSchema?.required
+    if (!required?.length) return true
+
+    return required.every(
+      (key) =>
+        task.actionMeta?.[key] !== undefined &&
+        task.actionMeta?.[key] !== ""
+    )
+  }
+
   return (
     <div className="space-y-2">
       {tasks.map((task, index) => {
-        // ✅ Defensive normalization
         const actionType = task?.actionType ?? ""
-        const isPlugin = actionType.startsWith("plugin:")
+        const plugin = actionType.startsWith("plugin:")
+        const configured = isConfigured(task)
 
         return (
           <Card
-            key={task.id ?? index}
+            key={task.id}
             className="p-3 border hover:border-primary/50 transition-colors"
           >
             <div className="flex items-center gap-3">
               {/* Order */}
-              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-muted text-xs font-semibold">
+              <div className="w-6 h-6 flex items-center justify-center rounded-full bg-muted text-xs font-semibold">
                 {index + 1}
               </div>
 
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {task.displayName || actionType || "Unnamed Task"}
+                  {task.displayName || actionType}
                 </p>
 
-                <Badge variant="outline" className="mt-1 text-xs">
-                  {isPlugin ? "🔌 Plugin" : "🔧 Built-in"}
-                </Badge>
+                <div className="flex gap-2 mt-1">
+                  <Badge variant="outline" className="text-xs">
+                    {plugin ? "🔌 Plugin" : "🔧 Built-in"}
+                  </Badge>
+
+                  <Badge
+                    variant={configured ? "secondary" : "destructive"}
+                    className="text-xs"
+                  >
+                    {configured ? "Configured" : "Not Configured"}
+                  </Badge>
+                </div>
               </div>
 
               {/* Controls */}
@@ -60,8 +79,8 @@ export function TaskFlow({
                   variant="ghost"
                   size="sm"
                   onClick={() => onRunTask?.(task.id)}
+                  disabled={!configured}
                   title="Run task"
-                  disabled={!task.id}
                 >
                   <Play className="w-4 h-4" />
                 </Button>
@@ -71,7 +90,6 @@ export function TaskFlow({
                   size="sm"
                   onClick={() => onConfigure?.(task.id)}
                   title="Configure task"
-                  disabled={!task.id}
                 >
                   <Settings2 className="w-4 h-4" />
                 </Button>
@@ -82,15 +100,11 @@ export function TaskFlow({
                   onClick={() => onRemove?.(task.id)}
                   className="text-destructive"
                   title="Remove task"
-                  disabled={!task.id}
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
 
-                {/* Visual reorder handle (future drag & drop) */}
-                <div className="pl-1 text-muted-foreground">
-                  <GripVertical className="w-4 h-4" />
-                </div>
+                <GripVertical className="w-4 h-4 text-muted-foreground ml-1" />
               </div>
             </div>
           </Card>

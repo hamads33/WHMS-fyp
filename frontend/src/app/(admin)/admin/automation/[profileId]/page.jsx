@@ -19,7 +19,7 @@ import { ActionPalette } from "@/components/automation/action-palette"
 import { TaskConfigDrawer } from "@/components/automation/task-config-drawer"
 import { ExecutionLogPanel } from "@/components/automation/execution-log-panel"
 
-import { Play, Save, ArrowLeft } from "lucide-react"
+import { Play, ArrowLeft } from "lucide-react"
 import { AutomationAPI } from "@/lib/api/automation"
 
 export default function ProfileDetailPage() {
@@ -31,7 +31,6 @@ export default function ProfileDetailPage() {
   const [selectedTaskId, setSelectedTaskId] = useState(null)
   const [showConfigDrawer, setShowConfigDrawer] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
   /* --------------------------------------------------
@@ -53,12 +52,12 @@ export default function ProfileDetailPage() {
         // Load tasks for this profile
         const tasksRes = await AutomationAPI.listTasks(profileId)
         if (!mounted) return
-        
-        const normalizedTasks = (tasksRes.data || []).map(task => ({
+
+        const normalizedTasks = (tasksRes.data || []).map((task) => ({
           id: task.id,
           order: task.order,
           actionType: task.actionType,
-          displayName: task.actionType, // You can enhance this with action registry
+          displayName: task.actionType,
           actionMeta: task.actionMeta || {},
         }))
 
@@ -82,48 +81,69 @@ export default function ProfileDetailPage() {
      Actions
   -------------------------------------------------- */
 
-  const handleAddTask = async (action) => {
-    try {
-      const payload = {
-        actionType: action.actionType,
-        order: tasks.length + 1,
-        actionMeta: {},
-      }
+const handleAddTask = async (action) => {
+  try {
+    if (!action?.actionType) {
+      throw new Error("Invalid action selected (missing actionType)");
+    }
 
-      const res = await AutomationAPI.createTask(profileId, payload)
-      
-      const newTask = {
+    const nextOrder =
+      tasks.length > 0
+        ? Math.max(...tasks.map(t => t.order ?? 0)) + 1
+        : 0;
+
+    const payload = {
+      actionType: action.actionType, // now correctly populated
+      order: nextOrder,
+      actionMeta: {}
+    };
+
+    const res = await AutomationAPI.createTask(profileId, payload);
+
+    setTasks(prev =>
+      [...prev, {
         id: res.data.id,
         order: res.data.order,
         actionType: res.data.actionType,
         displayName: action.displayName,
-        actionMeta: res.data.actionMeta || {},
-      }
+        actionMeta: res.data.actionMeta ?? {}
+      }].sort((a, b) => a.order - b.order)
+    );
 
-      setTasks(prev => [...prev, newTask].sort((a, b) => a.order - b.order))
-    } catch (err) {
-      alert(err?.message || "Failed to add task")
-    }
+  } catch (err) {
+    console.error("Add task failed:", err?.response?.data || err);
+    alert(
+      err?.response?.data?.error?.message ||
+      err.message ||
+      "Failed to add task"
+    );
   }
+};
 
   const handleRemoveTask = async (taskId) => {
     try {
       await AutomationAPI.deleteTask(taskId)
-      
+
       // Remove from UI and reorder
-      setTasks(prev => {
-        const filtered = prev.filter(t => t.id !== taskId)
-        return filtered.map((t, idx) => ({ ...t, order: idx + 1 }))
-      })
+      const remainingTasks = tasks.filter((t) => t.id !== taskId)
+      
+      // Update local state immediately with new order
+      const reorderedTasks = remainingTasks.map((t, idx) => ({ 
+        ...t, 
+        order: idx 
+      }))
+      setTasks(reorderedTasks)
 
       // Update order on backend for remaining tasks
-      const remainingTasks = tasks.filter(t => t.id !== taskId)
-      for (let i = 0; i < remainingTasks.length; i++) {
-        await AutomationAPI.updateTask(remainingTasks[i].id, {
-          order: i + 1,
+      for (let i = 0; i < reorderedTasks.length; i++) {
+        await AutomationAPI.updateTask(reorderedTasks[i].id, {
+          actionType: reorderedTasks[i].actionType,
+          order: i,
+          actionMeta: reorderedTasks[i].actionMeta,
         })
       }
     } catch (err) {
+      console.error("Failed to remove task:", err)
       alert(err?.message || "Failed to remove task")
     }
   }
@@ -135,19 +155,24 @@ export default function ProfileDetailPage() {
 
   const handleSaveTaskConfig = async (taskId, meta) => {
     try {
+      const task = tasks.find((t) => t.id === taskId)
+      if (!task) return
+
+      // Send complete task data with updated meta
       await AutomationAPI.updateTask(taskId, {
+        actionType: task.actionType,
+        order: task.order,
         actionMeta: meta,
       })
 
-      setTasks(prev =>
-        prev.map(t =>
-          t.id === taskId ? { ...t, actionMeta: meta } : t
-        )
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, actionMeta: meta } : t))
       )
-      
+
       setShowConfigDrawer(false)
       setSelectedTaskId(null)
     } catch (err) {
+      console.error("Failed to save task configuration:", err)
       alert(err?.message || "Failed to save task configuration")
     }
   }
@@ -157,6 +182,7 @@ export default function ProfileDetailPage() {
       await AutomationAPI.runProfile(profileId)
       alert("Profile execution started")
     } catch (err) {
+      console.error("Failed to run profile:", err)
       alert(err?.message || "Failed to run profile")
     }
   }
@@ -166,11 +192,12 @@ export default function ProfileDetailPage() {
       await AutomationAPI.runTask(taskId)
       alert("Task execution started")
     } catch (err) {
+      console.error("Failed to run task:", err)
       alert(err?.message || "Failed to run task")
     }
   }
 
-  const selectedTask = tasks.find(t => t.id === selectedTaskId)
+  const selectedTask = tasks.find((t) => t.id === selectedTaskId)
 
   /* --------------------------------------------------
      Render
@@ -217,9 +244,7 @@ export default function ProfileDetailPage() {
               <ArrowLeft className="w-4 h-4" />
               Back to Profiles
             </Link>
-            <h1 className="text-3xl font-bold">
-              {profile.name}
-            </h1>
+            <h1 className="text-3xl font-bold">{profile.name}</h1>
             {profile.description && (
               <p className="text-muted-foreground mt-1">
                 {profile.description}
