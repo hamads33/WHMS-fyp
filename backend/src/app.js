@@ -63,11 +63,11 @@ app.use(
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
-        console.log("✔ CORS Allowed:", origin);
+        console.log("✓ CORS Allowed:", origin);
         return callback(null, true);
       }
 
-      console.log("❌ CORS Blocked:", origin);
+      console.log("✗ CORS Blocked:", origin);
       return callback(null, false);
     },
 
@@ -125,7 +125,15 @@ app.use("/api/ip-rules", ipRulesRoutes);
    OTHER MODULE ROUTES
 ================================================================ */
 app.use("/api/v1/clients", require("./modules/clients/clients.routes"));
-app.use("/domains", require("./modules/domains"));
+
+// ✅ DOMAIN MODULE ROUTES (ALL DOMAINS - USER & ADMIN)
+// This is the FIX for: Cannot GET /api/admin/domains/stats error
+// We need to import both user routes and admin routes separately
+// and mount them at the correct endpoints
+const domainRoutes = require("./modules/domains/index");
+app.use("/api", domainRoutes);
+
+
 
 /////services
 app.use("/api/admin", require("./modules/services").adminRoutes);
@@ -149,17 +157,12 @@ app.use("/api/v1/email", emailRoutes);
 ///////////////
 /* ================================================================
    MARKETPLACE MODULE
+   – FIXED: Properly initialize marketplace with async setup
+   – Returns router function that must be called to get middleware
 ================================================================ */
-const MarketplaceModule = require("./modules/marketplace");
-
-const marketplace = MarketplaceModule({
-  prisma,
-  idGen: () => crypto.randomUUID(),
-});
-
-app.use("/api/marketplace", marketplace.routes);
-const dependencyRoutes = require("./modules/marketplace/admin/adminDependency.routes");
-app.use("/api/admin/marketplace", dependencyRoutes({ prisma }));
+// NOTE: Marketplace initialization is deferred to init() function
+// This ensures pluginEngine is available before marketplace is initialized
+// See init() function below for marketplace async setup
 
 
 /* ================================================================
@@ -173,6 +176,7 @@ app.get("/health", (req, res) => {
    INIT FUNCTION
    – Seeds RBAC
    – Initializes Plugin System
+   – Initializes Marketplace Module (with plugin engine)
    – Initializes Automation Module (new architecture)
    – Starts Worker (BullMQ worker)
 ================================================================ */
@@ -187,25 +191,56 @@ async function init() {
   console.log("🔐 RBAC seeded successfully!");
 
   /* ------------------------------------------------------------
-     2. PLUGIN SYSTEM (MUST LOAD BEFORE AUTOMATION)
+     2. PLUGIN SYSTEM (MUST LOAD BEFORE AUTOMATION & MARKETPLACE)
      – Allows automation actions like plugin:<pluginId>:<actionName>
+     – Allows marketplace to verify plugin compatibility
   ------------------------------------------------------------ */
   const automationLogger = require("./modules/automation/lib/logger");
   const initPluginModule = require("./modules/plugins");
 
- const pluginEngine = await initPluginModule({
-  app,
-  prisma,
-  logger: console,
-  ajv: new (require("ajv"))(),
-  publicKeyPem: null,
-});
-
+  const pluginEngine = await initPluginModule({
+    app,
+    prisma,
+    logger: console,
+    ajv: new (require("ajv"))(),
+    publicKeyPem: null,
+  });
 
   app.locals.pluginEngine = pluginEngine;
+  console.log("✅ Plugin engine initialized");
 
   /* ------------------------------------------------------------
-     3. AUTOMATION MODULE INITIALIZATION
+     3. MARKETPLACE MODULE INITIALIZATION
+     – Now that pluginEngine is available, initialize marketplace
+     – Marketplace uses pluginEngine for verification
+  ------------------------------------------------------------ */
+   try {
+  const initMarketplaceModule = require("./modules/marketplace");
+
+  await initMarketplaceModule({
+    app,
+    prisma,
+    logger: console,
+    pluginEngine,
+    pluginInstaller: pluginEngine?.installer,
+    pluginVerifier: pluginEngine?.verifier,
+    emailService: null,
+    webhookService: null,
+  });
+
+  console.log("🏪 Marketplace module initialized successfully");
+} catch (err) {
+  console.error("❌ Marketplace initialization failed:", err.message);
+}
+
+     
+
+// ============================================================
+// END MARKETPLACE INITIALIZATION
+// ============================================================
+
+  /* ------------------------------------------------------------
+     4. AUTOMATION MODULE INITIALIZATION
      – Registers controllers/routes
      – Loads tasks/profiles
      – Starts scheduler
@@ -224,7 +259,7 @@ async function init() {
   console.log("⚙️ Automation module initialized successfully");
 
   /* ------------------------------------------------------------
-     4. START BACKGROUND WORKER
+     5. START BACKGROUND WORKER
      – Processes queued jobs (task.run, profile.run)
      – Required for actual automation execution
   ------------------------------------------------------------ */
@@ -238,7 +273,7 @@ async function init() {
     queueName: "automation",
   });
 
-  console.log("👷 Worker started — Automation engine is live!");
+  console.log("👷 Worker started – Automation engine is live!");
 }
 
 /* ================================================================
@@ -254,8 +289,8 @@ app.use((err, req, res, next) => {
    INIT IS CALLED HERE (IMPORTANT!)
 ================================================================ */
 init()
-  .then(() => console.log("Backend initialized."))
-  .catch(err => console.error("INIT FAILED:", err));
+  .then(() => console.log("✅ Backend initialized."))
+  .catch(err => console.error("❌ INIT FAILED:", err));
 
 /* ================================================================
    EXPORT APP (NOT INIT)

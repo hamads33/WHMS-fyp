@@ -1,9 +1,5 @@
-/**
- * runtimeVerifier.service.js
- *
- * Runs a runtime smoke-test for a plugin version inside a worker thread.
- * Ensures proper `this` binding by using a class instead of an object literal.
- */
+// src/modules/plugins/services/runtimeVerifier.service.js
+// Secure runtime verification with worker threads
 
 const path = require("path");
 const fs = require("fs");
@@ -12,9 +8,7 @@ const os = require("os");
 
 class RuntimeVerifierService {
   /**
-   * Run runtime verification.
-   * @param {Object} opts - { submissionId, productId, versionId, archivePath, pluginFolder, manifest, timeoutMs }
-   * @returns {Promise<Object>} { passed: boolean, logs: string[], details: {} }
+   * Run runtime verification for a plugin
    */
   async run(opts = {}) {
     const {
@@ -22,13 +16,12 @@ class RuntimeVerifierService {
       productId,
       versionId,
       archivePath,
-      archiveUrl,
       pluginFolder,
       manifest,
       timeoutMs = Number(process.env.RUNTIME_VERIFY_TIMEOUT_MS || 5000)
     } = opts;
 
-    // Properly bound method call
+    // Resolve plugin folder
     const folder = await this._resolvePluginFolder({
       pluginFolder,
       archivePath,
@@ -38,50 +31,68 @@ class RuntimeVerifierService {
 
     if (!folder || !fs.existsSync(folder)) {
       throw new Error(
-        "Plugin folder not found. Ensure extraction was successful and archiveExtractPath is valid."
+        "Plugin folder not found. Ensure extraction was successful."
       );
     }
 
-    // Worker script location
     const workerFile = path.join(__dirname, "../workers/runtimeWorker.js");
 
-    return new Promise((resolve, reject) => {
-      const worker = new Worker(workerFile, {
-        workerData: {
-          folder,
-          manifest,
-          submissionId,
-          productId,
-          versionId,
-          timeoutMs
-        }
-      });
+    if (!fs.existsSync(workerFile)) {
+      throw new Error(`Worker script not found: ${workerFile}`);
+    }
 
-      const cleanUp = () => {
+    return new Promise((resolve, reject) => {
+      let worker;
+
+      try {
+        worker = new Worker(workerFile, {
+          workerData: {
+            folder,
+            manifest,
+            submissionId,
+            productId,
+            versionId,
+            timeoutMs
+          }
+        });
+      } catch (err) {
+        return reject(new Error(`Failed to create worker: ${err.message}`));
+      }
+
+      const cleanup = () => {
         try {
-          worker.terminate?.();
-        } catch (_) {}
+          if (worker) {
+            worker.terminate();
+          }
+        } catch (e) {
+          // Ignore cleanup errors
+        }
       };
 
+      // Overall timeout (worker timeout + buffer)
       const timer = setTimeout(() => {
-        cleanUp();
+        cleanup();
         reject(new Error("Runtime verifier worker timed out"));
       }, Math.max(timeoutMs + 2000, 10000));
 
       worker.on("message", (msg) => {
         clearTimeout(timer);
+        cleanup();
         resolve(msg);
       });
 
       worker.on("error", (err) => {
         clearTimeout(timer);
-        reject(err);
+        cleanup();
+        reject(new Error(`Worker error: ${err.message}`));
       });
 
       worker.on("exit", (code) => {
+        clearTimeout(timer);
+        cleanup();
+        
         if (code !== 0) {
-          clearTimeout(timer);
-          reject(new Error("Runtime verifier worker exited with code " + code));
+          reject(new Error(`Worker exited with code ${code}`));
         }
       });
     });
@@ -91,27 +102,42 @@ class RuntimeVerifierService {
    * Resolve plugin folder path
    */
   async _resolvePluginFolder({ pluginFolder, archivePath, productId, versionId }) {
-    // Direct folder provided → best case
-    if (pluginFolder) return pluginFolder;
-
-    // If archivePath is ZIP, infer extraction folder
-    if (archivePath && typeof archivePath === "string") {
-      const candidate = archivePath.replace(/\.zip$/i, "");
-      if (fs.existsSync(candidate) && fs.lstatSync(candidate).isDirectory()) {
-        return candidate;
+    // Direct folder provided
+    if (pluginFolder) {
+      if (fs.existsSync(pluginFolder)) {
+        return pluginFolder;
       }
     }
 
-    // Last fallback — temp extraction
+    // Infer from archive path
+    if (archivePath && typeof archivePath === "string") {
+      const candidate = archivePath.replace(/\.zip$/i, "");
+      
+      if (fs.existsSync(candidate)) {
+        const stats = fs.statSync(candidate);
+        if (stats.isDirectory()) {
+          return candidate;
+        }
+      }
+    }
+
+    // Fallback to temp extraction folder
     const tmpBase = path.join(os.tmpdir(), "plugin-extracts");
-    const guess = path.join(tmpBase, `${productId || "prod"}-${versionId || "ver"}`);
-    if (fs.existsSync(guess) && fs.lstatSync(guess).isDirectory()) {
-      return guess;
+    const guess = path.join(
+      tmpBase,
+      `${productId || "prod"}-${versionId || "ver"}`
+    );
+
+    if (fs.existsSync(guess)) {
+      const stats = fs.statSync(guess);
+      if (stats.isDirectory()) {
+        return guess;
+      }
     }
 
     return null;
   }
 }
 
-// Export a singleton (same API as old object)
+// Export singleton
 module.exports = new RuntimeVerifierService();

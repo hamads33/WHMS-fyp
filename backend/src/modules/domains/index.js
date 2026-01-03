@@ -5,8 +5,13 @@ const router = express.Router();
  * Domain module entry point
  */
 
-router.use("/", require("./api/domain.routes"));
-router.use("/admin", require("./api/domain.admin.routes"));
-router.use("/", require("./api/domain.dns.routes"));
+// User domain routes
+router.use("/domains", require("./api/domain.routes"));
+
+// DNS routes
+router.use("/domains", require("./api/domain.dns.routes"));
+
+// Admin routes
+router.use("/admin/domains", require("./api/domain.admin.routes"));
 
 module.exports = router;

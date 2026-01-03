@@ -65,12 +65,6 @@ module.exports = function validate(schema, source = "body") {
         };
       });
 
-      console.error(`❌ Validation failed for ${source}:`, {
-        schema: schema.type || 'unknown',
-        errors: errorDetails,
-        data: dataToValidate
-      });
-
       return res.fail(
         "Validation failed", 
         400, 

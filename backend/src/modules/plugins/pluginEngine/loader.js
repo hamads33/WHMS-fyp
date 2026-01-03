@@ -1,6 +1,12 @@
-const fs = require("fs");
+// src/modules/plugins/pluginEngine/loader.js
+// Fixed loader with proper cache management and validation
+
+const fs = require("fs").promises;
+const fsSync = require("fs");
 const path = require("path");
-const registryFactory = require("./registry");
+
+// Plugin ID validation
+const PLUGIN_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
 
 class PluginLoader {
   constructor({
@@ -9,13 +15,12 @@ class PluginLoader {
     ajv,
     registry,
     publicKeyPem,
-    app // 👈 IMPORTANT: injected once, used by all plugins
+    app
   } = {}) {
-    this.pluginsDir =
-      pluginsDir || path.join(process.cwd(), "plugins", "actions");
+    this.pluginsDir = pluginsDir || path.join(process.cwd(), "plugins", "actions");
     this.logger = logger || console;
     this.ajv = ajv || null;
-    this.registry = registry || registryFactory({ logger: this.logger });
+    this.registry = registry || require("./registry");
     this.publicKeyPem = publicKeyPem;
     this.app = app;
 
@@ -26,190 +31,222 @@ class PluginLoader {
     }
   }
 
-  // ======================================================
-  // LOAD ALL PLUGINS
-  // ======================================================
+  /**
+   * Load all plugins with proper error handling
+   */
   async loadAll() {
     const plugins = {};
 
-    if (!fs.existsSync(this.pluginsDir)) {
-      this.logger.info(
-        `PluginLoader: no plugins directory at ${this.pluginsDir}`
-      );
-      if (this.registry.clear) this.registry.clear();
-      return plugins;
-    }
+    try {
+      const dirExists = await fs.access(this.pluginsDir)
+        .then(() => true)
+        .catch(() => false);
 
-    const entries = fs.readdirSync(this.pluginsDir, {
-      withFileTypes: true
-    });
+      if (!dirExists) {
+        this.logger.info(
+          `PluginLoader: no plugins directory at ${this.pluginsDir}`
+        );
+        if (this.registry.clear) this.registry.clear();
+        return plugins;
+      }
 
-    for (const dirent of entries) {
-      if (!dirent.isDirectory()) continue;
+      const entries = await fs.readdir(this.pluginsDir, { withFileTypes: true });
 
-      const folder = dirent.name;
-      const base = path.join(this.pluginsDir, folder);
-      const manifestPath = path.join(base, "manifest.json");
-      const indexPath = path.join(base, "index.js");
+      for (const dirent of entries) {
+        if (!dirent.isDirectory()) continue;
 
-      try {
-        // --------------------------------------------------
-        // MANIFEST
-        // --------------------------------------------------
-        if (!fs.existsSync(manifestPath)) {
+        const folder = dirent.name;
+
+        // Validate plugin ID
+        if (!PLUGIN_ID_REGEX.test(folder)) {
           this.logger.warn(
-            `PluginLoader: skipping ${folder} (no manifest.json)`
+            `PluginLoader: skipping ${folder} (invalid plugin ID format)`
           );
           continue;
         }
 
-        let manifest;
+        const base = path.join(this.pluginsDir, folder);
+        
         try {
-          manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          const plugin = await this._loadPlugin(folder, base);
+          if (plugin) {
+            plugins[plugin.id] = plugin;
+          }
         } catch (err) {
           this.logger.error(
-            `PluginLoader: invalid manifest.json for ${folder}: ${err.message}`
+            `PluginLoader: failed to load ${folder}: ${err.message}`
           );
-          continue;
         }
+      }
 
-        if (this.ajv && this.manifestSchema) {
-          const valid = this.ajv.validate(this.manifestSchema, manifest);
-          if (!valid) {
-            this.logger.error(
-              `PluginLoader: manifest validation failed for ${folder}`,
-              this.ajv.errors
-            );
-            continue;
-          }
-        } else if (!manifest.id) {
-          this.logger.warn(
-            `PluginLoader: manifest missing id for ${folder}`
-          );
-          continue;
-        }
+      // Atomic registry update
+      this._syncRegistry(plugins);
 
-        const id = manifest.id;
-        if (plugins[id]) {
-          this.logger.warn(
-            `PluginLoader: duplicate plugin id "${id}"`
-          );
-          continue;
-        }
+      return plugins;
+    } catch (err) {
+      this.logger.error(`PluginLoader: loadAll failed: ${err.message}`);
+      throw err;
+    }
+  }
 
-        const meta = {
-          id,
-          name: manifest.name || id,
-          version: manifest.version || "1.0.0",
-          folder,
-          base,
-          manifest,
-          manifestPath,
-          indexPath: fs.existsSync(indexPath) ? indexPath : null
-        };
+  /**
+   * Load a single plugin
+   */
+  async _loadPlugin(folder, base) {
+    const manifestPath = path.join(base, "manifest.json");
+    const indexPath = path.join(base, "index.js");
 
-        plugins[id] = meta;
+    // Check manifest exists
+    const manifestExists = await fs.access(manifestPath)
+      .then(() => true)
+      .catch(() => false);
 
-        // --------------------------------------------------
-        // REGISTER PLUGIN METADATA (existing behavior)
-        // --------------------------------------------------
-        if (this.registry.register) {
-          this.registry.register(id, meta);
-        } else if (this.registry.registerPlugin) {
-          this.registry.registerPlugin(id, meta);
-        }
+    if (!manifestExists) {
+      this.logger.warn(
+        `PluginLoader: skipping ${folder} (no manifest.json)`
+      );
+      return null;
+    }
 
-        // --------------------------------------------------
-        // REGISTER MANIFEST ACTIONS (existing behavior)
-        // --------------------------------------------------
-        this._registerActionsForPlugin(id, base, manifest.actions);
+    // Read and parse manifest
+    let manifest;
+    try {
+      const manifestContent = await fs.readFile(manifestPath, "utf8");
+      manifest = JSON.parse(manifestContent);
+    } catch (err) {
+      this.logger.error(
+        `PluginLoader: invalid manifest.json for ${folder}: ${err.message}`
+      );
+      return null;
+    }
 
-        // --------------------------------------------------
-        // REGISTER HOOKS (existing behavior)
-        // --------------------------------------------------
-        if (manifest.hooks && typeof manifest.hooks === "object") {
-          for (const [eventName, def] of Object.entries(manifest.hooks)) {
-            if (!def || !def.action) continue;
-
-            const actionRef = def.action;
-
-            if (actionRef.includes("/") || actionRef.endsWith(".js")) {
-              const generatedAction = `__hook__${eventName.replace(
-                /[^a-zA-Z0-9_]/g,
-                "_"
-              )}`;
-
-              this.registry.registerAction(id, generatedAction, {
-                file: actionRef,
-                fnName: def.fnName || "run",
-                description:
-                  def.description || `(hook for ${eventName})`,
-                runtime: "js"
-              });
-
-              this.registry.registerHook(
-                id,
-                eventName,
-                generatedAction
-              );
-            } else {
-              this.registry.registerHook(id, eventName, actionRef);
-            }
-          }
-        }
-
-        // --------------------------------------------------
-        // EXECUTE PLUGIN ENTRY (NEW – CRITICAL)
-        // --------------------------------------------------
-        if (meta.indexPath) {
-          try {
-            delete require.cache[require.resolve(meta.indexPath)];
-            const entry = require(meta.indexPath);
-
-            if (typeof entry === "function") {
-              entry({
-                app: this.app,
-                registry: this.registry,
-                logger: this.logger,
-                plugin: meta
-              });
-
-              this.logger.info(
-                `PluginLoader: executed entry for ${id}`
-              );
-            }
-          } catch (e) {
-            this.logger.error(
-              `PluginLoader: failed to execute index.js for ${id}: ${e.message}`
-            );
-          }
-        }
-
-        this.logger.info(
-          `PluginLoader: loaded plugin ${id} from ${base}`
-        );
-      } catch (err) {
+    // Validate manifest
+    if (this.ajv && this.manifestSchema) {
+      const valid = this.ajv.validate(this.manifestSchema, manifest);
+      if (!valid) {
         this.logger.error(
-          `PluginLoader: failed to load ${folder}: ${err.stack}`
+          `PluginLoader: manifest validation failed for ${folder}`,
+          this.ajv.errors
+        );
+        return null;
+      }
+    } else if (!manifest.id) {
+      this.logger.warn(
+        `PluginLoader: manifest missing id for ${folder}`
+      );
+      return null;
+    }
+
+    const id = manifest.id;
+
+    const indexExists = await fs.access(indexPath)
+      .then(() => true)
+      .catch(() => false);
+
+    const meta = {
+      id,
+      name: manifest.name || id,
+      version: manifest.version || "1.0.0",
+      folder,
+      base,
+      manifest,
+      manifestPath,
+      indexPath: indexExists ? indexPath : null,
+      enabled: true,
+      loadedAt: new Date()
+    };
+
+    // Register plugin metadata
+    if (this.registry.register) {
+      this.registry.register(id, meta);
+    } else if (this.registry.registerPlugin) {
+      this.registry.registerPlugin(id, meta);
+    }
+
+    // Register actions
+    this._registerActionsForPlugin(id, base, manifest.actions);
+
+    // Register WASM actions
+    if (manifest.wasm && typeof manifest.wasm === "object") {
+      this._registerWasmActions(id, base, manifest.wasm);
+    }
+
+    // Register hooks
+    if (manifest.hooks && typeof manifest.hooks === "object") {
+      this._registerHooks(id, base, manifest.hooks);
+    }
+
+    // Execute plugin entry if present
+    if (meta.indexPath) {
+      try {
+        await this._executePluginEntry(meta);
+        this.logger.info(`PluginLoader: executed entry for ${id}`);
+      } catch (e) {
+        this.logger.error(
+          `PluginLoader: failed to execute index.js for ${id}: ${e.message}`
         );
       }
     }
 
-    // --------------------------------------------------
-    // KEEP EXISTING REGISTRY BEHAVIOR
-    // --------------------------------------------------
-    this._syncRegistry(plugins);
-    return plugins;
+    this.logger.info(`PluginLoader: loaded plugin ${id} from ${base}`);
+    
+    return meta;
   }
 
-  async reload() {
-    this.logger.info("PluginLoader: reloading plugins...");
-    return this.loadAll();
+  /**
+   * Execute plugin entry with proper cache clearing
+   */
+  async _executePluginEntry(meta) {
+    const modulePath = meta.indexPath;
+    
+    // Clear require cache for this module and its dependencies
+    this._clearModuleCache(modulePath);
+
+    const entry = require(modulePath);
+
+    if (typeof entry === "function") {
+      await Promise.resolve(
+        entry({
+          app: this.app,
+          registry: this.registry,
+          logger: this.logger,
+          plugin: meta
+        })
+      );
+    }
   }
 
-  // ======================================================
-  // INTERNAL HELPERS (UNCHANGED)
-  // ======================================================
+  /**
+   * Properly clear require cache including dependencies
+   */
+  _clearModuleCache(modulePath) {
+    try {
+      const resolved = require.resolve(modulePath);
+      const module = require.cache[resolved];
+
+      if (module) {
+        const pluginDir = path.dirname(modulePath);
+        
+        // Clear all children in plugin directory
+        if (module.children) {
+          module.children.forEach(child => {
+            if (child.id.startsWith(pluginDir)) {
+              delete require.cache[child.id];
+            }
+          });
+        }
+
+        // Clear the module itself
+        delete require.cache[resolved];
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to clear cache for ${modulePath}: ${err.message}`);
+    }
+  }
+
+  /**
+   * Register JS actions
+   */
   _registerActionsForPlugin(pluginId, basePath, actions) {
     if (!actions || typeof actions !== "object") return;
 
@@ -223,15 +260,20 @@ class PluginLoader {
         fnName = def.fnName || null;
         description = def.description || null;
         meta = def.meta || null;
-        runtime =
-          def.runtime ||
-          (file && file.endsWith(".wasm") ? "wasm" : "js");
+        runtime = def.runtime || (file && file.endsWith(".wasm") ? "wasm" : "js");
       } else {
         continue;
       }
 
       const fullPath = path.join(basePath, file);
-      if (!fs.existsSync(fullPath)) continue;
+      
+      // Synchronous check for performance
+      if (!fsSync.existsSync(fullPath)) {
+        this.logger.warn(
+          `Action file not found: ${pluginId}::${actionName} -> ${file}`
+        );
+        continue;
+      }
 
       this.registry.registerAction(pluginId, actionName, {
         file,
@@ -243,19 +285,88 @@ class PluginLoader {
     }
   }
 
+  /**
+   * Register WASM actions
+   */
+  _registerWasmActions(pluginId, basePath, wasmActions) {
+    for (const [actionName, def] of Object.entries(wasmActions)) {
+      if (!def || !def.file) continue;
+
+      const fullPath = path.join(basePath, def.file);
+      
+      if (!fsSync.existsSync(fullPath)) {
+        this.logger.warn(
+          `WASM file not found: ${pluginId}::${actionName} -> ${def.file}`
+        );
+        continue;
+      }
+
+      this.registry.registerAction(pluginId, actionName, {
+        file: def.file,
+        export: def.export || "run",
+        description: def.description || null,
+        meta: def.meta || null,
+        runtime: "wasm",
+        type: "wasm"
+      });
+    }
+  }
+
+  /**
+   * Register hooks
+   */
+  _registerHooks(pluginId, basePath, hooks) {
+    for (const [eventName, def] of Object.entries(hooks)) {
+      if (!def || !def.action) continue;
+
+      const actionRef = def.action;
+
+      // If action is a file path, register as generated action
+      if (actionRef.includes("/") || actionRef.endsWith(".js")) {
+        const generatedAction = `__hook__${eventName.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+
+        this.registry.registerAction(pluginId, generatedAction, {
+          file: actionRef,
+          fnName: def.fnName || "run",
+          description: def.description || `Hook for ${eventName}`,
+          runtime: "js"
+        });
+
+        this.registry.registerHook(pluginId, eventName, generatedAction);
+      } else {
+        // Reference to existing action
+        this.registry.registerHook(pluginId, eventName, actionRef);
+      }
+    }
+  }
+
+  /**
+   * Sync registry atomically
+   */
   _syncRegistry(plugins) {
     if (typeof this.registry.setAll === "function") {
-      const prev = this._snapshotActions();
+      // Snapshot current actions before clearing
+      const prevActions = this._snapshotActions();
+      
+      // Set new plugins
       this.registry.setAll(plugins);
 
-      for (const [pid, actions] of Object.entries(prev)) {
+      // Restore actions (they were re-registered during load)
+      // This ensures no action loss during reload
+      for (const [pid, actions] of Object.entries(prevActions)) {
         for (const [name, info] of Object.entries(actions)) {
-          this.registry.registerAction(pid, name, info);
+          // Only restore if not already registered
+          if (!this.registry.getAction(pid, name)) {
+            this.registry.registerAction(pid, name, info);
+          }
         }
       }
     }
   }
 
+  /**
+   * Snapshot all actions
+   */
   _snapshotActions() {
     const out = {};
     if (!this.registry.actions) return out;
@@ -267,6 +378,14 @@ class PluginLoader {
       }
     }
     return out;
+  }
+
+  /**
+   * Reload all plugins
+   */
+  async reload() {
+    this.logger.info("PluginLoader: reloading plugins...");
+    return this.loadAll();
   }
 }
 

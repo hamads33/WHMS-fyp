@@ -6,40 +6,11 @@
  * Supports:
  *  - Built-in system actions
  *  - Plugin-defined actions
- *  - Graceful fallback for unknown actions
+ *  - Graceful error handling for unknown actions
  *
  * Why this abstraction exists:
  *  - Decouples automation logic from execution source
  *  - Allows marketplace plugins to hook into automation
- *
- * Execution Flow:
- *  Task → Executor → (Built-in | Plugin) → Result
- *
- * Important:
- *  - Used by workers, not HTTP controllers
- */
-
-/**
- * ExecutorService
- * ------------------------------------------------------------
- * Responsible for executing ANY automation action:
- *   - Built-in actions (e.g., "test_action")
- *   - Plugin actions (plugin:<pluginId>:<actionName>)
- *   - No-op behavior for unknown action types
- *
- * This service is used by:
- *   - Workers (run-profile, run-task)
- *   - Test endpoints (POST /test-plugin-run)
- * ------------------------------------------------------------
- *//**
- * ExecutorService
- * ------------------------------------------------------------------
- * Core execution engine for automation actions.
- *
- * Supports:
- *  - Built-in system actions (via Action Registry)
- *  - Plugin-defined actions
- *  - Graceful fallback for unknown actions
  *
  * Execution Flow:
  *  Task → Executor → (Built-in | Plugin) → Result
@@ -60,12 +31,14 @@ class ExecutorService {
 
   /**
    * run()
-   * ------------------------------------------------------------
+   * ------------------------------------------------------------------
    * Main entry point for executing a single automation task
    *
    * @param {String} actionType  - e.g. "http_request" or "plugin:backup:create"
    * @param {Object} actionMeta  - JSON metadata for the action
-   * ------------------------------------------------------------
+   *
+   * @throws {Error} If action type is invalid or execution fails
+   * ------------------------------------------------------------------
    */
   async run({ actionType, actionMeta }) {
     if (!actionType) {
@@ -92,13 +65,13 @@ class ExecutorService {
 
       const pluginEngine = this.app?.locals?.pluginEngine;
       if (!pluginEngine) {
-        throw new Error("Plugin engine missing (check init order)");
+        throw new Error("Plugin engine not initialized (check configuration)");
       }
 
       const action = pluginEngine.getAction(pluginId, actionName);
       if (!action) {
         throw new Error(
-          `Plugin action not registered: ${pluginId}::${actionName}`
+          `Plugin action not found: ${pluginId}::${actionName}`
         );
       }
 
@@ -117,7 +90,7 @@ class ExecutorService {
           meta
         );
       } else {
-        throw new Error("Plugin engine missing runAction/runFile");
+        throw new Error("Plugin engine missing runAction/runFile methods");
       }
 
       await this.audit.automation("plugin.action.execute", {
@@ -155,17 +128,26 @@ class ExecutorService {
     }
 
     /* ============================================================
-       3) UNKNOWN ACTION → NO-OP (WHMCS behavior)
+       3) UNKNOWN ACTION → ERROR (don't silent-fail)
     ============================================================ */
-    this.logger.warn(`Unknown automation action: ${actionType}`);
+    const error = new Error(`Unknown automation action: ${actionType}`);
+    error.code = "unknown_action";
 
-    await this.audit.automation("action.noop", {
-      profileId,
-      actionType,
-      meta,
-    });
+    this.logger.error(`Unknown action attempted: ${actionType}`);
 
-    return { ok: true, noOp: true };
+    await this.audit.automation(
+      "action.failed",
+      {
+        profileId,
+        actionType,
+        meta,
+        reason: "Unknown action type"
+      },
+      "system",
+      "ERROR"
+    );
+
+    throw error;
   }
 }
 

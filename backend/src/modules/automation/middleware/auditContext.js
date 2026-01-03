@@ -1,15 +1,36 @@
+/**
+ * Audit Context Middleware
+ * ------------------------------------------------------------------
+ * Extracts request metadata for audit logging.
+ *
+ * Populates req.auditContext with:
+ *  - userId (from auth middleware if present)
+ *  - ip (client IP, respecting X-Forwarded-For)
+ *  - userAgent (browser/client info)
+ *
+ * Requirements:
+ *  - Auth middleware should populate req.user.id
+ *  - Must be placed AFTER responseFormatter middleware
+ */
+
 module.exports = function auditContext() {
   return (req, res, next) => {
-    req.clientIp = req.headers["x-forwarded-for"]?.split(",")[0] || req.ip;
-    req.userAgent = req.headers["user-agent"] || null;
+    // Extract client IP (respecting proxy headers)
+    const clientIp = req.headers["x-forwarded-for"]
+      ? req.headers["x-forwarded-for"].split(",")[0].trim()
+      : req.ip || req.connection.remoteAddress || null;
 
-    // If auth middleware exists, it should populate req.user = { id: ... }
+    // Extract user agent
+    const userAgent = req.headers["user-agent"] || null;
+
+    // Extract user ID (populated by auth middleware if authenticated)
     const userId = req.user?.id || null;
 
+    // Populate audit context on request object
     req.auditContext = {
       userId,
-      ip: req.clientIp,
-      userAgent: req.userAgent
+      ip: clientIp,
+      userAgent
     };
 
     next();

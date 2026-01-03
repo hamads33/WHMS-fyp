@@ -27,6 +27,13 @@ router.post("/check", async (req, res, next) => {
  */
 router.post("/register", async (req, res, next) => {
   try {
+    // ✅ VALIDATION: Ensure currency is provided
+    if (!req.body.currency) {
+      return res.status(400).json({
+        error: "Missing required field: currency"
+      });
+    }
+
     const domain = await registerDomain(req.body);
     res.json(domain);
   } catch (err) {
@@ -40,6 +47,13 @@ router.post("/register", async (req, res, next) => {
  */
 router.post("/transfer", async (req, res, next) => {
   try {
+    // ✅ VALIDATION: Ensure currency is provided
+    if (!req.body.currency) {
+      return res.status(400).json({
+        error: "Missing required field: currency"
+      });
+    }
+
     const result = await initiateTransfer(req.body);
     res.json(result);
   } catch (err) {

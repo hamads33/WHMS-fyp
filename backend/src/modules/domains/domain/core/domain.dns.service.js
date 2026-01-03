@@ -1,55 +1,83 @@
-const dnsRepo = require("../repositories/dns.repo");
-const domainRepo = require("../repositories/domain.repo");
-const { loadRegistrar } = require("../../registrars");
-const { logDomainAction } = require("../repositories/domainLog.repo");
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
+
+/**
+ * Fetch domain with access control.
+ * - Clients: restricted by ownerId
+ * - Superadmin OR missing user context: unrestricted
+ */
+async function getDomainOrThrow({ domainId, user }) {
+  const where = { id: domainId };
+
+  // Enforce ownership ONLY if user exists AND is not superadmin
+  if (user && user.role !== "superadmin") {
+    where.ownerId = user.id;
+  }
+
+  const domain = await prisma.domain.findFirst({ where });
+
+  if (!domain) {
+    throw new Error("Domain not found");
+  }
+
+  return domain;
+}
 
 /**
  * List DNS records
  */
-async function listDNS({ domainId }) {
-  return dnsRepo.listRecords(domainId);
+async function listDNS({ domainId, user }) {
+  await getDomainOrThrow({ domainId, user });
+
+  return prisma.dNSRecord.findMany({
+    where: { domainId },
+    orderBy: { createdAt: "asc" },
+  });
 }
 
 /**
- * Add DNS record
+ * Create DNS record
  */
-async function addDNSRecord({ domainId, record }) {
-  const domain = await domainRepo.findDomainById(domainId);
-  if (!domain) throw new Error("Domain not found");
+async function addDNSRecord({ domainId, record, user }) {
+  await getDomainOrThrow({ domainId, user });
 
-  const created = await dnsRepo.createRecord(domainId, record);
-
-  // Optional registrar sync
-  const registrar = loadRegistrar(domain.registrar);
-  if (registrar.updateDNSRecords) {
-    await registrar.updateDNSRecords(domain.name);
-  }
-
-  await logDomainAction(domainId, "dns_record_added", record);
-  return created;
+  return prisma.dNSRecord.create({
+    data: {
+      domainId,
+      type: record.type,
+      name: record.name,
+      value: record.value,
+      ttl: record.ttl ?? 3600,
+    },
+  });
 }
 
 /**
  * Update DNS record
  */
-async function updateDNSRecord({ domainId, recordId, updates }) {
-  const updated = await dnsRepo.updateRecord(recordId, updates);
-  await logDomainAction(domainId, "dns_record_updated", updates);
-  return updated;
+async function updateDNSRecord({ domainId, recordId, updates, user }) {
+  await getDomainOrThrow({ domainId, user });
+
+  return prisma.dNSRecord.update({
+    where: { id: recordId },
+    data: updates,
+  });
 }
 
 /**
  * Delete DNS record
  */
-async function deleteDNSRecord({ domainId, recordId }) {
-  const deleted = await dnsRepo.deleteRecord(recordId);
-  await logDomainAction(domainId, "dns_record_deleted", { recordId });
-  return deleted;
+async function deleteDNSRecord({ domainId, recordId, user }) {
+  await getDomainOrThrow({ domainId, user });
+
+  return prisma.dNSRecord.delete({
+    where: { id: recordId },
+  });
 }
 
 module.exports = {
   listDNS,
   addDNSRecord,
   updateDNSRecord,
-  deleteDNSRecord
+  deleteDNSRecord,
 };

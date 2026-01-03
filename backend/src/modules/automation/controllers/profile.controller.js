@@ -30,109 +30,180 @@ class ProfileController {
     this.audit = audit;
   }
 
- async list(req, res) {
-  const list = await this.profileStore.listWithMeta()
-  return res.success(list)
-}
-
-  async create(req, res) {
-    const data = req.body;
-
+  // ==================================================
+  // LIST PROFILES
+  // ==================================================
+  async list(req, res) {
     try {
-      const p = await this.profileStore.create(data);
-
-      if (p.enabled) this.scheduler.scheduleProfile(p);
-
-      // SYSTEM AUDIT — because user triggered creation
-      await this.audit.system("automation.profile.create", {
-        userId: req.auditContext.userId,
-        entity: "AutomationProfile",
-        entityId: p.id,
-        ip: req.auditContext.ip,
-        userAgent: req.auditContext.userAgent,
-        data: p
-      });
-
-      return res.success(p);
+      const profiles = await this.profileStore.listWithMeta();
+      return res.success(profiles);
     } catch (err) {
-      return res.fail(err.message || "Create failed", 400);
+      this.logger.error("Failed to list profiles:", err);
+      return res.error(err, 500);
     }
   }
 
+  // ==================================================
+  // CREATE PROFILE
+  // ==================================================
+  async create(req, res) {
+    try {
+      const data = req.body;
+
+      const profile = await this.profileStore.create(data);
+
+      // Schedule if enabled
+      if (profile.enabled) {
+        this.scheduler.scheduleProfile(profile);
+      }
+
+      // Audit the creation
+      await this.audit.system("automation.profile.create", {
+        userId: req.auditContext?.userId || null,
+        entity: "AutomationProfile",
+        entityId: profile.id,
+        ip: req.auditContext?.ip || null,
+        userAgent: req.auditContext?.userAgent || null,
+        data: profile
+      });
+
+      return res.success(profile, {}, 201);
+    } catch (err) {
+      this.logger.error("Failed to create profile:", err);
+      return res.error(err, 500);
+    }
+  }
+
+  // ==================================================
+  // GET PROFILE
+  // ==================================================
   async get(req, res) {
-    const id = Number(req.params.id);
-    const p = await this.profileStore.getById(id);
-    if (!p) return res.fail("Not found", 404);
+    try {
+      const id = Number(req.params.id);
+      const profile = await this.profileStore.getById(id);
+      
+      if (!profile) {
+        return res.fail("Profile not found", 404);
+      }
 
-    return res.success(p);
+      return res.success(profile);
+    } catch (err) {
+      this.logger.error("Failed to get profile:", err);
+      return res.error(err, 500);
+    }
   }
 
+  // ==================================================
+  // UPDATE PROFILE
+  // ==================================================
   async update(req, res) {
-    const id = Number(req.params.id);
-    const data = req.body;
+    try {
+      const id = Number(req.params.id);
+      const data = req.body;
 
-    const p = await this.profileStore.update(id, data);
+      const profile = await this.profileStore.update(id, data);
 
-    // Reschedule profile if modified
-    if (p.enabled) this.scheduler.scheduleProfile(p);
-    else this.scheduler.stopProfile(id);
+      // Reschedule if modified
+      if (profile.enabled) {
+        this.scheduler.scheduleProfile(profile);
+      } else {
+        this.scheduler.stopProfile(id);
+      }
 
-    // SYSTEM AUDIT
-    await this.audit.system("automation.profile.update", {
-      userId: req.auditContext.userId,
-      entity: "AutomationProfile",
-      entityId: id,
-      ip: req.auditContext.ip,
-      userAgent: req.auditContext.userAgent,
-      data
-    });
+      // Audit the update
+      await this.audit.system("automation.profile.update", {
+        userId: req.auditContext?.userId || null,
+        entity: "AutomationProfile",
+        entityId: id,
+        ip: req.auditContext?.ip || null,
+        userAgent: req.auditContext?.userAgent || null,
+        data
+      });
 
-    return res.success(p);
+      return res.success(profile);
+    } catch (err) {
+      this.logger.error("Failed to update profile:", err);
+      return res.error(err, 500);
+    }
   }
 
+  // ==================================================
+  // DELETE PROFILE
+  // ==================================================
   async delete(req, res) {
-    const id = Number(req.params.id);
+    try {
+      const id = Number(req.params.id);
 
-    await this.profileStore.delete(id);
-    this.scheduler.stopProfile(id);
+      await this.profileStore.delete(id);
+      this.scheduler.stopProfile(id);
 
-    // SYSTEM AUDIT
-    await this.audit.system("automation.profile.delete", {
-      userId: req.auditContext.userId,
-      entity: "AutomationProfile",
-      entityId: id,
-      ip: req.auditContext.ip,
-      userAgent: req.auditContext.userAgent,
-      data: null
-    });
+      // Audit the deletion
+      await this.audit.system("automation.profile.delete", {
+        userId: req.auditContext?.userId || null,
+        entity: "AutomationProfile",
+        entityId: id,
+        ip: req.auditContext?.ip || null,
+        userAgent: req.auditContext?.userAgent || null,
+        data: null
+      });
 
-    return res.success({ deleted: true });
+      return res.success({ deleted: true });
+    } catch (err) {
+      this.logger.error("Failed to delete profile:", err);
+      return res.error(err, 500);
+    }
   }
 
+  // ==================================================
+  // ENABLE PROFILE
+  // ==================================================
   async enable(req, res) {
-    const id = Number(req.params.id);
+    try {
+      const id = Number(req.params.id);
 
-    await this.profileStore.setEnabled(id, true);
-    const p = await this.profileStore.getById(id);
+      await this.profileStore.setEnabled(id, true);
+      const profile = await this.profileStore.getById(id);
 
-    this.scheduler.scheduleProfile(p);
+      if (profile) {
+        this.scheduler.scheduleProfile(profile);
+      }
 
-    // AUTOMATION AUDIT
-    await this.audit.automation("profile.enable", { profileId: id }, req.auditContext.userId);
+      // Audit the enable
+      await this.audit.automation(
+        "profile.enable",
+        { profileId: id },
+        req.auditContext?.userId || "system"
+      );
 
-    return res.success({ enabled: true });
+      return res.success({ enabled: true });
+    } catch (err) {
+      this.logger.error("Failed to enable profile:", err);
+      return res.error(err, 500);
+    }
   }
 
+  // ==================================================
+  // DISABLE PROFILE
+  // ==================================================
   async disable(req, res) {
-    const id = Number(req.params.id);
+    try {
+      const id = Number(req.params.id);
 
-    await this.profileStore.setEnabled(id, false);
-    this.scheduler.stopProfile(id);
+      await this.profileStore.setEnabled(id, false);
+      this.scheduler.stopProfile(id);
 
-    // AUTOMATION AUDIT
-    await this.audit.automation("profile.disable", { profileId: id }, req.auditContext.userId);
+      // Audit the disable
+      await this.audit.automation(
+        "profile.disable",
+        { profileId: id },
+        req.auditContext?.userId || "system"
+      );
 
-    return res.success({ disabled: true });
+      return res.success({ disabled: true });
+    } catch (err) {
+      this.logger.error("Failed to disable profile:", err);
+      return res.error(err, 500);
+    }
   }
 }
 

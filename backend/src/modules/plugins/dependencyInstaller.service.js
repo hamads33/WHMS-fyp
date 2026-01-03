@@ -1,54 +1,65 @@
-// src/modules/plugins/dependencyInstaller.service.js
+// src/modules/plugins/services/dependencyInstaller.service.js
+// Secure dependency installer without shell injection
+
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
 function ensureDirSync(p) {
-  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+  if (!fs.existsSync(p)) {
+    fs.mkdirSync(p, { recursive: true });
+  }
+}
+
+/**
+ * Validate package name to prevent injection
+ */
+function isValidPackageName(name) {
+  // Allow: @scope/package, package@version, package
+  const pattern = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[a-z0-9-.]+)?$/i;
+  return pattern.test(name);
 }
 
 /**
  * DependencyInstallerService
- *
- * - Reads manifest.dependencies (expected shape: { "<pkg>": "<range>" } or ["pkg@version"])
- * - Runs the configured package manager (npm / pnpm / yarn) inside target folder
- * - Returns array of results { dependency, success, code, stdout, stderr }
- *
- * IMPORTANT: this performs real installs (child processes). Marketplace must
- * run this from a trusted environment (worker or admin action).
+ * Secure npm/pnpm/yarn installation without shell injection
  */
 const DependencyInstallerService = {
   /**
-   * Install all declared dependencies for a plugin.
-   * @param {String} productId
-   * @param {Object|Array} manifest - manifest json parsed
-   * @param {String} destFolder - path to installed plugin version folder
-   * @param {Object} opts - { packageManager: "npm"|"pnpm"|"yarn", dev: false, timeoutMs }
-   * @returns {Promise<{results: Array, success: boolean}>}
+   * Install all declared dependencies for a plugin
    */
-  installAll: async function (productId, manifest, destFolder, opts = {}) {
+  async installAll(productId, manifest, destFolder, opts = {}) {
     if (!productId) throw new Error("installAll: productId required");
     if (!manifest) throw new Error("installAll: manifest required");
     if (!destFolder) throw new Error("installAll: destFolder required");
 
     const packageManager = (opts.packageManager || process.env.PLUGIN_PKG_MANAGER || 'npm').toLowerCase();
-    const timeoutMs = opts.timeoutMs || 2 * 60 * 1000; // default 2 minutes
+    const timeoutMs = opts.timeoutMs || 2 * 60 * 1000; // 2 minutes default
+    const maxDeps = opts.maxDeps || 50; // Limit number of dependencies
 
-    // Determine dependencies list
+    // Parse dependencies
     let deps = [];
     if (manifest.dependencies && Array.isArray(manifest.dependencies)) {
-      deps = manifest.dependencies.slice();
+      deps = manifest.dependencies.slice(0, maxDeps);
     } else if (manifest.dependencies && typeof manifest.dependencies === 'object') {
-      // object form { name: version }
-      deps = Object.entries(manifest.dependencies).map(([k, v]) => `${k}@${v}`);
+      const entries = Object.entries(manifest.dependencies).slice(0, maxDeps);
+      deps = entries.map(([k, v]) => `${k}@${v}`);
     } else if (manifest.require && Array.isArray(manifest.require)) {
-      deps = manifest.require.slice();
+      deps = manifest.require.slice(0, maxDeps);
     }
 
-    // nothing to do
-    if (deps.length === 0) return { success: true, results: [] };
+    // Validate all dependency names
+    for (const dep of deps) {
+      if (!isValidPackageName(dep)) {
+        throw new Error(`Invalid dependency name: ${dep}`);
+      }
+    }
 
-    // If package.json not present, create minimal package.json so npm installs work
+    if (deps.length === 0) {
+      return { success: true, results: [] };
+    }
+
+    // Ensure package.json exists
     const packageJsonPath = path.join(destFolder, 'package.json');
     if (!fs.existsSync(packageJsonPath)) {
       const pkg = {
@@ -56,78 +67,135 @@ const DependencyInstallerService = {
         version: manifest.version || '0.0.0',
         description: manifest.name || `plugin ${productId}`,
         private: true,
+        dependencies: {}
       };
       fs.writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2));
     }
 
-    // Build install command depending on package manager
-    const cmdInfo = (pm, packages) => {
-      if (pm === 'pnpm') return { cmd: 'pnpm', args: ['add', ...packages] };
-      if (pm === 'yarn') return { cmd: 'yarn', args: ['add', ...packages] };
-      // default npm
-      return { cmd: 'npm', args: ['install', '--no-audit', '--no-fund', ...packages] };
-    };
-
+    // Build command without shell
+    const cmdInfo = this._getCommandInfo(packageManager, deps);
+    
     const results = [];
-    // run a single install for all packages (faster)
-    const { cmd, args } = cmdInfo(packageManager, deps);
-
-    const execPromise = () =>
-      new Promise((resolve, reject) => {
-        const child = spawn(cmd, args, {
-          cwd: destFolder,
-          shell: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: Object.assign({}, process.env),
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout.on('data', (d) => (stdout += d.toString()));
-        child.stderr.on('data', (d) => (stderr += d.toString()));
-
-        let timedOut = false;
-        const to = setTimeout(() => {
-          timedOut = true;
-          child.kill('SIGTERM');
-        }, timeoutMs);
-
-        child.on('error', (err) => {
-          clearTimeout(to);
-          reject(err);
-        });
-
-        child.on('close', (code) => {
-          clearTimeout(to);
-          if (timedOut) return reject(new Error('installAll: package manager timed out'));
-          return resolve({ code, stdout, stderr });
-        });
-      });
-
+    
     try {
-      const res = await execPromise();
+      const res = await this._executeInstall(
+        cmdInfo.cmd, 
+        cmdInfo.args, 
+        destFolder, 
+        timeoutMs
+      );
+      
       results.push({
         dependency: deps.join(','),
         success: res.code === 0,
         code: res.code,
         stdout: res.stdout,
-        stderr: res.stderr,
+        stderr: res.stderr
       });
+      
       return { success: res.code === 0, results };
     } catch (err) {
-      results.push({ dependency: deps.join(','), success: false, error: err.message });
+      results.push({ 
+        dependency: deps.join(','), 
+        success: false, 
+        error: err.message 
+      });
       return { success: false, results };
     }
   },
 
   /**
-   * Convenience: install a single dependency (wraps installAll)
+   * Get command and args for package manager (no shell)
    */
-  installOne: async function (productId, depSpec, destFolder, opts = {}) {
-    const fakeManifest = { dependencies: Array.isArray(depSpec) ? depSpec : [depSpec] };
-    return this.installAll(productId, fakeManifest, destFolder, opts);
+  _getCommandInfo(packageManager, packages) {
+    switch (packageManager) {
+      case 'pnpm':
+        return {
+          cmd: 'pnpm',
+          args: ['add', '--no-save-exact', ...packages]
+        };
+      
+      case 'yarn':
+        return {
+          cmd: 'yarn',
+          args: ['add', ...packages]
+        };
+      
+      case 'npm':
+      default:
+        return {
+          cmd: 'npm',
+          args: ['install', '--no-audit', '--no-fund', '--legacy-peer-deps', ...packages]
+        };
+    }
   },
+
+  /**
+   * Execute installation safely without shell
+   */
+  _executeInstall(cmd, args, cwd, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(cmd, args, {
+        cwd,
+        shell: false, // CRITICAL: no shell, prevents injection
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          // Prevent npm from trying to use shell features
+          npm_config_scripts_prepend_node_path: 'false'
+        }
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (d) => {
+        stdout += d.toString();
+      });
+
+      child.stderr.on('data', (d) => {
+        stderr += d.toString();
+      });
+
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGTERM');
+        
+        // Force kill after 5 more seconds
+        setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, 5000);
+      }, timeoutMs);
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(new Error(`Spawn error: ${err.message}`));
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        
+        if (timedOut) {
+          return reject(new Error('Installation timed out'));
+        }
+        
+        resolve({ code, stdout, stderr });
+      });
+    });
+  },
+
+  /**
+   * Install a single dependency
+   */
+  async installOne(productId, depSpec, destFolder, opts = {}) {
+    const fakeManifest = { 
+      dependencies: Array.isArray(depSpec) ? depSpec : [depSpec] 
+    };
+    return this.installAll(productId, fakeManifest, destFolder, opts);
+  }
 };
 
 module.exports = DependencyInstallerService;

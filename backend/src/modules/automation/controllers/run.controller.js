@@ -17,30 +17,36 @@
  */
 
 class RunController {
-  constructor({ profileStore, executor, executionLogStore, audit, scheduler }) {
+  constructor({ profileStore, executor, executionLogStore, audit, scheduler, logger }) {
     this.profileStore = profileStore;
     this.executor = executor;
     this.executionLogStore = executionLogStore;
     this.audit = audit;
     this.scheduler = scheduler;
+    this.logger = logger;
   }
 
+  /**
+   * Manually run a profile now
+   * POST /api/automation/run/:profileId
+   */
   async runNow(req, res) {
-    const profileId = Number(req.params.profileId);
-
     try {
+      const profileId = Number(req.params.profileId);
+
       const run = await this.scheduler.runProfileNow(profileId);
 
-      // AUTOMATION AUDIT
+      // Audit the manual run
       await this.audit.automation(
         "profile.manual_run",
         { profileId, runId: run.id },
-        req.auditContext.userId
+        req.auditContext?.userId || "system"
       );
 
       return res.success(run);
     } catch (err) {
-      return res.fail(err.message || "Run failed", 400);
+      this.logger.error("Failed to run profile:", err);
+      return res.error(err, 500);
     }
   }
 }

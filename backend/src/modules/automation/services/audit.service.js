@@ -20,9 +20,9 @@ class AuditService {
     this.logger = logger;
   }
 
-  // ------------------------------------------------------
+  // ======================================================
   // WRITE AUDIT LOG
-  // ------------------------------------------------------
+  // ======================================================
   async write({
     source = "automation",
     action = "unknown",
@@ -35,14 +35,15 @@ class AuditService {
     entityId = null,
     ip = null,
     userAgent = null,
-    data = null
+    data = null,
+    profileId = null
   }) {
     const payload = {
       source,
       action,
       actor,
       level,
-      meta,
+      meta: profileId ? { ...meta, profileId } : meta,
       userId,
       entity,
       entityId,
@@ -73,9 +74,9 @@ class AuditService {
     }
   }
 
-  // ------------------------------------------------------
+  // ======================================================
   // SHORTCUTS
-  // ------------------------------------------------------
+  // ======================================================
 
   async automation(action, meta = {}, actor = "system", level = "INFO") {
     return this.write({
@@ -102,9 +103,9 @@ class AuditService {
     });
   }
 
-  // ------------------------------------------------------
+  // ======================================================
   // READ: LIST LOGS
-  // ------------------------------------------------------
+  // ======================================================
   async list(filters = {}, limit = 50, offset = 0) {
     return this.prisma.auditLog.findMany({
       where: filters,
@@ -114,9 +115,9 @@ class AuditService {
     });
   }
 
-  // ------------------------------------------------------
+  // ======================================================
   // READ: COUNT LOGS
-  // ------------------------------------------------------
+  // ======================================================
   async count(filters = {}) {
     return this.prisma.auditLog.count({
       where: filters

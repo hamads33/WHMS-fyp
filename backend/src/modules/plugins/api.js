@@ -1,6 +1,5 @@
 // src/modules/plugins/api.js
-// Internal API surface for the Plugin Module.
-// Marketplace imports this file directly — no HTTP layer.
+// Clean internal API surface for Plugin Module
 
 const path = require("path");
 
@@ -8,14 +7,15 @@ const path = require("path");
    SERVICES
 ------------------------------------------------------------------- */
 const RuntimeVerifier = require(path.join(__dirname, "services", "runtimeVerifier.service"));
-const ExecutorService = require(path.join(__dirname, "services", "executor.service"));
+const ExecutorService = require(path.join(__dirname, "..", "automation", "services", "executor.service"));
 
 /* ------------------------------------------------------------------
    PLUGIN ENGINE COMPONENTS
 ------------------------------------------------------------------- */
 const Loader = require(path.join(__dirname, "pluginEngine", "loader"));
 const Registry = require(path.join(__dirname, "pluginEngine", "registry"));
-const Executor = require(path.join(__dirname, "pluginEngine", "executor"));
+const VMExecutor = require(path.join(__dirname, "pluginEngine", "vmExecutor"));
+const WASMExecutor = require(path.join(__dirname, "pluginEngine", "wasmExecutor"));
 
 /* ------------------------------------------------------------------
    SAFETY WRAPPER
@@ -25,43 +25,100 @@ function safeCall(fn, ...args) {
     throw new Error("Plugin API: Missing implementation");
   }
 
-  return fn(...args);
+  try {
+    return fn(...args);
+  } catch (err) {
+    throw new Error(`Plugin API call failed: ${err.message}`);
+  }
 }
 
 /* ------------------------------------------------------------------
    PUBLIC INTERNAL API EXPORT
 ------------------------------------------------------------------- */
 module.exports = {
-  /* --------------------------------------------------------------
-     (FR-M8) Runtime Verification (IMPORTANT: bind instance!)
-  -------------------------------------------------------------- */
-  runRuntimeVerification: async (opts = {}) =>
-    safeCall(RuntimeVerifier.run.bind(RuntimeVerifier), opts),
-
-  /* --------------------------------------------------------------
-     Executor Factory
-  -------------------------------------------------------------- */
-  createExecutor: (opts = {}) => new Executor(opts),
-
-  /* --------------------------------------------------------------
-     Registry / Loader
-  -------------------------------------------------------------- */
-  registryList: () => safeCall(Registry.list.bind(Registry)),
-  registryGet: (id) => safeCall(Registry.get.bind(Registry), id),
-
-  reloadRuntime: async () => {
-    try {
-      if (global.pluginEngine?.reload) {
-        return global.pluginEngine.reload();
-      }
-    } catch (_) {}
-
-    if (Loader?.reload) return Loader.reload();
-    return null;
+  /**
+   * Runtime Verification
+   * Properly bound to service instance
+   */
+  runRuntimeVerification: async (opts = {}) => {
+    return safeCall(RuntimeVerifier.run.bind(RuntimeVerifier), opts);
   },
 
-  /* --------------------------------------------------------------
-     Optional exports
-  -------------------------------------------------------------- */
+  /**
+   * Create Executor instance
+   */
+  createExecutor: (opts = {}) => {
+    return new ExecutorService(opts);
+  },
+
+  /**
+   * Registry access
+   */
+  registryList: () => {
+    return safeCall(Registry.list.bind(Registry));
+  },
+
+  registryGet: (id) => {
+    return safeCall(Registry.get.bind(Registry), id);
+  },
+
+  registryGetAction: (pluginId, actionName) => {
+    return safeCall(Registry.getAction.bind(Registry), pluginId, actionName);
+  },
+
+  registryListActions: (pluginId) => {
+    return safeCall(Registry.listActions.bind(Registry), pluginId);
+  },
+
+  /**
+   * Reload runtime
+   * Tries multiple reload strategies
+   */
+  reloadRuntime: async () => {
+    try {
+      // Try global plugin engine
+      if (global.pluginEngine?.reload) {
+        return await global.pluginEngine.reload();
+      }
+
+      // Try app locals
+      if (global.app?.locals?.pluginEngine?.reload) {
+        return await global.app.locals.pluginEngine.reload();
+      }
+
+      // Try loader directly
+      if (Loader?.reload) {
+        return await Loader.reload();
+      }
+
+      throw new Error("No reload method available");
+    } catch (err) {
+      console.error("reloadRuntime failed:", err.message);
+      return null;
+    }
+  },
+
+  /**
+   * Create VM Executor
+   */
+  createVMExecutor: (opts = {}) => {
+    return new VMExecutor(opts);
+  },
+
+  /**
+   * Create WASM Executor
+   */
+  createWASMExecutor: (opts = {}) => {
+    return new WASMExecutor(opts);
+  },
+
+  /**
+   * Optional exports
+   */
   ExecutorService,
+  RuntimeVerifier,
+  Registry,
+  Loader,
+  VMExecutor,
+  WASMExecutor
 };

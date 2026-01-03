@@ -1,4 +1,4 @@
-"use strict";
+const path = require("path");
 
 const axios = require("axios");
 const prisma = require("../../../../../prisma");
@@ -23,6 +23,18 @@ const httpsAgent = new https.Agent({
  * Format: iv(12) + tag(16) + ciphertext
  */
 function decrypt(encryptedHex) {
+  if (!process.env.SECRET_ENCRYPTION_KEY) {
+    throw new Error(
+      "SECRET_ENCRYPTION_KEY environment variable is not set. " +
+      "Cannot decrypt registrar credentials."
+    );
+  }
+
+  if (encryptedHex.length < 56) {
+    // 12 (iv) + 16 (tag) + min 0 (ciphertext) = 28 hex pairs
+    throw new Error("Invalid encrypted data format");
+  }
+
   const raw = Buffer.from(encryptedHex, "hex");
 
   const iv = raw.subarray(0, 12);
@@ -47,18 +59,36 @@ function decrypt(encryptedHex) {
  * Load Porkbun credentials from DB
  */
 async function getCredentials() {
-  const provider = await prisma.providerConfig.findUnique({
-    where: { name: "porkbun" }
-  });
+  try {
+    const provider = await prisma.providerConfig.findUnique({
+      where: { name: "porkbun" }
+    });
 
-  if (!provider || !provider.active) {
-    throw new Error("Porkbun registrar is not active");
+    if (!provider) {
+      throw new Error(
+        "Porkbun provider not configured in database. " +
+        "Please add a ProviderConfig record with name='porkbun'"
+      );
+    }
+
+    if (!provider.active) {
+      throw new Error("Porkbun registrar is not active");
+    }
+
+    if (!provider.key || !provider.secret) {
+      throw new Error(
+        "Porkbun credentials are not set in database. " +
+        "Please ensure 'key' and 'secret' fields are populated."
+      );
+    }
+
+    return {
+      apikey: decrypt(provider.key),
+      secretapikey: decrypt(provider.secret)
+    };
+  } catch (err) {
+    throw new Error(`Failed to load Porkbun credentials: ${err.message}`);
   }
-
-  return {
-    apikey: decrypt(provider.key),
-    secretapikey: decrypt(provider.secret)
-  };
 }
 
 /**
@@ -116,20 +146,24 @@ module.exports = {
    * Endpoint: /domain/checkDomain/{domain}
    */
   async checkAvailability(domain) {
-    const data = await porkbunPost(`/domain/checkDomain/${domain}`);
+    try {
+      const data = await porkbunPost(`/domain/checkDomain/${domain}`);
 
-    const result = data.response;
-    if (!result) {
-      throw new Error("Invalid availability response from Porkbun");
+      const result = data.response;
+      if (!result) {
+        throw new Error("Invalid availability response from Porkbun");
+      }
+
+      return {
+        domain,
+        available: result.avail === "yes",
+        premium: result.premium === "yes",
+        price: result.price ? parseFloat(result.price) : null,
+        regularPrice: result.regularPrice ? parseFloat(result.regularPrice) : null
+      };
+    } catch (err) {
+      throw new Error(`Availability check failed: ${err.message}`);
     }
-
-    return {
-      domain,
-      available: result.avail === "yes",
-      premium: result.premium === "yes",
-      price: result.price ? parseFloat(result.price) : null,
-      regularPrice: result.regularPrice ? parseFloat(result.regularPrice) : null
-    };
   },
 
   /**
@@ -173,11 +207,15 @@ module.exports = {
    * Endpoint: /domain/updateNs/{domain}
    */
   async updateNameservers({ domain, nameservers }) {
-    await porkbunPost(`/domain/updateNs/${domain}`, {
-      ns: nameservers
-    });
+    try {
+      await porkbunPost(`/domain/updateNs/${domain}`, {
+        ns: nameservers
+      });
 
-    return { success: true };
+      return { success: true };
+    } catch (err) {
+      throw new Error(`Nameserver update failed: ${err.message}`);
+    }
   },
 
   /**
@@ -185,12 +223,16 @@ module.exports = {
    * Endpoint: /domain/getNs/{domain}
    */
   async getNameservers(domain) {
-    const data = await porkbunPost(`/domain/getNs/${domain}`);
+    try {
+      const data = await porkbunPost(`/domain/getNs/${domain}`);
 
-    return {
-      success: true,
-      nameservers: data.ns || []
-    };
+      return {
+        success: true,
+        nameservers: data.ns || []
+      };
+    } catch (err) {
+      throw new Error(`Get nameservers failed: ${err.message}`);
+    }
   },
 
   /**
@@ -207,21 +249,25 @@ module.exports = {
    * Endpoint: /domain/listAll
    */
   async syncDomain(domain) {
-    const data = await porkbunPost("/domain/listAll");
+    try {
+      const data = await porkbunPost("/domain/listAll");
 
-    const domainInfo = data.domains?.find(d => d.domain === domain);
-    
-    if (!domainInfo) {
-      throw new Error(`Domain ${domain} not found in account`);
+      const domainInfo = data.domains?.find(d => d.domain === domain);
+      
+      if (!domainInfo) {
+        throw new Error(`Domain ${domain} not found in account`);
+      }
+
+      return {
+        status: domainInfo.status === "ACTIVE" ? "active" : "expired",
+        expiryDate: new Date(domainInfo.expireDate),
+        autoRenew: Boolean(domainInfo.autoRenew),
+        locked: Boolean(domainInfo.securityLock),
+        whoisPrivacy: Boolean(domainInfo.whoisPrivacy)
+      };
+    } catch (err) {
+      throw new Error(`Domain sync failed: ${err.message}`);
     }
-
-    return {
-      status: domainInfo.status === "ACTIVE" ? "active" : "expired",
-      expiryDate: new Date(domainInfo.expireDate),
-      autoRenew: Boolean(domainInfo.autoRenew),
-      locked: Boolean(domainInfo.securityLock),
-      whoisPrivacy: Boolean(domainInfo.whoisPrivacy)
-    };
   },
 
   /**
@@ -229,37 +275,41 @@ module.exports = {
    * Endpoint: /domain/listAll
    */
   async listDomains() {
-    const domains = [];
-    let start = 0;
-    let hasMore = true;
+    try {
+      const domains = [];
+      let start = 0;
+      let hasMore = true;
 
-    while (hasMore) {
-      const data = await porkbunPost("/domain/listAll", { start });
-      
-      if (data.domains && data.domains.length > 0) {
-        domains.push(...data.domains);
-        start += 1000;
+      while (hasMore) {
+        const data = await porkbunPost("/domain/listAll", { start });
         
-        // If we got less than 1000, we've reached the end
-        if (data.domains.length < 1000) {
+        if (data.domains && data.domains.length > 0) {
+          domains.push(...data.domains);
+          start += 1000;
+          
+          // If we got less than 1000, we've reached the end
+          if (data.domains.length < 1000) {
+            hasMore = false;
+          }
+        } else {
           hasMore = false;
         }
-      } else {
-        hasMore = false;
       }
-    }
 
-    return {
-      success: true,
-      domains: domains.map(d => ({
-        domain: d.domain,
-        status: d.status === "ACTIVE" ? "active" : "expired",
-        expiryDate: new Date(d.expireDate),
-        createDate: new Date(d.createDate),
-        autoRenew: Boolean(d.autoRenew),
-        locked: Boolean(d.securityLock),
-        whoisPrivacy: Boolean(d.whoisPrivacy)
-      }))
-    };
+      return {
+        success: true,
+        domains: domains.map(d => ({
+          domain: d.domain,
+          status: d.status === "ACTIVE" ? "active" : "expired",
+          expiryDate: new Date(d.expireDate),
+          createDate: new Date(d.createDate),
+          autoRenew: Boolean(d.autoRenew),
+          locked: Boolean(d.securityLock),
+          whoisPrivacy: Boolean(d.whoisPrivacy)
+        }))
+      };
+    } catch (err) {
+      throw new Error(`List domains failed: ${err.message}`);
+    }
   }
 };

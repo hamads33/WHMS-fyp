@@ -1,9 +1,5 @@
 // src/modules/plugins/routes/pluginUI.routes.js
-// Robust + Express-safe UI static loader for plugin UIs.
-// - Supports "/plugins/ui/:pluginId/frame"
-// - Supports "/plugins/ui/:pluginId/<asset>"
-// - Uses a REGEX route instead of invalid wildcard (*?)
-// - Includes your fallback logic exactly as before.
+// Secure UI routes with path traversal protection
 
 const express = require("express");
 const path = require("path");
@@ -12,6 +8,11 @@ const fs = require("fs");
 module.exports = function pluginUIRoutes({ logger = console } = {}) {
   const router = express.Router();
 
+  const PLUGIN_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
+
+  // --------------------------------------------------
+  // CSP sandbox
+  // --------------------------------------------------
   function cspSandbox(req, res, next) {
     res.setHeader(
       "Content-Security-Policy",
@@ -25,76 +26,101 @@ module.exports = function pluginUIRoutes({ logger = console } = {}) {
         "sandbox allow-scripts allow-forms allow-same-origin allow-modals"
       ].join("; ")
     );
+
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
     next();
   }
 
-  function getPluginUIRoot(pluginId) {
-    return path.join(process.cwd(), "plugins", "actions", pluginId, "ui");
+  // --------------------------------------------------
+  // Helpers
+  // --------------------------------------------------
+  function validatePluginId(pluginId) {
+    return pluginId && PLUGIN_ID_REGEX.test(pluginId);
   }
 
-  // ------------------------------
-  // 1) FRAME ENDPOINT
-  // ------------------------------
+  function getPluginRoot(pluginId) {
+    return path.join(process.cwd(), "plugins", "actions", pluginId);
+  }
+
+  function getPluginUIRoot(pluginId) {
+    return path.join(getPluginRoot(pluginId), "ui");
+  }
+
+  function sanitizePath(p) {
+    if (!p) return "";
+    return path
+      .normalize(p)
+      .replace(/^(\.\.(\/|\\|$))+/, "")
+      .replace(/\.\./g, "")
+      .replace(/[<>:"|?*]/g, "");
+  }
+
+  function isPathSafe(target, root) {
+    return path.resolve(target).startsWith(path.resolve(root));
+  }
+
+  // --------------------------------------------------
+  // Frame endpoint
+  // --------------------------------------------------
   router.get("/:pluginId/frame", cspSandbox, (req, res) => {
-    const pluginId = req.params.pluginId;
-    const uiRoot = getPluginUIRoot(pluginId);
+    const { pluginId } = req.params;
 
-    const candidates = [
-      "iframe.html",
-      "index.html",
-      "settings.html"
-    ].map(f => path.join(uiRoot, f));
-
-    for (const file of candidates) {
-      if (fs.existsSync(file)) {
-        return res.sendFile(file);
-      }
+    if (!validatePluginId(pluginId)) {
+      return res.status(400).send("Invalid plugin ID");
     }
-
-    logger.error(`Plugin UI frame not found for: ${pluginId}`);
-    return res.status(404).send("UI frame not found");
-  });
-
-  // --------------------------------------------------------------------
-  // 2) STATIC UI ASSETS (SAFE REGEX — replaces BROKEN "/:pluginId/*?")
-  // --------------------------------------------------------------------
-  //
-  // Matches:
-  //    /plugins/ui/<pluginId>/<path>
-  // Example:
-  //    /plugins/ui/react_dashboard/app.js
-  //
-  router.get(/^\/([^\/]+)\/(.+)$/, cspSandbox, (req, res) => {
-    const pluginId = req.params[0];
-    let reqPath = req.params[1];
 
     const uiRoot = getPluginUIRoot(pluginId);
 
-    const candidates = [];
-
-    // 1) ui/<file>
-    candidates.push(path.join(uiRoot, reqPath));
-
-    // 2) ui/<file>.html when extension missing
-    if (!path.extname(reqPath)) {
-      candidates.push(path.join(uiRoot, reqPath + ".html"));
+    if (!fs.existsSync(uiRoot)) {
+      return res.status(404).send("Plugin UI not found");
     }
 
-    // 3) fallback to plugin root
-    const pluginRoot = path.join(process.cwd(), "plugins", "actions", pluginId);
-    candidates.push(path.join(pluginRoot, reqPath));
-
-    if (!path.extname(reqPath)) {
-      candidates.push(path.join(pluginRoot, reqPath + ".html"));
-    }
-
-    for (const filePath of candidates) {
-      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    for (const file of ["iframe.html", "index.html", "settings.html"]) {
+      const filePath = path.join(uiRoot, file);
+      if (isPathSafe(filePath, uiRoot) && fs.existsSync(filePath)) {
         return res.sendFile(filePath);
       }
     }
 
-    logger.warn(`Plugin UI file not found: plugin=${pluginId}, reqPath=${reqPath}`);
+    return res.status(404).send("UI frame not found");
+  });
+
+  // --------------------------------------------------
+  // Static UI handler (NO wildcards)
+  // --------------------------------------------------
+  router.use("/:pluginId", cspSandbox, (req, res) => {
+    const { pluginId } = req.params;
+
+    if (!validatePluginId(pluginId)) {
+      return res.status(400).send("Invalid plugin ID");
+    }
+
+    const relativePath = sanitizePath(req.path.replace(/^\/+/, ""));
+    if (!relativePath) {
+      return res.status(404).send("File not found");
+    }
+
+    const pluginRoot = getPluginRoot(pluginId);
+    const uiRoot = getPluginUIRoot(pluginId);
+
+    const candidates = [
+      path.join(uiRoot, relativePath),
+      path.join(uiRoot, `${relativePath}.html`),
+      path.join(pluginRoot, relativePath),
+      path.join(pluginRoot, `${relativePath}.html`)
+    ];
+
+    for (const filePath of candidates) {
+      if (
+        (isPathSafe(filePath, uiRoot) || isPathSafe(filePath, pluginRoot)) &&
+        fs.existsSync(filePath) &&
+        fs.statSync(filePath).isFile()
+      ) {
+        return res.sendFile(filePath);
+      }
+    }
+
     return res.status(404).send("UI file not found");
   });
 

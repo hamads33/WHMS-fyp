@@ -1,40 +1,57 @@
 // src/modules/plugins/pluginEngine/registry.js
-// Enhanced registry with trash/bin support and simple event logging.
-//
-// Based on your original registry implementation but extended to
-// support soft-delete / trash / restore operations.
-// Original reference: your registry implementation. :contentReference[oaicite:3]{index=3}
-
-const fs = require("fs");
-const path = require("path");
+// Thread-safe registry with proper state management
 
 class PluginRegistry {
   constructor({ logger = console } = {}) {
-    this.plugins = new Map(); // pluginId -> meta
-    this.actions = new Map(); // pluginId -> Map(actionName -> info)
-    this.hooks = new Map();   // eventName -> [{ pluginId, actionPath }]
-    this.trash = new Map();   // pluginId -> { meta, trashedAt, trashPath }
+    this.plugins = new Map();
+    this.actions = new Map();
+    this.hooks = new Map();
+    this.trash = new Map();
+    this.config = new Map();
     this.logger = logger;
   }
 
-  /* Plugin-level API */
+  /* ========================================
+     Plugin Management
+  ======================================== */
+
   register(pluginId, meta) {
     return this.registerPlugin(pluginId, meta);
   }
 
   registerPlugin(pluginId, meta) {
-    this.plugins.set(pluginId, meta);
-    if (!this.actions.has(pluginId)) this.actions.set(pluginId, new Map());
+    if (!pluginId) {
+      throw new Error("Plugin ID required");
+    }
+
+    this.plugins.set(pluginId, {
+      ...meta,
+      id: pluginId,
+      registeredAt: meta.registeredAt || new Date()
+    });
+
+    if (!this.actions.has(pluginId)) {
+      this.actions.set(pluginId, new Map());
+    }
+
     this.logger.info(`PluginRegistry: registered plugin ${pluginId}`);
   }
 
   remove(pluginId) {
     this.plugins.delete(pluginId);
     this.actions.delete(pluginId);
-    // clean hooks
+    this.config.delete(pluginId);
+
+    // Clean hooks
     for (const [event, list] of this.hooks.entries()) {
-      this.hooks.set(event, list.filter(h => h.pluginId !== pluginId));
+      const filtered = list.filter(h => h.pluginId !== pluginId);
+      if (filtered.length > 0) {
+        this.hooks.set(event, filtered);
+      } else {
+        this.hooks.delete(event);
+      }
     }
+
     this.logger.info(`PluginRegistry: removed plugin ${pluginId}`);
   }
 
@@ -42,55 +59,81 @@ class PluginRegistry {
     this.plugins.clear();
     this.actions.clear();
     this.hooks.clear();
-    this.trash.clear();
+    this.config.clear();
+    // Don't clear trash
     this.logger.info("PluginRegistry: cleared all plugins");
   }
 
   setAll(mapObj) {
-    this.clear();
+    // Don't clear, just update
     if (!mapObj || typeof mapObj !== "object") return;
+    
     for (const [id, meta] of Object.entries(mapObj)) {
       this.registerPlugin(id, meta);
     }
+    
     this.logger.info("PluginRegistry: setAll completed");
   }
 
   list() {
-    return [...this.plugins.values()];
+    return Array.from(this.plugins.values());
   }
 
   get(pluginId) {
     return this.plugins.get(pluginId) || null;
   }
 
-  // alias for compatibility
   getPlugin(pluginId) {
     return this.get(pluginId);
   }
 
-  /* Action API */
+  has(pluginId) {
+    return this.plugins.has(pluginId);
+  }
+
+  /* ========================================
+     Action Management
+  ======================================== */
+
   registerAction(pluginId, actionName, actionInfo) {
-    if (!this.actions.has(pluginId)) this.actions.set(pluginId, new Map());
-    this.actions.get(pluginId).set(actionName, actionInfo);
+    if (!pluginId || !actionName) {
+      throw new Error("Plugin ID and action name required");
+    }
+
+    if (!this.actions.has(pluginId)) {
+      this.actions.set(pluginId, new Map());
+    }
+
+    this.actions.get(pluginId).set(actionName, {
+      ...actionInfo,
+      pluginId,
+      actionName,
+      registeredAt: new Date()
+    });
+
     this.logger.info(`PluginRegistry: registered action ${pluginId}::${actionName}`);
   }
 
-  listActions(pluginId) {
-    const m = this.actions.get(pluginId);
-    if (!m) return [];
-    return [...m.entries()].map(([name, info]) => ({ name, ...info }));
-  }
-
   getAction(pluginId, actionName) {
-    const m = this.actions.get(pluginId);
-    if (!m) return null;
-    return m.get(actionName) || null;
+    const pluginActions = this.actions.get(pluginId);
+    if (!pluginActions) return null;
+    return pluginActions.get(actionName) || null;
   }
 
   getActions(pluginId) {
-    const m = this.actions.get(pluginId);
-    if (!m) return [];
-    return [...m.keys()];
+    const pluginActions = this.actions.get(pluginId);
+    if (!pluginActions) return [];
+    return Array.from(pluginActions.keys());
+  }
+
+  listActions(pluginId) {
+    const pluginActions = this.actions.get(pluginId);
+    if (!pluginActions) return [];
+    
+    return Array.from(pluginActions.entries()).map(([name, info]) => ({
+      name,
+      ...info
+    }));
   }
 
   setActionsForPlugin(pluginId, actionsObj = {}) {
@@ -101,15 +144,30 @@ class PluginRegistry {
     this.actions.set(pluginId, map);
   }
 
-  /* -----------------------------
-   * Hook APIs
-   * ----------------------------- */
+  /* ========================================
+     Hook Management
+  ======================================== */
 
   registerHook(pluginId, eventName, actionPath) {
-    if (!eventName) return;
-    if (!this.hooks.has(eventName)) this.hooks.set(eventName, []);
-    this.hooks.get(eventName).push({ pluginId, actionPath });
-    this.logger.info(`PluginRegistry: registered hook ${pluginId} -> ${eventName}`);
+    if (!eventName || !pluginId || !actionPath) {
+      throw new Error("Event name, plugin ID, and action path required");
+    }
+
+    if (!this.hooks.has(eventName)) {
+      this.hooks.set(eventName, []);
+    }
+
+    const hooks = this.hooks.get(eventName);
+    
+    // Prevent duplicates
+    const exists = hooks.some(
+      h => h.pluginId === pluginId && h.actionPath === actionPath
+    );
+
+    if (!exists) {
+      hooks.push({ pluginId, actionPath });
+      this.logger.info(`PluginRegistry: registered hook ${pluginId} -> ${eventName}`);
+    }
   }
 
   getHooks(eventName) {
@@ -124,25 +182,51 @@ class PluginRegistry {
     return out;
   }
 
-  /* -----------------------------
-   * Trash / Soft-delete API
-   * ----------------------------- */
+  /* ========================================
+     Configuration Management
+  ======================================== */
 
-  /**
-   * Mark plugin as trashed: stores meta in this.trash and removes from active maps.
-   * @param {string} pluginId
-   * @param {object} opts { trashedAt: Date, trashPath: string, meta: object }
-   */
+  setConfig(pluginId, config) {
+    if (!pluginId) {
+      throw new Error("Plugin ID required");
+    }
+
+    const existing = this.config.get(pluginId) || {};
+    this.config.set(pluginId, { ...existing, ...config });
+
+    // Also update plugin object if exists
+    const plugin = this.plugins.get(pluginId);
+    if (plugin) {
+      plugin.config = { ...plugin.config, ...config };
+      
+      // Handle enabled flag
+      if (typeof config.enabled !== "undefined") {
+        plugin.enabled = !!config.enabled;
+      }
+    }
+
+    this.logger.info(`PluginRegistry: updated config for ${pluginId}`);
+  }
+
+  getConfig(pluginId) {
+    return this.config.get(pluginId) || null;
+  }
+
+  /* ========================================
+     Trash Management
+  ======================================== */
+
   trashPlugin(pluginId, opts = {}) {
     if (!pluginId) return false;
+
     const meta = opts.meta || this.get(pluginId) || null;
     const trashedAt = opts.trashedAt || new Date();
     const trashPath = opts.trashPath || null;
 
-    // remove active entries
+    // Remove from active
     this.remove(pluginId);
 
-    // store in trash map
+    // Add to trash
     this.trash.set(pluginId, {
       id: pluginId,
       meta,
@@ -150,46 +234,53 @@ class PluginRegistry {
       trashPath
     });
 
-    this.logger.info(`PluginRegistry: trashed plugin ${pluginId} at ${trashedAt.toISOString()}`);
+    this.logger.info(
+      `PluginRegistry: trashed plugin ${pluginId} at ${trashedAt.toISOString()}`
+    );
+
     return true;
   }
 
-  /**
-   * Restore plugin from trash into active registry.
-   * NOTE: caller must ensure files are moved back to plugins/actions/<pluginId>
-   * and loader will re-register actions when reloaded.
-   */
   restorePlugin(pluginId) {
     if (!this.trash.has(pluginId)) return false;
+
     const entry = this.trash.get(pluginId);
     const meta = entry.meta || null;
 
-    // re-register plugin metadata (loader will re-register full info)
+    // Restore to active
     if (meta) {
-      this.registerPlugin(pluginId, meta);
+      this.registerPlugin(pluginId, {
+        ...meta,
+        restoredAt: new Date(),
+        enabled: true
+      });
     } else {
-      // If no meta available, create minimal placeholder
-      this.registerPlugin(pluginId, { id: pluginId, name: pluginId, version: "1.0.0" });
+      this.registerPlugin(pluginId, {
+        id: pluginId,
+        name: pluginId,
+        version: "1.0.0",
+        restoredAt: new Date(),
+        enabled: true
+      });
     }
 
     this.trash.delete(pluginId);
     this.logger.info(`PluginRegistry: restored plugin ${pluginId} from trash`);
+
     return true;
   }
 
-  /**
-   * Permanently remove from trash (clean up all stored meta)
-   */
   deleteFromTrash(pluginId) {
     if (!this.trash.has(pluginId)) return false;
+
     this.trash.delete(pluginId);
-    this.logger.info(`PluginRegistry: permanently deleted plugin ${pluginId} from trash`);
+    this.logger.info(
+      `PluginRegistry: permanently deleted plugin ${pluginId} from trash`
+    );
+
     return true;
   }
 
-  /**
-   * List trashed items (returns array of { id, meta, trashedAt, trashPath })
-   */
   listTrash() {
     return Array.from(this.trash.values());
   }
@@ -197,7 +288,26 @@ class PluginRegistry {
   getTrash(pluginId) {
     return this.trash.get(pluginId) || null;
   }
+
+  /* ========================================
+     Statistics
+  ======================================== */
+
+  getStats() {
+    return {
+      totalPlugins: this.plugins.size,
+      totalActions: Array.from(this.actions.values()).reduce(
+        (sum, map) => sum + map.size,
+        0
+      ),
+      totalHooks: Array.from(this.hooks.values()).reduce(
+        (sum, arr) => sum + arr.length,
+        0
+      ),
+      trashedPlugins: this.trash.size
+    };
+  }
 }
 
-// export single instance (singleton)
+// Export singleton instance
 module.exports = new PluginRegistry();

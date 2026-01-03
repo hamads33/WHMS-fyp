@@ -1,31 +1,22 @@
 // src/modules/plugins/routes/plugins.routes.js
-// Final unified plugin routes file (updated: plugin disable enforcement)
-// - List plugins
-// - Metadata
-// - Actions
-// - Run actions (blocked if plugin disabled)
-// - Menu
-// - Config (get/save) — saving `enabled` will update plugin state
-// - Install (folder + zip)
-// - Uninstall -> backup -> soft-trash
-// - Trash list
-// - Restore
-// - Permanent delete
-// - Uses loader + registry + app.locals.pluginEngine
-//
-// Dependencies: express, fs, path, AdmZip, multer
+// Secure plugin routes with validation and proper error handling
 
 const express = require("express");
 const path = require("path");
-const fs = require("fs");
+const fs = require("fs").promises;
+const fsSync = require("fs");
 const os = require("os");
 const AdmZip = require("adm-zip");
 const multer = require("multer");
 
+// Validation regex
+const PLUGIN_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
+const ACTION_NAME_REGEX = /^[a-zA-Z0-9_:-]+$/;
+
 module.exports = function pluginsRoutes({
   logger = console,
   registry,
-  prisma, // optional
+  prisma,
   loader,
   app
 } = {}) {
@@ -33,7 +24,7 @@ module.exports = function pluginsRoutes({
 
   const router = express.Router();
 
-  // Base paths
+  // Paths
   const pluginsDir = path.join(process.cwd(), "plugins", "actions");
   const trashBase = path.join(process.cwd(), "plugins", "_trash");
   const backupsBase = path.join(process.cwd(), "plugins", "_backups");
@@ -41,680 +32,779 @@ module.exports = function pluginsRoutes({
   const eventsLogFile = path.join(logsDir, "plugin-events.log");
   const uploadsTmp = path.join(os.tmpdir(), "plugin-uploads");
 
-  // Ensure required directories exist
-  ensureDir(pluginsDir);
-  ensureDir(trashBase);
-  ensureDir(backupsBase);
-  ensureDir(logsDir);
-  ensureDir(uploadsTmp);
+  // Ensure directories
+  [pluginsDir, trashBase, backupsBase, logsDir, uploadsTmp].forEach(ensureDir);
 
   const upload = multer({
     dest: uploadsTmp,
-    limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+    limits: { 
+      fileSize: 50 * 1024 * 1024, // 50MB
+      files: 1
+    },
+    fileFilter: (req, file, cb) => {
+      if (path.extname(file.originalname).toLowerCase() !== '.zip') {
+        return cb(new Error('Only .zip files allowed'));
+      }
+      cb(null, true);
+    }
   });
 
-  // -------------------
-  // Helpers
-  // -------------------
+  // ============================================
+  // Validation Middleware
+  // ============================================
+  function validatePluginId(req, res, next) {
+    const pluginId = req.params.pluginId;
+    if (!pluginId || !PLUGIN_ID_REGEX.test(pluginId)) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: "invalid_plugin_id",
+        details: "Plugin ID must contain only alphanumeric, underscore, or hyphen"
+      });
+    }
+    next();
+  }
 
+  function validateActionName(req, res, next) {
+    const actionName = req.params.actionName;
+    if (!actionName || !ACTION_NAME_REGEX.test(actionName)) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: "invalid_action_name",
+        details: "Action name must contain only alphanumeric, underscore, hyphen, or colon"
+      });
+    }
+    next();
+  }
+
+  // ============================================
+  // Helper Functions
+  // ============================================
   function ensureDir(dir) {
     try {
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      if (!fsSync.existsSync(dir)) {
+        fsSync.mkdirSync(dir, { recursive: true });
+      }
     } catch (e) {
-      logger && logger.warn && logger.warn("ensureDir failed for", dir, e.message || e);
+      logger.warn(`ensureDir failed for ${dir}:`, e.message);
     }
   }
 
   function logEvent(event) {
     try {
-      const line = JSON.stringify(Object.assign({ ts: new Date().toISOString() }, event));
-      fs.appendFileSync(eventsLogFile, line + "\n");
+      const line = JSON.stringify({ 
+        ts: new Date().toISOString(), 
+        ...event 
+      });
+      fsSync.appendFileSync(eventsLogFile, line + "\n");
     } catch (e) {
-      logger && logger.warn && logger.warn("plugins.routes: failed to write event log", e.message || e);
+      logger.warn("Failed to write event log:", e.message);
     }
   }
 
-  function copyRecursive(src, dst) {
-    ensureDir(dst);
-    const entries = fs.readdirSync(src);
+  async function copyRecursive(src, dst) {
+    await fs.mkdir(dst, { recursive: true });
+    const entries = await fs.readdir(src, { withFileTypes: true });
+    
     for (const entry of entries) {
-      const s = path.join(src, entry);
-      const d = path.join(dst, entry);
-      const stat = fs.lstatSync(s);
-      if (stat.isDirectory()) {
-        copyRecursive(s, d);
+      const srcPath = path.join(src, entry.name);
+      const dstPath = path.join(dst, entry.name);
+      
+      if (entry.isDirectory()) {
+        await copyRecursive(srcPath, dstPath);
       } else {
-        fs.copyFileSync(s, d);
+        await fs.copyFile(srcPath, dstPath);
       }
     }
   }
 
-  function removeRecursiveSafe(targetPath) {
+  async function removeRecursive(targetPath) {
     try {
-      if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { recursive: true, force: true });
+      await fs.rm(targetPath, { recursive: true, force: true });
     } catch (e) {
-      logger && logger.warn && logger.warn("removeRecursiveSafe failed", targetPath, e.message || e);
+      logger.warn(`removeRecursive failed for ${targetPath}:`, e.message);
     }
   }
 
-  function moveOrCopy(src, dest) {
+  async function createBackupZip(srcFolder, destZipPath) {
     try {
-      ensureDir(path.dirname(dest));
-      fs.renameSync(src, dest);
-      return true;
-    } catch (e) {
-      try {
-        copyRecursive(src, dest);
-        removeRecursiveSafe(src);
-        return true;
-      } catch (e2) {
-        logger && logger.warn && logger.warn("moveOrCopy failed", src, dest, e.message || e2.message || e2);
-        return false;
-      }
-    }
-  }
-
-  function createBackupZip(srcFolder, destZipPath) {
-    try {
-      ensureDir(path.dirname(destZipPath));
+      await fs.mkdir(path.dirname(destZipPath), { recursive: true });
       const zip = new AdmZip();
       zip.addLocalFolder(srcFolder);
       zip.writeZip(destZipPath);
       return true;
     } catch (e) {
-      logger && logger.warn && logger.warn("createBackupZip failed", e.message || e);
+      logger.warn("createBackupZip failed:", e.message);
       return false;
     }
   }
 
-  function extractZipToDir(zipPath, destDir) {
+  function isPluginEnabled(pluginId) {
     try {
-      ensureDir(destDir);
-      const zip = new AdmZip(zipPath);
-      zip.extractAllTo(destDir, true);
+      const plugin = registry.get(pluginId);
+      if (!plugin) return false;
+      
+      // Check explicit enabled flag
+      if (typeof plugin.enabled !== "undefined") {
+        return !!plugin.enabled;
+      }
+      
+      // Check config
+      if (plugin.config && typeof plugin.config.enabled !== "undefined") {
+        return !!plugin.config.enabled;
+      }
+      
+      // Default enabled
       return true;
     } catch (e) {
-      logger && logger.warn && logger.warn("extractZipToDir failed", e.message || e);
+      logger.warn("isPluginEnabled check failed:", e.message);
       return false;
     }
   }
 
-  async function reloadEngineOnce() {
+  async function reloadEngine() {
     try {
       if (app?.locals?.pluginEngine?.reload) {
         await app.locals.pluginEngine.reload();
-      } else if (loader && typeof loader.loadAll === "function") {
+        return true;
+      } else if (loader?.loadAll) {
         await loader.loadAll();
-      } else if (app?.locals?.pluginEngine?.loadAll) {
-        await app.locals.pluginEngine.loadAll();
+        return true;
       }
-      return true;
+      return false;
     } catch (e) {
-      logger && logger.warn && logger.warn("reloadEngineOnce failed", e.message || e);
+      logger.error("Engine reload failed:", e.message);
       return false;
     }
   }
 
-  function normalizeTrashEntry(entry) {
-    if (!entry) return null;
-    return {
-      id: entry.id || entry.pluginId || null,
-      name: entry.meta?.name || entry.name || entry.id,
-      trashedAt: entry.trashedAt || null,
-      trashPath: entry.trashPath || null,
-      meta: entry.meta || null
-    };
-  }
-
-  // -------------------
-  // NEW: plugin enabled check
-  // -------------------
-  function isPluginEnabled(pluginId) {
-    try {
-      // 1) engine-level
-      const engine = app?.locals?.pluginEngine;
-      if (engine && engine.plugins && engine.plugins[pluginId]) {
-        if (typeof engine.plugins[pluginId].enabled !== "undefined") {
-          return !!engine.plugins[pluginId].enabled;
-        }
-      }
-
-      // 2) registry-level plugin object
-      const regPlugin = registry.get ? registry.get(pluginId) : null;
-      if (regPlugin) {
-        if (typeof regPlugin.enabled !== "undefined") return !!regPlugin.enabled;
-        // check config on plugin object
-        if (regPlugin.config && typeof regPlugin.config.enabled !== "undefined") return !!regPlugin.config.enabled;
-      }
-
-      // 3) registry.getConfig (API)
-      if (typeof registry.getConfig === "function") {
-        try {
-          const cfg = registry.getConfig(pluginId);
-          if (cfg && typeof cfg.enabled !== "undefined") return !!cfg.enabled;
-        } catch (e) {
-          // ignore and fallback
-        }
-      }
-
-      // 4) registry.getTrash/get etc don't matter here; default to enabled
-      return true;
-    } catch (e) {
-      logger && logger.warn && logger.warn("isPluginEnabled check failed", e.message || e);
-      // default to safe side: allow if uncertain? better to block? We'll default to true to avoid breaking,
-      // but we log above — you may change default to false if you prefer fail-closed.
-      return true;
-    }
-  }
-
-  // -------------------
+  // ============================================
   // Routes
-  // -------------------
+  // ============================================
 
-  // GET /api/plugins
-  router.get("/", (req, res) => {
+  // List all plugins
+  router.get("/", async (req, res) => {
     try {
-      const engine = app?.locals?.pluginEngine;
-      const plugins = engine?.plugins || {};
-      return res.json({ ok: true, plugins });
+      const pluginsList = registry.list();
+      return res.json({ ok: true, plugins: pluginsList });
     } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
+      logger.error("GET /api/plugins error:", err);
+      return res.status(500).json({ 
+        ok: false, 
+        error: err.message 
+      });
     }
   });
 
-  // GET /api/plugins/:pluginId/metadata
-  router.get("/:pluginId/metadata", (req, res) => {
+  // Get plugin metadata
+  router.get("/:pluginId/metadata", validatePluginId, async (req, res) => {
     try {
-      const pluginId = req.params.pluginId;
+      const { pluginId } = req.params;
       const plugin = registry.get(pluginId);
-      if (!plugin) return res.status(404).json({ ok: false, error: "plugin_not_found" });
+      
+      if (!plugin) {
+        return res.status(404).json({ 
+          ok: false, 
+          error: "plugin_not_found" 
+        });
+      }
 
       const manifest = plugin.manifest || {};
+      
       return res.json({
         ok: true,
         metadata: {
           id: plugin.id || pluginId,
           name: plugin.name || manifest.name || pluginId,
           version: plugin.version || manifest.version || "1.0.0",
-          manifest,
-          enabled: plugin.enabled !== false,
-          folder: plugin.folder || null,
-          installedAt: plugin.installedAt || null
+          description: manifest.description,
+          author: manifest.author,
+          enabled: isPluginEnabled(pluginId),
+          loadedAt: plugin.loadedAt || null,
+          manifest
         }
       });
     } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
+      logger.error("GET /api/plugins/:pluginId/metadata error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // GET /api/plugins/:pluginId/actions
-  router.get("/:pluginId/actions", (req, res) => {
+  // List plugin actions
+  router.get("/:pluginId/actions", validatePluginId, async (req, res) => {
     try {
-      const pluginId = req.params.pluginId;
-      const actions = registry.getActions ? registry.getActions(pluginId) : [];
-      if (!actions) return res.status(404).json({ ok: false, error: "plugin_not_found" });
-      return res.json({ ok: true, pluginId, actions });
+      const { pluginId } = req.params;
+      const actions = registry.listActions(pluginId);
+      
+      return res.json({ 
+        ok: true, 
+        pluginId, 
+        actions: actions || [] 
+      });
     } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
+      logger.error("GET /api/plugins/:pluginId/actions error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // POST /api/plugins/:pluginId/actions/:actionName -> run an action (blocked if disabled)
-  router.post("/:pluginId/actions/:actionName", async (req, res) => {
-    try {
-      const { pluginId, actionName } = req.params;
-
-      if (!isPluginEnabled(pluginId)) {
-        logEvent({ event: "plugin_action_blocked_disabled", pluginId, action: actionName, body: req.body || {} });
-        return res.status(403).json({ ok: false, error: "plugin_disabled" });
-      }
-
-      if (!app?.locals?.pluginEngine || typeof app.locals.pluginEngine.runAction !== "function") {
-        return res.status(500).json({ ok: false, error: "plugin_engine_unavailable" });
-      }
-
-      const result = await app.locals.pluginEngine.runAction(pluginId, actionName, req.body || {});
-      return res.json({ ok: true, result });
-    } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
-    }
-  });
-
-  // POST /api/plugins/:pluginId/run/:actionName (alias) -> run action (blocked if disabled)
-  router.post("/:pluginId/run/:actionName", async (req, res) => {
-    try {
-      const { pluginId, actionName } = req.params;
-
-      if (!isPluginEnabled(pluginId)) {
-        logEvent({ event: "plugin_action_blocked_disabled", pluginId, action: actionName, body: req.body || {} });
-        return res.status(403).json({ ok: false, error: "plugin_disabled" });
-      }
-
-      if (!app?.locals?.pluginEngine || typeof app.locals.pluginEngine.runAction !== "function") {
-        return res.status(500).json({ ok: false, error: "plugin_engine_unavailable" });
-      }
-
-      const result = await app.locals.pluginEngine.runAction(pluginId, actionName, req.body || {});
-      return res.json({ ok: true, result });
-    } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
-    }
-  });
-
-  // GET /api/plugins/:pluginId/menu
-  router.get("/:pluginId/menu", (req, res) => {
-    try {
-      const pluginId = req.params.pluginId;
-      const plugin = registry.get(pluginId);
-      if (!plugin) return res.status(404).json({ ok: false, error: "plugin_not_found" });
-      const manifest = plugin.manifest || {};
-      return res.json({ ok: true, menu: manifest.menu || [] });
-    } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
-    }
-  });
-
-  // GET /api/plugins/:pluginId/config
-  router.get("/:pluginId/config", (req, res) => {
-    try {
-      const pluginId = req.params.pluginId;
-      const plugin = registry.get(pluginId);
-      if (!plugin) return res.status(404).json({ ok: false, error: "plugin_not_found" });
-      return res.json({ ok: true, config: plugin.config || {} });
-    } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
-    }
-  });
-
-  // POST /api/plugins/:pluginId/config -> save plugin config (and honor enabled change)
-  router.post("/:pluginId/config", (req, res) => {
-    try {
-      const pluginId = req.params.pluginId;
-      const payload = req.body || {};
-
-      // Persist config via registry.setConfig if available
+  // Run plugin action with timeout
+  router.post(
+    "/:pluginId/actions/:actionName",
+    validatePluginId,
+    validateActionName,
+    async (req, res) => {
       try {
-        if (typeof registry.setConfig === "function") {
-          registry.setConfig(pluginId, payload);
-        } else {
-          // if registry doesn't support setConfig, attempt to attach to plugin object
-          const p = registry.get ? registry.get(pluginId) : null;
-          if (p) {
-            p.config = Object.assign({}, p.config || {}, payload);
-          }
-        }
-      } catch (e) {
-        logger && logger.warn && logger.warn("setConfig failed", e.message || e);
-      }
+        const { pluginId, actionName } = req.params;
 
-      // If payload contains enabled flag, update plugin.enabled if possible (so isPluginEnabled sees it)
-      if (typeof payload.enabled !== "undefined") {
-        const enabledVal = !!payload.enabled;
-        try {
-          // Update engine-level plugin if exists
-          if (app?.locals?.pluginEngine?.plugins && app.locals.pluginEngine.plugins[pluginId]) {
-            app.locals.pluginEngine.plugins[pluginId].enabled = enabledVal;
-          }
-          // Update registry-level plugin object if exists
-          const p = registry.get ? registry.get(pluginId) : null;
-          if (p) {
-            p.enabled = enabledVal;
-            // also persist to config if recommended
-            p.config = Object.assign({}, p.config || {}, { enabled: enabledVal });
-          }
-          // If registry exposes setConfig, ensure config saved
-          if (typeof registry.setConfig === "function") {
-            registry.setConfig(pluginId, Object.assign({}, (p && p.config) || {}, { enabled: enabledVal }));
-          }
-        } catch (e) {
-          logger && logger.warn && logger.warn("saving enabled flag failed", e.message || e);
+        // Check if enabled
+        if (!isPluginEnabled(pluginId)) {
+          logEvent({ 
+            event: "action_blocked_disabled", 
+            pluginId, 
+            actionName 
+          });
+          return res.status(403).json({ 
+            ok: false, 
+            error: "plugin_disabled" 
+          });
         }
 
-        logEvent({ event: "plugin_enabled_changed", pluginId, enabled: enabledVal });
-      }
+        // Check if engine available
+        if (!app?.locals?.pluginEngine?.runAction) {
+          return res.status(500).json({ 
+            ok: false, 
+            error: "plugin_engine_unavailable" 
+          });
+        }
 
-      return res.json({ ok: true, saved: true });
-    } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
+        // Execute with timeout
+        const timeoutMs = 30000; // 30 seconds
+        const execution = app.locals.pluginEngine.runAction(
+          pluginId,
+          actionName,
+          req.body || {}
+        );
+
+        const timeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Action timeout")), timeoutMs)
+        );
+
+        const result = await Promise.race([execution, timeout]);
+
+        logEvent({ 
+          event: "action_executed", 
+          pluginId, 
+          actionName, 
+          success: true 
+        });
+
+        return res.json({ ok: true, result });
+      } catch (err) {
+        logger.error("POST /api/plugins/:pluginId/actions/:actionName error:", err);
+        
+        logEvent({ 
+          event: "action_failed", 
+          pluginId: req.params.pluginId, 
+          actionName: req.params.actionName,
+          error: err.message 
+        });
+
+        return res.status(500).json({ ok: false, error: err.message });
+      }
     }
-  });
+  );
 
-  // ---------------------------
-  // INSTALL: Folder
+  // Install from folder
   router.post("/install/folder", async (req, res) => {
     try {
-      const { pluginId, sourceDir, productId, folderPath } = req.body || {};
+      const { pluginId, sourceDir } = req.body;
 
-      // Accept aliases for backwards compatibility (productId -> pluginId, folderPath -> sourceDir)
-      const resolvedPluginId = pluginId || productId || null;
-      const resolvedSourceDir = sourceDir || folderPath || null;
-
-      if (!resolvedPluginId || !resolvedSourceDir) return res.status(400).json({ ok: false, error: "missing_fields" });
-
-      const src = path.resolve(resolvedSourceDir);
-      if (!fs.existsSync(src)) return res.status(400).json({ ok: false, error: "source_not_found" });
-
-      const dest = path.join(pluginsDir, resolvedPluginId);
-      if (fs.existsSync(dest)) return res.status(409).json({ ok: false, error: "plugin_exists" });
-
-      copyRecursive(src, dest);
-
-      // registry register fallback
-      try {
-        if (typeof registry.registerPlugin === "function") {
-          registry.registerPlugin(resolvedPluginId, { id: resolvedPluginId, folder: dest, installedAt: new Date(), enabled: true });
-        } else {
-          const p = registry.get ? registry.get(resolvedPluginId) : null;
-          if (p) {
-            p.folder = dest;
-            p.installedAt = new Date();
-            p.enabled = true;
-          }
-        }
-      } catch (e) {
-        logger && logger.warn && logger.warn("install/folder: registry.registerPlugin failed", e.message || e);
+      if (!pluginId || !PLUGIN_ID_REGEX.test(pluginId)) {
+        return res.status(400).json({ 
+          ok: false, 
+          error: "invalid_plugin_id" 
+        });
       }
 
-      await reloadEngineOnce();
-
-      logEvent({ event: "plugin_installed_folder", pluginId: resolvedPluginId, sourceDir: src, dest });
-
-      return res.json({ ok: true, installed: resolvedPluginId, folder: dest });
-    } catch (err) {
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
-    }
-  });
-
-  // ---------------------------
-  // INSTALL: ZIP upload
-  router.post("/install/zip", upload.single("file"), async (req, res) => {
-    try {
-      const file = req.file;
-      if (!file) return res.status(400).json({ ok: false, error: "missing_file" });
-
-      const tmpExtractDir = path.join(uploadsTmp, `extract_${Date.now()}_${Math.round(Math.random() * 9999)}`);
-      ensureDir(tmpExtractDir);
-
-      const extracted = extractZipToDir(file.path, tmpExtractDir);
-      if (!extracted) {
-        removeRecursiveSafe(tmpExtractDir);
-        removeRecursiveSafe(file.path);
-        return res.status(500).json({ ok: false, error: "zip_extract_failed" });
+      if (!sourceDir) {
+        return res.status(400).json({ 
+          ok: false, 
+          error: "missing_source_dir" 
+        });
       }
 
-      const topEntries = fs.readdirSync(tmpExtractDir);
-      let pluginId = req.body.pluginId || null;
+      const src = path.resolve(sourceDir);
+      
+      // Security: prevent path traversal
+      if (!src.startsWith(path.resolve(process.cwd()))) {
+        return res.status(403).json({ 
+          ok: false, 
+          error: "access_denied" 
+        });
+      }
 
-      if (!pluginId) {
-        if (topEntries.length === 1 && fs.lstatSync(path.join(tmpExtractDir, topEntries[0])).isDirectory()) {
-          pluginId = topEntries[0];
-        } else {
-          removeRecursiveSafe(tmpExtractDir);
-          removeRecursiveSafe(file.path);
-          return res.status(400).json({ ok: false, error: "pluginId_required_for_flat_zip" });
-        }
+      const srcExists = await fs.access(src)
+        .then(() => true)
+        .catch(() => false);
+
+      if (!srcExists) {
+        return res.status(400).json({ 
+          ok: false, 
+          error: "source_not_found" 
+        });
       }
 
       const dest = path.join(pluginsDir, pluginId);
-      if (fs.existsSync(dest)) {
-        removeRecursiveSafe(tmpExtractDir);
-        removeRecursiveSafe(file.path);
-        return res.status(409).json({ ok: false, error: "plugin_exists" });
+      const destExists = await fs.access(dest)
+        .then(() => true)
+        .catch(() => false);
+
+      if (destExists) {
+        return res.status(409).json({ 
+          ok: false, 
+          error: "plugin_already_exists" 
+        });
       }
 
+      await copyRecursive(src, dest);
+      await reloadEngine();
+
+      logEvent({ 
+        event: "plugin_installed_folder", 
+        pluginId, 
+        sourceDir: src 
+      });
+
+      return res.json({ 
+        ok: true, 
+        installed: pluginId, 
+        path: dest 
+      });
+    } catch (err) {
+      logger.error("POST /install/folder error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Install from ZIP
+  router.post("/install/zip", upload.single("file"), async (req, res) => {
+    let tmpExtractDir = null;
+
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ 
+          ok: false, 
+          error: "missing_file" 
+        });
+      }
+
+      tmpExtractDir = path.join(
+        uploadsTmp,
+        `extract_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      );
+
+      await fs.mkdir(tmpExtractDir, { recursive: true });
+
+      // Extract ZIP
+      try {
+        const zip = new AdmZip(file.path);
+        zip.extractAllTo(tmpExtractDir, true);
+      } catch (err) {
+        throw new Error(`ZIP extraction failed: ${err.message}`);
+      }
+
+      const topEntries = await fs.readdir(tmpExtractDir, { withFileTypes: true });
+      let pluginId = req.body.pluginId || null;
+
+      // Auto-detect plugin ID from single folder
+      if (!pluginId && topEntries.length === 1 && topEntries[0].isDirectory()) {
+        const folderName = topEntries[0].name;
+        if (PLUGIN_ID_REGEX.test(folderName)) {
+          pluginId = folderName;
+        }
+      }
+
+      if (!pluginId) {
+        throw new Error("plugin_id_required");
+      }
+
+      if (!PLUGIN_ID_REGEX.test(pluginId)) {
+        throw new Error("invalid_plugin_id");
+      }
+
+      const dest = path.join(pluginsDir, pluginId);
+      const destExists = await fs.access(dest)
+        .then(() => true)
+        .catch(() => false);
+
+      if (destExists) {
+        throw new Error("plugin_already_exists");
+      }
+
+      // Determine source to copy
       let srcToCopy;
-      if (topEntries.length === 1 && topEntries[0] === pluginId) {
-        srcToCopy = path.join(tmpExtractDir, topEntries[0]);
+      if (topEntries.length === 1 && topEntries[0].name === pluginId) {
+        srcToCopy = path.join(tmpExtractDir, pluginId);
       } else {
         srcToCopy = tmpExtractDir;
       }
 
-      copyRecursive(srcToCopy, dest);
+      await copyRecursive(srcToCopy, dest);
+      await reloadEngine();
 
-      try {
-        if (typeof registry.registerPlugin === "function") {
-          registry.registerPlugin(pluginId, { id: pluginId, folder: dest, installedAt: new Date(), enabled: true });
-        } else {
-          const p = registry.get ? registry.get(pluginId) : null;
-          if (p) {
-            p.folder = dest;
-            p.installedAt = new Date();
-            p.enabled = true;
-          }
-        }
-      } catch (e) {
-        logger && logger.warn && logger.warn("install/zip: registry.registerPlugin failed", e.message || e);
-      }
+      logEvent({ 
+        event: "plugin_installed_zip", 
+        pluginId, 
+        originalName: file.originalname 
+      });
 
-      removeRecursiveSafe(tmpExtractDir);
-      removeRecursiveSafe(file.path);
-
-      await reloadEngineOnce();
-
-      logEvent({ event: "plugin_installed_zip", pluginId, dest });
-
-      return res.json({ ok: true, installed: pluginId, folder: dest });
+      return res.json({ 
+        ok: true, 
+        installed: pluginId, 
+        path: dest 
+      });
     } catch (err) {
-      logger && logger.error && logger.error("install/zip error", err);
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
+      logger.error("POST /install/zip error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    } finally {
+      // Cleanup
+      if (req.file?.path) {
+        await removeRecursive(req.file.path);
+      }
+      if (tmpExtractDir) {
+        await removeRecursive(tmpExtractDir);
+      }
     }
   });
 
-  // ---------------------------
-  // UNINSTALL -> backup -> move to trash
-  router.delete("/:pluginId", async (req, res) => {
+  // Uninstall plugin (move to trash)
+  router.delete("/:pluginId", validatePluginId, async (req, res) => {
     try {
-      const pluginId = req.params.pluginId;
-      const { removeFiles = false, actor = "system" } = req.body || {};
+      const { pluginId } = req.params;
+      const { actor = "system" } = req.body;
 
       const src = path.join(pluginsDir, pluginId);
-      if (!fs.existsSync(src)) {
-        if (typeof registry.remove === "function") registry.remove(pluginId);
-        return res.status(404).json({ ok: false, error: "plugin_not_found" });
+      const srcExists = await fs.access(src)
+        .then(() => true)
+        .catch(() => false);
+
+      if (!srcExists) {
+        return res.status(404).json({ 
+          ok: false, 
+          error: "plugin_not_found" 
+        });
       }
 
-      ensureDir(backupsBase);
-
+      // Create backup
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
       const backupName = `${pluginId}_${ts}.zip`;
       const backupPath = path.join(backupsBase, backupName);
+      const backupCreated = await createBackupZip(src, backupPath);
 
-      const backupCreated = createBackupZip(src, backupPath);
-
+      // Move to trash
       const trashDest = path.join(trashBase, pluginId, ts);
-      ensureDir(path.dirname(trashDest));
-      ensureDir(trashDest);
+      await fs.mkdir(path.dirname(trashDest), { recursive: true });
+      await fs.rename(src, trashDest);
 
-      const moved = moveOrCopy(src, trashDest);
-
+      // Update registry
       try {
-        const meta = registry.get ? registry.get(pluginId) : { id: pluginId, name: pluginId };
-        if (typeof registry.trashPlugin === "function") {
-          registry.trashPlugin(pluginId, { trashedAt: new Date(), trashPath: trashDest, meta });
-        } else if (typeof registry.remove === "function") {
+        const meta = registry.get(pluginId);
+        if (registry.trashPlugin) {
+          registry.trashPlugin(pluginId, { 
+            trashedAt: new Date(), 
+            trashPath: trashDest, 
+            meta 
+          });
+        } else if (registry.remove) {
           registry.remove(pluginId);
         }
       } catch (e) {
-        logger && logger.warn && logger.warn("DELETE plugin: registry.trashPlugin/remove failed", e.message || e);
+        logger.warn("Registry cleanup failed:", e.message);
       }
 
-      if (removeFiles) {
-        try {
-          if (fs.existsSync(src)) removeRecursiveSafe(src);
-        } catch (e) {
-          logger && logger.warn && logger.warn("DELETE plugin: removeFiles cleanup failed", e.message || e);
-        }
-      }
+      await reloadEngine();
 
-      await reloadEngineOnce();
-
-      logEvent({
-        event: "plugin_uninstalled",
-        pluginId,
-        actor,
-        trashed: moved,
-        trashPath: moved ? trashDest : null,
-        backup: backupCreated ? backupPath : null
+      logEvent({ 
+        event: "plugin_uninstalled", 
+        pluginId, 
+        actor, 
+        trashPath: trashDest,
+        backup: backupCreated ? backupPath : null 
       });
 
       return res.json({
         ok: true,
         removed: pluginId,
-        trashed: moved,
-        trashPath: moved ? trashDest : null,
+        trashed: true,
+        trashPath: trashDest,
         backup: backupCreated ? backupPath : null
       });
     } catch (err) {
-      logger && logger.error && logger.error("DELETE /api/plugins/:pluginId error", err);
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
+      logger.error("DELETE /api/plugins/:pluginId error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // ---------------------------
-  // TRASH LIST
-  router.get("/trash/list", (req, res) => {
+  // List trash
+  router.get("/trash/list", async (req, res) => {
     try {
-      let list = [];
-      if (typeof registry.listTrash === "function") {
-        try {
-          list = registry.listTrash() || [];
-        } catch (e) {
-          logger && logger.warn && logger.warn("registry.listTrash failed, falling back to fs scan", e.message || e);
-          list = [];
+      let trash = [];
+
+      if (registry.listTrash) {
+        trash = registry.listTrash() || [];
+      }
+
+      // Fallback to filesystem scan
+      if (!trash || trash.length === 0) {
+        const trashExists = await fs.access(trashBase)
+          .then(() => true)
+          .catch(() => false);
+
+        if (trashExists) {
+          const pluginIds = await fs.readdir(trashBase, { withFileTypes: true });
+          
+          for (const dirent of pluginIds) {
+            if (!dirent.isDirectory()) continue;
+            
+            const pid = dirent.name;
+            const pidDir = path.join(trashBase, pid);
+            
+            try {
+              const timestamps = await fs.readdir(pidDir, { withFileTypes: true });
+              const latest = timestamps
+                .filter(d => d.isDirectory())
+                .map(d => d.name)
+                .sort()
+                .reverse()[0];
+
+              if (latest) {
+                trash.push({
+                  id: pid,
+                  name: pid,
+                  trashedAt: latest,
+                  trashPath: path.join(pidDir, latest)
+                });
+              }
+            } catch (e) {
+              // Skip if can't read
+            }
+          }
         }
       }
 
-      // If registry returned empty array (or not supported), fallback to scanning _trash
-      if (!Array.isArray(list) || list.length === 0) {
-        const pluginIds = fs.existsSync(trashBase)
-          ? fs.readdirSync(trashBase, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
-          : [];
-        list = pluginIds.map(pid => {
-          const pidDir = path.join(trashBase, pid);
-          let timestamps = [];
-          try {
-            timestamps = fs.readdirSync(pidDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
-          } catch (e) {
-            timestamps = [];
-          }
-          const latest = timestamps.sort().reverse()[0] || null;
-          const trashPath = latest ? path.join(pidDir, latest) : null;
-          return { id: pid, name: pid, trashedAt: latest, trashPath, meta: null };
+      return res.json({ ok: true, trash });
+    } catch (err) {
+      logger.error("GET /api/plugins/trash/list error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Restore from trash
+  router.post("/:pluginId/restore", validatePluginId, async (req, res) => {
+    try {
+      const { pluginId } = req.params;
+      const { actor = "system" } = req.body;
+
+      let trashEntry = null;
+      if (registry.getTrash) {
+        trashEntry = registry.getTrash(pluginId);
+      }
+
+      let trashPath = trashEntry?.trashPath;
+
+      if (!trashPath) {
+        const candidateDir = path.join(trashBase, pluginId);
+        const candidateExists = await fs.access(candidateDir)
+          .then(() => true)
+          .catch(() => false);
+
+        if (!candidateExists) {
+          return res.status(404).json({ 
+            ok: false, 
+            error: "plugin_not_in_trash" 
+          });
+        }
+
+        const timestamps = await fs.readdir(candidateDir, { withFileTypes: true });
+        const latest = timestamps
+          .filter(d => d.isDirectory())
+          .map(d => d.name)
+          .sort()
+          .reverse()[0];
+
+        if (!latest) {
+          return res.status(404).json({ 
+            ok: false, 
+            error: "plugin_not_in_trash" 
+          });
+        }
+
+        trashPath = path.join(candidateDir, latest);
+      }
+
+      const dest = path.join(pluginsDir, pluginId);
+      const destExists = await fs.access(dest)
+        .then(() => true)
+        .catch(() => false);
+
+      if (destExists) {
+        return res.status(409).json({ 
+          ok: false, 
+          error: "plugin_already_exists" 
         });
       }
 
-      const payload = (Array.isArray(list) ? list : []).map(normalizeTrashEntry);
-      return res.json({ ok: true, trash: payload });
-    } catch (err) {
-      logger && logger.error && logger.error("GET /api/plugins/trash/list error", err);
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
-    }
-  });
+      await fs.rename(trashPath, dest);
 
-  // ---------------------------
-  // RESTORE
-  router.post("/:pluginId/restore", async (req, res) => {
-    try {
-      const pluginId = req.params.pluginId;
-      const { actor = "system" } = req.body || {};
-
-      const trashEntry = (typeof registry.getTrash === "function") ? registry.getTrash(pluginId) : null;
-      let trashPath = trashEntry?.trashPath || null;
-      if (!trashPath) {
-        const candidateDir = path.join(trashBase, pluginId);
-        if (!fs.existsSync(candidateDir)) {
-          return res.status(404).json({ ok: false, error: "plugin_not_in_trash" });
-        }
-        const timestamps = fs.readdirSync(candidateDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
-        const latest = timestamps.sort().reverse()[0];
-        if (!latest) return res.status(404).json({ ok: false, error: "plugin_not_in_trash" });
-        trashPath = path.join(candidateDir, latest);
-      }
-
-      if (!fs.existsSync(trashPath)) return res.status(500).json({ ok: false, error: "trash_path_missing" });
-
-      const dest = path.join(pluginsDir, pluginId);
-      if (fs.existsSync(dest)) return res.status(409).json({ ok: false, error: "target_already_exists" });
-
-      const moved = moveOrCopy(trashPath, dest);
-      if (!moved) return res.status(500).json({ ok: false, error: "restore_move_failed" });
-
+      // Update registry
       try {
-        if (fs.existsSync(trashPath)) removeRecursiveSafe(trashPath);
-      } catch (e) { /* ignore */ }
-
-      try {
-        if (typeof registry.restorePlugin === "function") {
+        if (registry.restorePlugin) {
           registry.restorePlugin(pluginId);
-        } else if (typeof registry.registerPlugin === "function") {
-          registry.registerPlugin(pluginId, { id: pluginId, folder: dest, restoredAt: new Date(), enabled: true });
-        } else {
-          const p = registry.get ? registry.get(pluginId) : null;
-          if (p) {
-            p.folder = dest;
-            p.restoredAt = new Date();
-            p.enabled = true;
-          }
+        } else if (registry.registerPlugin) {
+          registry.registerPlugin(pluginId, { 
+            id: pluginId, 
+            folder: dest, 
+            restoredAt: new Date(),
+            enabled: true 
+          });
         }
       } catch (e) {
-        logger && logger.warn && logger.warn("restore: registry restore/register failed", e.message || e);
+        logger.warn("Registry restore failed:", e.message);
       }
 
-      await reloadEngineOnce();
+      await reloadEngine();
 
-      logEvent({ event: "plugin_restored", pluginId, actor, restoredFrom: trashPath, restoredTo: dest });
+      logEvent({ 
+        event: "plugin_restored", 
+        pluginId, 
+        actor, 
+        from: trashPath,
+        to: dest 
+      });
 
-      return res.json({ ok: true, restored: pluginId, folder: dest });
+      return res.json({ 
+        ok: true, 
+        restored: pluginId, 
+        path: dest 
+      });
     } catch (err) {
-      logger && logger.error && logger.error("POST /api/plugins/:pluginId/restore error", err);
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
+      logger.error("POST /api/plugins/:pluginId/restore error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // ---------------------------
-  // PERMANENT DELETE from trash
-  router.delete("/trash/:pluginId", async (req, res) => {
+  // Permanent delete from trash
+  router.delete("/trash/:pluginId", validatePluginId, async (req, res) => {
     try {
-      const pluginId = req.params.pluginId;
-      const { actor = "system" } = req.body || {};
+      const { pluginId } = req.params;
+      const { actor = "system" } = req.body;
 
-      const trashEntry = (typeof registry.getTrash === "function") ? registry.getTrash(pluginId) : null;
-      let trashPath = trashEntry?.trashPath || null;
+      let trashEntry = null;
+      if (registry.getTrash) {
+        trashEntry = registry.getTrash(pluginId);
+      }
+
+      let trashPath = trashEntry?.trashPath;
 
       if (!trashPath) {
         const candidateDir = path.join(trashBase, pluginId);
-        if (!fs.existsSync(candidateDir)) return res.status(404).json({ ok: false, error: "plugin_not_in_trash" });
-        const timestamps = fs.readdirSync(candidateDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
-        const latest = timestamps.sort().reverse()[0];
-        if (!latest) return res.status(404).json({ ok: false, error: "plugin_not_in_trash" });
-        trashPath = path.join(candidateDir, latest);
+        const candidateExists = await fs.access(candidateDir)
+          .then(() => true)
+          .catch(() => false);
+
+        if (!candidateExists) {
+          return res.status(404).json({ 
+            ok: false, 
+            error: "plugin_not_in_trash" 
+          });
+        }
+
+        trashPath = candidateDir; // Delete entire plugin folder
       }
 
-      try {
-        if (trashPath && fs.existsSync(trashPath)) removeRecursiveSafe(trashPath);
-      } catch (e) {
-        logger && logger.warn && logger.warn("permanent delete: rmSync failed", e.message || e);
-      }
+      await removeRecursive(trashPath);
 
+      // Update registry
       try {
-        if (typeof registry.deleteFromTrash === "function") {
+        if (registry.deleteFromTrash) {
           registry.deleteFromTrash(pluginId);
-        } else if (typeof registry.remove === "function") {
-          registry.remove(pluginId);
         }
       } catch (e) {
-        logger && logger.warn && logger.warn("permanent delete: registry cleanup failed", e.message || e);
+        logger.warn("Registry delete failed:", e.message);
       }
 
-      logEvent({ event: "plugin_trash_deleted", pluginId, actor, trashPath });
+      logEvent({ 
+        event: "plugin_permanently_deleted", 
+        pluginId, 
+        actor 
+      });
 
-      return res.json({ ok: true, deleted: pluginId });
+      return res.json({ 
+        ok: true, 
+        deleted: pluginId 
+      });
     } catch (err) {
-      logger && logger.error && logger.error("DELETE /api/plugins/trash/:pluginId error", err);
-      return res.status(500).json({ ok: false, error: err?.message || String(err) });
+      logger.error("DELETE /api/plugins/trash/:pluginId error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // Return router
+  // Get/set plugin config
+  router.get("/:pluginId/config", validatePluginId, async (req, res) => {
+    try {
+      const { pluginId } = req.params;
+      const plugin = registry.get(pluginId);
+      
+      if (!plugin) {
+        return res.status(404).json({ 
+          ok: false, 
+          error: "plugin_not_found" 
+        });
+      }
+
+      return res.json({ 
+        ok: true, 
+        config: plugin.config || {} 
+      });
+    } catch (err) {
+      logger.error("GET /api/plugins/:pluginId/config error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.post("/:pluginId/config", validatePluginId, async (req, res) => {
+    try {
+      const { pluginId } = req.params;
+      const config = req.body || {};
+
+      const plugin = registry.get(pluginId);
+      if (!plugin) {
+        return res.status(404).json({ 
+          ok: false, 
+          error: "plugin_not_found" 
+        });
+      }
+
+      // Update config
+      plugin.config = { ...plugin.config, ...config };
+
+      // Handle enabled flag
+      if (typeof config.enabled !== "undefined") {
+        plugin.enabled = !!config.enabled;
+        
+        logEvent({ 
+          event: "plugin_enabled_changed", 
+          pluginId, 
+          enabled: plugin.enabled 
+        });
+      }
+
+      return res.json({ ok: true, saved: true });
+    } catch (err) {
+      logger.error("POST /api/plugins/:pluginId/config error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   return router;
 };

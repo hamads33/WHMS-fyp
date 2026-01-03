@@ -62,9 +62,9 @@ async function registerDomain({
   currency,
   priceOverride = null
 }) {
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 1️⃣ Validation
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   if (!domain || !ownerId || !registrar) {
     throw new Error("domain, ownerId, and registrar are required");
   }
@@ -79,22 +79,22 @@ async function registerDomain({
 
   validateContacts(contacts);
 
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 2️⃣ Prevent duplicate domain
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   const existing = await domainRepo.findDomainByName(domain);
   if (existing) {
     throw new Error("Domain already exists in system");
   }
 
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 3️⃣ Load registrar module
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   const registrarModule = loadRegistrar(registrar);
 
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 4️⃣ Availability check (MANDATORY)
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   if (typeof registrarModule.checkAvailability !== "function") {
     throw new Error(`Registrar ${registrar} does not support availability check`);
   }
@@ -111,9 +111,9 @@ async function registerDomain({
       ? priceOverride
       : availability.price ?? null;
 
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 5️⃣ Billing boundary (STUB)
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   const invoice = await createInvoice({
     ownerId,
     domain,
@@ -126,9 +126,9 @@ async function registerDomain({
     throw new Error("Invoice not paid. Domain registration halted.");
   }
 
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 6️⃣ Registrar registration
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   if (typeof registrarModule.registerDomain !== "function") {
     throw new Error(`Registrar ${registrar} does not support registration`);
   }
@@ -144,9 +144,9 @@ async function registerDomain({
     throw new Error("Registrar registration failed");
   }
 
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 7️⃣ Persist domain
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   const createdDomain = await domainRepo.createDomain({
     name: domain,
     ownerId,
@@ -157,12 +157,11 @@ async function registerDomain({
     nameservers,
     registrationPrice: finalPrice,
     currency,
-    
   });
 
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 8️⃣ Persist WHOIS contacts
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   await createDomainContacts(createdDomain.id, contacts);
 
   // Optional registrar contact sync
@@ -173,9 +172,9 @@ async function registerDomain({
     });
   }
 
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   // 9️⃣ Audit & domain logs
-  // ─────────────────────────────────────
+  // ─────────────────────────────
   await logDomainAction(createdDomain.id, "domain_availability_checked", {
     registrar,
     price: availability.price
