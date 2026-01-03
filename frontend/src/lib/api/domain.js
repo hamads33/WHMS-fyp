@@ -1,120 +1,280 @@
-// lib/api/domain.js
-import { apiFetch } from "./client";
+// src/app/(admin)/admin/domains/lib/domain.api.js
+import { apiFetch } from './client'
 
 /* ======================================================
-   DOMAINS
+   DOMAIN OPERATIONS (USER)
 ====================================================== */
 
-// Get all domains
-export function getDomains() {
-  return apiFetch("/api/domains");
+/**
+ * Get all domains for current user
+ */
+export function getDomains(filters = {}) {
+  const params = new URLSearchParams()
+  if (filters.status) params.append('status', filters.status)
+  if (filters.search) params.append('search', filters.search)
+  if (filters.page) params.append('page', filters.page)
+  if (filters.limit) params.append('limit', filters.limit)
+  
+  const query = params.toString()
+  return apiFetch(`
+    /domains${query ? `?${query}` : ''}`)
 }
 
-// Get domain by ID
+/**
+ * Get single domain by ID
+ */
 export function getDomainById(id) {
-  return apiFetch(`/api/domains/${id}`);
+  return apiFetch(`
+    /domains/${id}`)
 }
 
-// Delete domain (soft delete)
-export function deleteDomain(id) {
-  return apiFetch(`/api/domains/${id}`, {
-    method: "DELETE",
-  });
-}
-
-// Check domain availability
-export function checkDomainAvailability(domain) {
+/**
+ * Check domain availability
+ */
+export function checkDomainAvailability(domain, registrar = 'mock') {
   return apiFetch(
-    `/api/domains/availability/check?domain=${encodeURIComponent(domain)}`
-  );
+    `/domains/check?domain=${encodeURIComponent(domain)}&registrar=${registrar}`
+  )
 }
 
-// WHOIS lookup
-export function whoisLookup(domain) {
-  return apiFetch(`/api/domains/whois?domain=${encodeURIComponent(domain)}`);
-}
-
-// Register domain
+/**
+ * Register a new domain
+ */
 export function registerDomain(payload) {
-  return apiFetch("/api/domains/register", {
-    method: "POST",
+  return apiFetch('/domains/register', {
+    method: 'POST',
     body: JSON.stringify(payload),
-  });
+  })
 }
 
-// Update nameservers
+/**
+ * Get WHOIS data for domain
+ */
+export function getWhoisData(domain) {
+  return apiFetch(`/domains/whois?domain=${encodeURIComponent(domain)}`)
+}
+
+/**
+ * Update nameservers
+ */
 export function updateNameservers(domainId, nameservers) {
-  return apiFetch(`/api/domains/${domainId}/nameservers`, {
-    method: "POST",
+  return apiFetch(`/domains/${domainId}/nameservers`, {
+    method: 'PUT',
     body: JSON.stringify({ nameservers }),
-  });
+  })
 }
 
-// Add DNS record
+/**
+ * Renew a domain
+ */
+export function renewDomain(domainId, years = 1) {
+  return apiFetch(`/domains/${domainId}/renew`, {
+    method: 'POST',
+    body: JSON.stringify({ years }),
+  })
+}
+
+/**
+ * Transfer domain to another registrar
+ */
+export function transferDomain(payload) {
+  return apiFetch('/api/domains/transfer', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+/* ======================================================
+   DNS OPERATIONS
+====================================================== */
+
+/**
+ * Get all DNS records for a domain
+ */
+export function getDnsRecords(domainId) {
+  return apiFetch(`/domains/${domainId}/dns`)
+}
+
+/**
+ * Add DNS record
+ */
 export function addDnsRecord(domainId, record) {
-  return apiFetch(`/api/domains/${domainId}/dns`, {
-    method: "POST",
+  return apiFetch(`/domains/${domainId}/dns`, {
+    method: 'POST',
     body: JSON.stringify(record),
-  });
+  })
 }
 
-// Get pricing from DB
-export function getDomainPricing() {
-  return apiFetch("/api/domains/pricing");
+/**
+ * Update DNS record
+ */
+export function updateDnsRecord(domainId, recordId, updates) {
+  return apiFetch(`/domains/${domainId}/dns/${recordId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  })
 }
 
-// Sync pricing from Porkbun → DB
-export function syncDomainPricing() {
-  return apiFetch("/api/domains/pricing/sync", {
-    method: "POST",
-  });
+/**
+ * Delete DNS record
+ */
+export function deleteDnsRecord(domainId, recordId) {
+  return apiFetch(`/domains/${domainId}/dns/${recordId}`, {
+    method: 'DELETE',
+  })
 }
 
 /* ======================================================
-   TLDs
+   ADMIN OPERATIONS
 ====================================================== */
 
-// Get stored TLDs from DB
-export function getTlds() {
-  return apiFetch("/api/domains/tlds");
+/**
+ * Admin: Get all domains (paginated)
+ */
+export function adminGetDomains(filters = {}) {
+  const params = new URLSearchParams()
+  if (filters.status) params.append('status', filters.status)
+  if (filters.registrar) params.append('registrar', filters.registrar)
+  if (filters.search) params.append('search', filters.search)
+  if (filters.page) params.append('page', filters.page)
+  if (filters.limit) params.append('limit', filters.limit)
+  
+  const query = params.toString()
+  return apiFetch(`/admin/domains${query ? `?${query}` : ''}`)
 }
 
-// Create or update TLD
-export function saveTld(payload) {
-  return apiFetch("/api/domains/tlds", {
-    method: "POST",
+/**
+ * Admin: Get single domain with full details
+ */
+export function adminGetDomainById(id) {
+  return apiFetch(`/admin/domains/${id}`)
+}
+
+/**
+ * Admin: Renew domain (with admin override)
+ */
+export function adminRenewDomain(domainId, payload) {
+  return apiFetch(`/admin/domains/${domainId}/renew`, {
+    method: 'POST',
     body: JSON.stringify(payload),
-  });
+  })
 }
 
-// Sync TLD pricing from Porkbun to DB
-export function syncTlds() {
-  return apiFetch("/api/domains/tlds/sync", {
-    method: "POST",
-  });
+/**
+ * Admin: Override domain fields
+ */
+export function adminOverrideDomain(domainId, changes) {
+  return apiFetch(`/admin/domains/${domainId}/override`, {
+    method: 'PATCH',
+    body: JSON.stringify(changes),
+  })
 }
 
-// Get live pricing directly from Porkbun API
-export function getLiveTldPricing() {
-  return apiFetch("/api/domains/tlds/pricing");
+/**
+ * Admin: Soft delete domain
+ */
+export function adminDeleteDomain(id) {
+  return apiFetch(`/admin/domains/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+/**
+ * Admin: Sync domain with registrar
+ */
+export function adminSyncDomain(domainId) {
+  return apiFetch(`/admin/domains/${domainId}/sync`, {
+    method: 'POST',
+  })
 }
 
 /* ======================================================
-   HELPER: Update TLD in DB (for admin UI)
+   DOMAIN STATISTICS & ANALYTICS
 ====================================================== */
-export function updateTld(id, payload) {
-  return apiFetch(`/api/domains/tlds/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
+
+/**
+ * Get domain statistics
+ */
+export function getDomainStats() {
+  return apiFetch('/admin/domains/stats')
+}
+
+/**
+ * Get domains expiring soon
+ */
+export function getExpiringDomains(days = 30) {
+  return apiFetch(`/admin/domains/expiring?days=${days}`)
+}
+
+/**
+ * Get domain audit logs
+ */
+export function getDomainLogs(domainId, limit = 50) {
+  return apiFetch(`/admin/domains/${domainId}/logs?limit=${limit}`)
 }
 
 /* ======================================================
-   HELPER: Toggle TLD Active Status
+   UTILITY HELPERS
 ====================================================== */
-export function toggleTldActive(id, active) {
-  return apiFetch(`/api/domains/tlds/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ active }),
-  });
+
+/**
+ * Format date to readable string
+ */
+export function formatDate(date) {
+  if (!date) return 'N/A'
+  const d = new Date(date)
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+/**
+ * Get status badge color
+ */
+export function getStatusColor(status) {
+  const colors = {
+    active: 'bg-green-500/10 text-green-700 dark:text-green-400',
+    expiring_soon: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400',
+    expired: 'bg-red-500/10 text-red-700 dark:text-red-400',
+    transfer_pending: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
+  }
+  return colors[status] || 'bg-gray-500/10 text-gray-700'
+}
+
+/**
+ * Get status label
+ */
+export function getStatusLabel(status) {
+  const labels = {
+    active: 'Active',
+    expiring_soon: 'Expiring Soon',
+    expired: 'Expired',
+    transfer_pending: 'Transfer Pending',
+  }
+  return labels[status] || status
+}
+
+/**
+ * Calculate days until expiry
+ */
+export function daysUntilExpiry(expiryDate) {
+  if (!expiryDate) return null
+  const expiry = new Date(expiryDate)
+  const today = new Date()
+  const diffTime = expiry - today
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays
+}
+
+/**
+ * Get expiry status
+ */
+export function getExpiryStatus(expiryDate) {
+  const days = daysUntilExpiry(expiryDate)
+  if (days === null) return 'unknown'
+  if (days < 0) return 'expired'
+  if (days <= 30) return 'expiring_soon'
+  return 'active'
 }

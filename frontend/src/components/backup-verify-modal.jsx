@@ -1,6 +1,6 @@
 // ============================================================================
 // FILE: components/backup-verify-modal.jsx
-// PURPOSE: Backup integrity verification modal
+// PURPOSE: Modern black & white verification modal
 // ============================================================================
 
 "use client";
@@ -15,7 +15,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { backupApi } from "@/lib/api/backupClient";
 import { formatBytes } from "@/lib/utils";
 import {
@@ -60,32 +59,42 @@ export function BackupVerifyModal({ backup, open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] bg-white dark:bg-black border-gray-200 dark:border-gray-800">
         <DialogHeader>
-          <DialogTitle>Verify Backup Integrity</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-black dark:text-white">
+            Verify Backup Integrity
+          </DialogTitle>
+          <DialogDescription className="text-gray-500 dark:text-gray-400">
             Check if backup file exists and size matches records
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           {/* Backup Info */}
-          <div className="rounded-lg border p-4 space-y-2">
+          <div className="rounded-lg border border-gray-200 dark:border-gray-800 p-4 space-y-3 bg-gray-50 dark:bg-gray-950">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Backup Name</span>
-              <span className="font-medium">{backup.name}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Backup Name
+              </span>
+              <span className="font-medium text-black dark:text-white">
+                {backup.name}
+              </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 Recorded Size
               </span>
-              <span className="font-medium">
+              <span className="font-medium text-black dark:text-white">
                 {formatBytes(backup.sizeBytes)}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Status</span>
-              <Badge>{backup.status}</Badge>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Status
+              </span>
+              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-black dark:bg-white text-white dark:text-black">
+                {backup.status}
+              </span>
             </div>
           </div>
 
@@ -94,22 +103,22 @@ export function BackupVerifyModal({ backup, open, onOpenChange }) {
             <div
               className={`rounded-lg border p-4 space-y-3 ${
                 result.exists && result.matches
-                  ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-900"
-                  : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-900"
+                  ? "border-black dark:border-white bg-gray-50 dark:bg-gray-950"
+                  : "border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-950"
               }`}
             >
               <div className="flex items-center gap-2">
                 {result.exists && result.matches ? (
                   <>
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    <span className="font-medium text-green-900 dark:text-green-100">
+                    <CheckCircle2 className="h-5 w-5 text-black dark:text-white" />
+                    <span className="font-medium text-black dark:text-white">
                       Verification Successful
                     </span>
                   </>
                 ) : (
                   <>
-                    <XCircle className="h-5 w-5 text-red-600" />
-                    <span className="font-medium text-red-900 dark:text-red-100">
+                    <XCircle className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                    <span className="font-medium text-gray-600 dark:text-gray-400">
                       Verification Failed
                     </span>
                   </>
@@ -118,44 +127,58 @@ export function BackupVerifyModal({ backup, open, onOpenChange }) {
 
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span>File Exists:</span>
-                  <Badge
-                    variant={result.exists ? "default" : "destructive"}
+                  <span className="text-gray-600 dark:text-gray-300">
+                    File Exists:
+                  </span>
+                  <span
+                    className={`font-medium ${
+                      result.exists
+                        ? "text-black dark:text-white"
+                        : "text-gray-500 dark:text-gray-400"
+                    }`}
                   >
                     {result.exists ? "Yes" : "No"}
-                  </Badge>
+                  </span>
                 </div>
 
                 {result.exists && (
                   <>
                     <div className="flex items-center justify-between">
-                      <span>Actual Size:</span>
-                      <span className="font-medium">
+                      <span className="text-gray-600 dark:text-gray-300">
+                        Actual Size:
+                      </span>
+                      <span className="font-medium text-black dark:text-white">
                         {formatBytes(result.size)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span>Size Matches:</span>
-                      <Badge
-                        variant={result.matches ? "default" : "destructive"}
+                      <span className="text-gray-600 dark:text-gray-300">
+                        Size Matches:
+                      </span>
+                      <span
+                        className={`font-medium ${
+                          result.matches
+                            ? "text-black dark:text-white"
+                            : "text-gray-500 dark:text-gray-400"
+                        }`}
                       >
                         {result.matches ? "Yes" : "No"}
-                      </Badge>
+                      </span>
                     </div>
                   </>
                 )}
 
                 {result.error && (
-                  <div className="mt-2 p-2 rounded bg-red-100 dark:bg-red-900/50 text-red-900 dark:text-red-100 text-xs">
+                  <div className="mt-2 p-2 rounded bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-xs border border-gray-200 dark:border-gray-800">
                     {result.error}
                   </div>
                 )}
               </div>
 
               {!result.matches && result.exists && (
-                <div className="flex items-start gap-2 mt-3 p-2 rounded bg-yellow-100 dark:bg-yellow-900/50 text-yellow-900 dark:text-yellow-100 text-xs">
-                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                  <span>
+                <div className="flex items-start gap-2 mt-3 p-3 rounded bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5 text-gray-600 dark:text-gray-400" />
+                  <span className="text-xs text-gray-700 dark:text-gray-300">
                     Size mismatch detected. The backup file may be corrupted or
                     incomplete.
                   </span>
@@ -166,11 +189,13 @@ export function BackupVerifyModal({ backup, open, onOpenChange }) {
 
           {/* Info Box */}
           {!result && !verifying && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-900">
-              <FileCheck className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-900 dark:text-blue-100">
-                <p className="font-medium mb-1">What is verification?</p>
-                <p className="text-xs">
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800">
+              <FileCheck className="h-5 w-5 text-gray-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-gray-600 dark:text-gray-300">
+                <p className="font-medium mb-1 text-black dark:text-white">
+                  What is verification?
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Verification checks if the backup file exists in storage and
                   if its size matches the recorded size. This helps detect
                   corrupted or missing backups.
@@ -181,10 +206,18 @@ export function BackupVerifyModal({ backup, open, onOpenChange }) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            className="border-gray-200 dark:border-gray-800"
+          >
             Close
           </Button>
-          <Button onClick={handleVerify} disabled={verifying}>
+          <Button
+            onClick={handleVerify}
+            disabled={verifying}
+            className="bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200"
+          >
             {verifying ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

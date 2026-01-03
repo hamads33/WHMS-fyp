@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils"; // ✅ Make sure this file exists
+import { cn } from "@/lib/utils"; 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,7 @@ const navigation = [
   { name: "Plugins", href: "/admin/plugins", icon: Puzzle, badge: "5" },
   { name: "Sessions", href: "/admin/sessions", icon: MonitorSmartphone },
   { name: "Impersonation", href: "/admin/impersonation", icon: UserCheck },
-  { name: "Security", href: "/admin/security", icon: Shield },
+  { name: "Security", href: "/admin/workflows", icon: Shield },
   { name: "IP Rules", href: "/admin/iprules", icon: Settings },
   { name: "API Keys", href: "/admin/api-keys", icon: Key },
   { name: "RBAC", href: "/admin/rbac", icon: Lock },

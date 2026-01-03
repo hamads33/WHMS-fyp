@@ -23,9 +23,7 @@ import {
 import { MoreHorizontal, Play, Trash2, Eye, Plus } from "lucide-react"
 import { AutomationAPI } from "@/lib/api/automation"
 
-/* -----------------------------------------------------
-   Helpers
------------------------------------------------------ */
+/* Route: app/(admin)/admin/automation/page.jsx */
 
 const normalizeProfiles = (data = []) =>
   data.map((p) => ({
@@ -67,18 +65,11 @@ const lastRunBadge = (status) => {
   )
 }
 
-/* -----------------------------------------------------
-   Page
------------------------------------------------------ */
-
 export default function AutomationPage() {
   const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  /* ------------------------------------------------- */
-  /* Load profiles                                    */
-  /* ------------------------------------------------- */
   useEffect(() => {
     let active = true
 
@@ -103,33 +94,38 @@ export default function AutomationPage() {
     }
   }, [])
 
-  /* ------------------------------------------------- */
-  /* Actions                                          */
-  /* ------------------------------------------------- */
   const handleToggleStatus = async (profile) => {
-    if (profile.enabled) {
-      await AutomationAPI.disableProfile(profile.id)
-    } else {
-      await AutomationAPI.enableProfile(profile.id)
-    }
+    try {
+      if (profile.enabled) {
+        await AutomationAPI.disableProfile(profile.id)
+      } else {
+        await AutomationAPI.enableProfile(profile.id)
+      }
 
-    // reload from source of truth
-    const res = await AutomationAPI.listProfiles()
-    setProfiles(normalizeProfiles(res?.data ?? []))
+      const res = await AutomationAPI.listProfiles()
+      setProfiles(normalizeProfiles(res?.data ?? []))
+    } catch (err) {
+      console.error("Failed to toggle status:", err)
+    }
   }
 
   const handleDelete = async (id) => {
-    await AutomationAPI.deleteProfile(id)
-    setProfiles((prev) => prev.filter((p) => p.id !== id))
+    try {
+      await AutomationAPI.deleteProfile(id)
+      setProfiles((prev) => prev.filter((p) => p.id !== id))
+    } catch (err) {
+      console.error("Failed to delete profile:", err)
+    }
   }
 
   const handleRun = async (id) => {
-    await AutomationAPI.runProfile(id)
+    try {
+      await AutomationAPI.runProfile(id)
+    } catch (err) {
+      console.error("Failed to run profile:", err)
+    }
   }
 
-  /* ------------------------------------------------- */
-  /* Render                                           */
-  /* ------------------------------------------------- */
   if (loading) {
     return (
       <div className="p-6 text-muted-foreground">

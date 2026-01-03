@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft } from "lucide-react"
 import { AutomationAPI } from "@/lib/api/automation"
 
+/* Route: app/(admin)/admin/automation/new/page.jsx */
+
 export default function CreateProfilePage() {
   const router = useRouter()
 
@@ -47,7 +49,7 @@ export default function CreateProfilePage() {
       await AutomationAPI.createProfile({
         name: formData.name,
         description: formData.description || null,
-        cron: formData.schedule, // UI → backend mapping
+        cron: formData.schedule,
       })
 
       router.push("/admin/automation")

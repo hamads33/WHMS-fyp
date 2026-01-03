@@ -22,6 +22,8 @@ import { ExecutionLogPanel } from "@/components/automation/execution-log-panel"
 import { Play, ArrowLeft } from "lucide-react"
 import { AutomationAPI } from "@/lib/api/automation"
 
+/* Route: app/(admin)/admin/automation/[profileId]/page.jsx */
+
 export default function ProfileDetailPage() {
   const params = useParams()
   const profileId = params.profileId
@@ -33,9 +35,7 @@ export default function ProfileDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  /* --------------------------------------------------
-     Load Profile & Tasks
-  -------------------------------------------------- */
+  /* Load Profile & Tasks */
   useEffect(() => {
     let mounted = true
 
@@ -44,12 +44,10 @@ export default function ProfileDetailPage() {
       setError(null)
 
       try {
-        // Load profile details
         const profileRes = await AutomationAPI.getProfile(profileId)
         if (!mounted) return
         setProfile(profileRes.data)
 
-        // Load tasks for this profile
         const tasksRes = await AutomationAPI.listTasks(profileId)
         if (!mounted) return
 
@@ -59,6 +57,7 @@ export default function ProfileDetailPage() {
           actionType: task.actionType,
           displayName: task.actionType,
           actionMeta: task.actionMeta || {},
+          actionSchema: task.actionSchema || null,
         }))
 
         setTasks(normalizedTasks.sort((a, b) => a.order - b.order))
@@ -77,64 +76,57 @@ export default function ProfileDetailPage() {
     }
   }, [profileId])
 
-  /* --------------------------------------------------
-     Actions
-  -------------------------------------------------- */
+  /* Handlers */
+  const handleAddTask = async (action) => {
+    try {
+      if (!action?.actionType) {
+        throw new Error("Invalid action selected (missing actionType)")
+      }
 
-const handleAddTask = async (action) => {
-  try {
-    if (!action?.actionType) {
-      throw new Error("Invalid action selected (missing actionType)");
+      const nextOrder =
+        tasks.length > 0
+          ? Math.max(...tasks.map(t => t.order ?? 0)) + 1
+          : 0
+
+      const payload = {
+        actionType: action.actionType,
+        order: nextOrder,
+        actionMeta: {},
+      }
+
+      const res = await AutomationAPI.createTask(profileId, payload)
+
+      setTasks(prev =>
+        [...prev, {
+          id: res.data.id,
+          order: res.data.order,
+          actionType: res.data.actionType,
+          displayName: action.displayName,
+          actionMeta: res.data.actionMeta ?? {},
+          actionSchema: action.actionSchema || null,
+        }].sort((a, b) => a.order - b.order)
+      )
+    } catch (err) {
+      console.error("Add task failed:", err)
+      alert(
+        err?.response?.data?.error?.message ||
+        err.message ||
+        "Failed to add task"
+      )
     }
-
-    const nextOrder =
-      tasks.length > 0
-        ? Math.max(...tasks.map(t => t.order ?? 0)) + 1
-        : 0;
-
-    const payload = {
-      actionType: action.actionType, // now correctly populated
-      order: nextOrder,
-      actionMeta: {}
-    };
-
-    const res = await AutomationAPI.createTask(profileId, payload);
-
-    setTasks(prev =>
-      [...prev, {
-        id: res.data.id,
-        order: res.data.order,
-        actionType: res.data.actionType,
-        displayName: action.displayName,
-        actionMeta: res.data.actionMeta ?? {}
-      }].sort((a, b) => a.order - b.order)
-    );
-
-  } catch (err) {
-    console.error("Add task failed:", err?.response?.data || err);
-    alert(
-      err?.response?.data?.error?.message ||
-      err.message ||
-      "Failed to add task"
-    );
   }
-};
 
   const handleRemoveTask = async (taskId) => {
     try {
       await AutomationAPI.deleteTask(taskId)
 
-      // Remove from UI and reorder
       const remainingTasks = tasks.filter((t) => t.id !== taskId)
-      
-      // Update local state immediately with new order
-      const reorderedTasks = remainingTasks.map((t, idx) => ({ 
-        ...t, 
-        order: idx 
+      const reorderedTasks = remainingTasks.map((t, idx) => ({
+        ...t,
+        order: idx,
       }))
       setTasks(reorderedTasks)
 
-      // Update order on backend for remaining tasks
       for (let i = 0; i < reorderedTasks.length; i++) {
         await AutomationAPI.updateTask(reorderedTasks[i].id, {
           actionType: reorderedTasks[i].actionType,
@@ -158,7 +150,6 @@ const handleAddTask = async (action) => {
       const task = tasks.find((t) => t.id === taskId)
       if (!task) return
 
-      // Send complete task data with updated meta
       await AutomationAPI.updateTask(taskId, {
         actionType: task.actionType,
         order: task.order,
@@ -199,10 +190,7 @@ const handleAddTask = async (action) => {
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId)
 
-  /* --------------------------------------------------
-     Render
-  -------------------------------------------------- */
-
+  /* Render */
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">

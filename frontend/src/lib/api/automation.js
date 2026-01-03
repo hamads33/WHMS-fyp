@@ -1,6 +1,6 @@
 import { apiFetch } from "@/lib/api/client";
 
-const BASE = "/api/automation";
+const BASE = "/automation";
 
 export const AutomationAPI = {
   /* =====================================================
@@ -130,7 +130,7 @@ export const AutomationAPI = {
 listAuditLogs(params = {}) {
   const q = new URLSearchParams(params).toString();
   return apiFetch(
-    `/api/automation/audit/logs${q ? `?${q}` : ""}`
+    `/automation/audit/logs${q ? `?${q}` : ""}`
   );
 },
 
@@ -160,7 +160,7 @@ listProfileAuditLogs(profileId, params = {}) {
 
   const q = new URLSearchParams(params).toString();
   return apiFetch(
-    `/api/automation/audit/profiles/${profileId}/logs${q ? `?${q}` : ""}`
+    `/automation/audit/profiles/${profileId}/logs${q ? `?${q}` : ""}`
   );
 },
 
@@ -173,7 +173,7 @@ getProfileAuditLogsCount(profileId) {
   }
 
   return apiFetch(
-    `/api/automation/audit/profiles/${profileId}/logs/count`
+    `/automation/audit/profiles/${profileId}/logs/count`
   );
 },
 
