@@ -1,19 +1,29 @@
-
-
-// ============================================================================
-// FILE 3: order.controller.js
-// ============================================================================
-// Path: src/modules/orders/controllers/order.controller.js
+/**
+ * Order Controller - Clean & Lightweight
+ * Path: src/modules/orders/controllers/order.controller.js
+ */
 
 const orderService = require("../services/order.service");
 
+function getUserContext(req) {
+  // Ensure req.user exists and has an id
+  if (!req.user || !req.user.id) {
+    const err = new Error("User not authenticated");
+    err.statusCode = 401;
+    throw err;
+  }
+  return req.user;
+}
+
 /**
- * Create a new order (Client)
- * Status: pending
+ * Create a new order
+ * POST /api/orders
  */
 exports.createOrder = async (req, res) => {
   try {
-    const order = await orderService.createOrder(req.user.id, req.body);
+    const user = getUserContext(req);
+    const order = await orderService.createOrder(user.id, req.body);
+
     res.status(201).json(order);
   } catch (err) {
     res.status(err.statusCode || 500).json({
@@ -24,11 +34,17 @@ exports.createOrder = async (req, res) => {
 };
 
 /**
- * List orders for authenticated client
+ * List client's orders
+ * GET /api/orders
  */
 exports.listClientOrders = async (req, res) => {
   try {
-    const orders = await orderService.getClientOrders(req.user.id);
+    const { limit, offset, status } = req.query;
+    const orders = await orderService.getClientOrders(req.user.id, {
+      limit: limit ? parseInt(limit) : 50,
+      offset: offset ? parseInt(offset) : 0,
+      status,
+    });
     res.json(orders);
   } catch (err) {
     res.status(500).json({
@@ -39,7 +55,8 @@ exports.listClientOrders = async (req, res) => {
 };
 
 /**
- * Get single order (Client or Admin)
+ * Get specific order
+ * GET /api/orders/:id
  */
 exports.getOrder = async (req, res) => {
   try {
@@ -57,8 +74,8 @@ exports.getOrder = async (req, res) => {
 };
 
 /**
- * Cancel order (Client - pending orders only)
- * pending → cancelled
+ * Cancel pending order (client only)
+ * POST /api/orders/:id/cancel
  */
 exports.cancelOrder = async (req, res) => {
   try {
@@ -73,8 +90,8 @@ exports.cancelOrder = async (req, res) => {
 };
 
 /**
- * Activate order (Admin / system action)
- * pending → active
+ * Activate pending order (admin action)
+ * POST /api/admin/orders/:id/activate
  */
 exports.activateOrder = async (req, res) => {
   try {
@@ -89,8 +106,9 @@ exports.activateOrder = async (req, res) => {
 };
 
 /**
- * Renew order (Client or Admin)
- * active → active (extends renewal date)
+ * Renew active order
+ * POST /api/orders/:id/renew (client)
+ * POST /api/admin/orders/:id/renew (admin)
  */
 exports.renewOrder = async (req, res) => {
   try {
@@ -105,8 +123,8 @@ exports.renewOrder = async (req, res) => {
 };
 
 /**
- * Suspend order (Admin / automation)
- * active → suspended
+ * Suspend active order (admin action)
+ * POST /api/admin/orders/:id/suspend
  */
 exports.suspendOrder = async (req, res) => {
   try {
@@ -121,8 +139,8 @@ exports.suspendOrder = async (req, res) => {
 };
 
 /**
- * Resume order (Admin)
- * suspended → active
+ * Resume suspended order (admin action)
+ * POST /api/admin/orders/:id/resume
  */
 exports.resumeOrder = async (req, res) => {
   try {
@@ -137,8 +155,8 @@ exports.resumeOrder = async (req, res) => {
 };
 
 /**
- * Terminate order (Admin)
- * * → terminated (terminal)
+ * Terminate order (admin action - terminal state)
+ * POST /api/admin/orders/:id/terminate
  */
 exports.terminateOrder = async (req, res) => {
   try {
@@ -153,11 +171,18 @@ exports.terminateOrder = async (req, res) => {
 };
 
 /**
- * List all orders (Admin)
+ * List all orders (admin only)
+ * GET /api/admin/orders
  */
 exports.adminListOrders = async (req, res) => {
   try {
-    const orders = await orderService.adminListOrders();
+    const { limit, offset, status, clientId } = req.query;
+    const orders = await orderService.adminListOrders({
+      limit: limit ? parseInt(limit) : 100,
+      offset: offset ? parseInt(offset) : 0,
+      status,
+      clientId,
+    });
     res.json(orders);
   } catch (err) {
     res.status(500).json({
@@ -167,3 +192,34 @@ exports.adminListOrders = async (req, res) => {
   }
 };
 
+/**
+ * Get order statistics
+ * GET /api/admin/orders/stats
+ */
+exports.getOrderStats = async (req, res) => {
+  try {
+    const stats = await orderService.getOrderStats();
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch order statistics",
+    });
+  }
+};
+
+/**
+ * Get client's total spend
+ * GET /api/orders/spend
+ */
+exports.getClientSpend = async (req, res) => {
+  try {
+    const spend = await orderService.getClientTotalSpend(req.user.id);
+    res.json(spend);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch spend information",
+    });
+  }
+};

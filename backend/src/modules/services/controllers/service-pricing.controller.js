@@ -1,16 +1,94 @@
 const pricingService = require("../services/service-pricing.service");
 
 class ServicePricingController {
+  /**
+   * Create pricing for a plan
+   */
   async create(req, res) {
-    res
-      .status(201)
-      .json(
-        await pricingService.create(
-          Number(req.params.id),
-          req.body,
-          req.user
-        )
-      );
+    try {
+      const planId = Number(req.params.id);
+      const pricing = await pricingService.create(planId, req.body, req.user);
+      res.status(201).json(pricing);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Get all pricing for a plan
+   */
+  async listByPlan(req, res) {
+    try {
+      const planId = Number(req.params.id);
+      const pricing = await pricingService.getByPlanId(planId);
+      res.json(pricing);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Get pricing by ID
+   */
+  async get(req, res) {
+    try {
+      const pricingId = Number(req.params.id);
+      const pricing = await pricingService.getById(pricingId);
+      res.json(pricing);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Update pricing
+   */
+  async update(req, res) {
+    try {
+      const pricingId = Number(req.params.id);
+      const pricing = await pricingService.update(pricingId, req.body, req.user);
+      res.json(pricing);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Delete pricing (soft delete via active flag)
+   */
+  async delete(req, res) {
+    try {
+      const pricingId = Number(req.params.id);
+      await pricingService.delete(pricingId, req.user);
+      res.status(204).send();
+    } catch (err) {
+      res.status(err.statusCode || 500).json({
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Get active pricing by plan (client view)
+   */
+  async listActiveByPlan(req, res) {
+    try {
+      const planId = Number(req.params.id);
+      const pricing = await pricingService.getActiveByPlanId(planId);
+      res.json(pricing);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({
+        error: err.message,
+      });
+    }
   }
 }
 

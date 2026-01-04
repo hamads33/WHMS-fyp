@@ -1,40 +1,76 @@
 const prisma = require("../../../../prisma");
 
 class ServiceService {
+  /**
+   * Create a new hosting service
+   * - Validates unique service code
+   */
   async create(data, actor) {
     try {
-      return await prisma.service.create({ data });
+      const service = await prisma.service.create({
+        data: {
+          code: data.code,
+          name: data.name,
+          description: data.description,
+          active: true,
+        },
+        include: { plans: true },
+      });
+
+      return service;
     } catch (err) {
-      // Prisma unique constraint violation
       if (err.code === "P2002") {
         const e = new Error("Service code already exists");
-        e.statusCode = 409; // HTTP Conflict
+        e.statusCode = 409;
         throw e;
       }
       throw err;
     }
   }
 
+  /**
+   * Get all services including inactive (admin view)
+   */
   async listAll() {
     return prisma.service.findMany({
-      include: { plans: true },
+      include: {
+        plans: {
+          include: { pricing: true },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
   }
 
+  /**
+   * Get active services only (client view)
+   */
   async listActive() {
     return prisma.service.findMany({
       where: { active: true },
       include: {
-        plans: { where: { active: true } },
+        plans: {
+          where: { active: true },
+          include: {
+            pricing: { where: { active: true } },
+          },
+        },
       },
+      orderBy: { createdAt: "desc" },
     });
   }
 
+  /**
+   * Get service by ID (admin - includes all plans/pricing)
+   */
   async getById(id) {
     const service = await prisma.service.findUnique({
       where: { id },
-      include: { plans: true },
+      include: {
+        plans: {
+          include: { pricing: true },
+        },
+      },
     });
 
     if (!service) {
@@ -46,18 +82,67 @@ class ServiceService {
     return service;
   }
 
-  async update(id, data, actor) {
-    return prisma.service.update({
+  /**
+   * Get service by ID (client - includes only active plans/pricing)
+   * FIX: Properly check both ID AND active status
+   */
+  async getActiveById(id) {
+    const service = await prisma.service.findUnique({
       where: { id },
-      data,
+      include: {
+        plans: {
+          where: { active: true },
+          include: {
+            pricing: { where: { active: true } },
+          },
+        },
+      },
     });
+
+    // Check if service exists AND is active
+    if (!service || !service.active) {
+      const err = new Error("Service not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    return service;
   }
 
+  /**
+   * Update service details
+   * - Validates service exists
+   */
+  async update(id, data, actor) {
+    const existingService = await this.getById(id);
+
+    const updateData = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.active !== undefined) updateData.active = data.active;
+
+    const updatedService = await prisma.service.update({
+      where: { id },
+      data: updateData,
+      include: { plans: true },
+    });
+
+    return updatedService;
+  }
+
+  /**
+   * Soft deactivate service
+   * - Sets active to false
+   */
   async deactivate(id, actor) {
-    return prisma.service.update({
+    const service = await this.getById(id);
+
+    const updated = await prisma.service.update({
       where: { id },
       data: { active: false },
     });
+
+    return updated;
   }
 }
 

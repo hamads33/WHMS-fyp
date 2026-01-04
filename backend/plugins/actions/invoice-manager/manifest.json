@@ -1,0 +1,147 @@
+{
+  "id": "invoice-manager",
+  "name": "Invoice Manager",
+  "version": "2.0.0",
+  "description": "Advanced invoice management system with PDF generation, email, and analytics",
+  "author": "Your Company",
+  "license": "MIT",
+  "main": "index.js",
+
+  "type": "ui",
+  "tags": ["invoicing", "billing", "reporting", "email"],
+
+  "dependencies": {
+    "pdfkit": "^0.13.0",
+    "nodemailer": "^6.9.0",
+    "axios": "^1.4.0"
+  },
+
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "emailProvider": {
+        "type": "string",
+        "enum": ["smtp", "sendgrid", "aws-ses"],
+        "default": "smtp"
+      },
+      "smtpHost": { "type": "string" },
+      "smtpPort": { "type": "number", "default": 587 },
+      "smtpUser": { "type": "string" },
+      "smtpPassword": { "type": "string" },
+      "apiUrl": { "type": "string", "default": "http://localhost:3000" },
+      "taxRate": { "type": "number", "default": 0.1 },
+      "currency": { "type": "string", "default": "USD" },
+      "companyName": { "type": "string" },
+      "companyLogo": { "type": "string" }
+    },
+    "required": ["companyName"]
+  },
+
+  "actions": {
+    "create_invoice": {
+      "file": "actions/createInvoice.js",
+      "fnName": "handler",
+      "description": "Create a new invoice",
+      "meta": {
+        "method": "POST",
+        "params": ["clientId", "items", "dueDate"]
+      }
+    },
+    "send_invoice": {
+      "file": "actions/sendInvoice.js",
+      "fnName": "handler",
+      "description": "Send invoice via email",
+      "meta": {
+        "method": "POST",
+        "params": ["invoiceId", "recipientEmail"]
+      }
+    },
+    "get_invoice": {
+      "file": "actions/getInvoice.js",
+      "fnName": "handler",
+      "description": "Retrieve invoice details",
+      "meta": {
+        "method": "GET",
+        "params": ["invoiceId"]
+      }
+    },
+    "generate_pdf": {
+      "file": "actions/generatePDF.js",
+      "fnName": "handler",
+      "description": "Generate PDF from invoice",
+      "meta": {
+        "method": "POST",
+        "params": ["invoiceId"]
+      }
+    },
+    "list_invoices": {
+      "file": "actions/listInvoices.js",
+      "fnName": "handler",
+      "description": "List all invoices with filters",
+      "meta": {
+        "method": "GET",
+        "params": ["status", "clientId", "startDate", "endDate"]
+      }
+    },
+    "update_invoice": {
+      "file": "actions/updateInvoice.js",
+      "fnName": "handler",
+      "description": "Update invoice details",
+      "meta": {
+        "method": "PUT",
+        "params": ["invoiceId"]
+      }
+    },
+    "calculate_analytics": {
+      "file": "actions/calculateAnalytics.js",
+      "fnName": "handler",
+      "description": "Generate invoice analytics and reports",
+      "meta": {
+        "method": "GET",
+        "params": ["period", "groupBy"]
+      }
+    },
+    "mark_paid": {
+      "file": "actions/markPaid.js",
+      "fnName": "handler",
+      "description": "Mark invoice as paid",
+      "meta": {
+        "method": "POST",
+        "params": ["invoiceId", "paymentDate"]
+      }
+    }
+  },
+
+  "hooks": {
+    "invoice:created": {
+      "action": "actions/hooks/onInvoiceCreated.js"
+    },
+    "invoice:sent": {
+      "action": "actions/hooks/onInvoiceSent.js"
+    },
+    "payment:received": {
+      "action": "actions/hooks/onPaymentReceived.js"
+    }
+  },
+
+  "ui": {
+    "pages": {
+      "dashboard": "ui/pages/Dashboard.jsx",
+      "invoices": "ui/pages/InvoicesList.jsx",
+      "create": "ui/pages/CreateInvoice.jsx",
+      "details": "ui/pages/InvoiceDetails.jsx"
+    },
+    "menu": {
+      "title": "Invoicing",
+      "icon": "receipt",
+      "path": "/plugins/invoice-manager/dashboard"
+    },
+    "configSchema": {
+      "type": "object",
+      "properties": {
+        "theme": { "type": "string", "enum": ["light", "dark"] },
+        "itemsPerPage": { "type": "number", "default": 20 }
+      }
+    }
+  }
+}

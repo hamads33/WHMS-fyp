@@ -138,9 +138,12 @@ app.use("/api", domainRoutes);
 /////services
 app.use("/api/admin", require("./modules/services").adminRoutes);
 app.use("/api/client", require("./modules/services").clientRoutes);
-///orders//
-app.use("/api/orders", require("./modules/orders").clientRoutes);
-app.use("/api/admin", require("./modules/orders").adminRoutes);
+/// orders (FIXED & CONSISTENT)
+const ordersModule = require("./modules/orders");
+
+app.use("/api/client/orders", ordersModule.clientRoutes);
+app.use("/api/admin/orders", ordersModule.adminRoutes);
+
 
 
 /* ================================================================

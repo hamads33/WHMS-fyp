@@ -414,7 +414,14 @@ module.exports = function pluginsRoutes({
       }
 
       const topEntries = await fs.readdir(tmpExtractDir, { withFileTypes: true });
-      let pluginId = req.body.pluginId || null;
+
+// Accept plugin ID from multiple sources (multipart-safe)
+let pluginId =
+  req.body?.plugin_id ||     // ✅ frontend FormData
+  req.body?.pluginId ||      // camelCase fallback
+  req.query?.plugin_id ||    // optional fallback
+  req.query?.pluginId ||     
+  null;
 
       // Auto-detect plugin ID from single folder
       if (!pluginId && topEntries.length === 1 && topEntries[0].isDirectory()) {

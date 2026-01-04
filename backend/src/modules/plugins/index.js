@@ -1,40 +1,16 @@
 // src/modules/plugins/index.js
-// Fixed and secured plugin module initialization
+// FIXED: Added reload() method and proper engine initialization
 
 const path = require("path");
-const express = require("express");
-
 const PluginLoader = require("./pluginEngine/loader");
 const registry = require("./pluginEngine/registry");
+
 const VMExecutor = require("./pluginEngine/vmExecutor");
 const WASMExecutor = require("./pluginEngine/wasmExecutor");
 
 const pluginsRoutes = require("./routes/plugins.routes");
-const pluginConfigRoutes = require("./routes/pluginConfig.routes");
 const pluginUIRoutes = require("./routes/pluginUI.routes");
 
-// --------------------------------------------------
-// Execution lock management
-// --------------------------------------------------
-const executionLocks = new Map();
-
-function acquireLock(key) {
-  executionLocks.set(key, (executionLocks.get(key) || 0) + 1);
-}
-
-function releaseLock(key) {
-  const current = executionLocks.get(key) || 0;
-  if (current > 1) executionLocks.set(key, current - 1);
-  else executionLocks.delete(key);
-}
-
-function isLocked(key) {
-  return executionLocks.has(key);
-}
-
-// --------------------------------------------------
-// Module init
-// --------------------------------------------------
 module.exports = async function initPluginModule({
   app,
   prisma,
@@ -43,133 +19,138 @@ module.exports = async function initPluginModule({
   publicKeyPem
 }) {
   if (!app) throw new Error("initPluginModule requires { app }");
+  if (!logger) logger = console;
 
   logger.info("🔌 Initializing Plugin Module...");
 
   const pluginsDir = path.join(process.cwd(), "plugins", "actions");
 
-  // --------------------------------------------------
-  // Loader
-  // --------------------------------------------------
+  // Load plugins
   const loader = new PluginLoader({
     pluginsDir,
     logger,
     ajv,
     registry,
-    publicKeyPem
+    publicKeyPem,
+    app
   });
 
-  const plugins = await loader.loadAll();
-
-  // --------------------------------------------------
-  // Executors
-  // --------------------------------------------------
+  let plugins = await loader.loadAll();
   const vmExecutor = new VMExecutor({ logger });
   const wasmExecutor = new WASMExecutor({ logger });
 
-  // --------------------------------------------------
-  // Engine API
-  // --------------------------------------------------
+  // Helper: Get action from registry
+  function getAction(pluginId, actionName) {
+    return registry.getAction(pluginId, actionName);
+  }
+
+  // Helper: Run action with proper context
   async function runAction(pluginId, actionName, meta = {}) {
-    const lockKey = `${pluginId}:${actionName}`;
-    acquireLock(lockKey);
+    const action = registry.getAction(pluginId, actionName);
+    if (!action) {
+      throw new Error(`Plugin action not found: ${pluginId}::${actionName}`);
+    }
 
-    try {
-      const action = registry.getAction(pluginId, actionName);
-      if (!action) {
-        throw new Error(`Plugin action not found: ${pluginId}:${actionName}`);
-      }
+    // Check if plugin is disabled
+    const plugin = registry.get(pluginId);
+    if (plugin && plugin.enabled === false) {
+      const err = new Error("plugin_disabled");
+      err.code = "PLUGIN_DISABLED";
+      throw err;
+    }
 
-      const plugin = registry.get(pluginId);
-      if (plugin?.enabled === false) {
-        const err = new Error("plugin_disabled");
-        err.code = "PLUGIN_DISABLED";
-        throw err;
-      }
+    const pluginDir = path.join(pluginsDir, pluginId);
 
-      const pluginDir = path.join(pluginsDir, pluginId);
+    const ctx = {
+      meta: meta || {},
+      prisma,
+      logger,
+      app,
+      registry,
+      pluginId,
+      actionName
+    };
 
-      const ctx = {
-        meta,
-        prisma,
-        logger,
-        registry,
-        pluginId,
-        actionName
-      };
+    // Detect WASM vs JS
+    const isWasm =
+      action.runtime === "wasm" ||
+      action.type === "wasm" ||
+      (action.file && action.file.endsWith(".wasm"));
 
-      const isWasm =
-        action.runtime === "wasm" ||
-        action.type === "wasm" ||
-        action.file?.endsWith(".wasm");
-
-      if (isWasm) {
-        return wasmExecutor.run({
-          pluginId,
-          pluginDir,
-          wasmFile: action.file,
-          exportName: action.export || action.fnName || "run",
-          ctx
-        });
-      }
-
-      return vmExecutor.run({
+    if (isWasm) {
+      return await wasmExecutor.run({
         pluginId,
         pluginDir,
-        actionFile: action.file,
-        fnName: action.fnName || "run",
+        wasmFile: action.file,
+        exportName: action.export || "run",
         ctx
       });
-    } finally {
-      releaseLock(lockKey);
+    }
+
+    // Default: JS action
+    return await vmExecutor.run({
+      pluginId,
+      pluginDir,
+      actionFile: action.file,
+      fnName: action.fnName || "run",
+      ctx
+    });
+  }
+
+  // ✅ FIXED: Add reload method
+  async function reload() {
+    logger.info("🔄 PluginEngine: reloading all plugins...");
+    try {
+      const reloadedPlugins = await loader.loadAll();
+      
+      // Update engine state - atomic replacement
+      Object.keys(plugins).forEach(k => delete plugins[k]);
+      Object.assign(plugins, reloadedPlugins);
+      
+      logger.info(`✅ PluginEngine: reload complete (${Object.keys(plugins).length} plugins)`);
+      return { 
+        success: true, 
+        pluginCount: Object.keys(plugins).length 
+      };
+    } catch (err) {
+      logger.error("❌ PluginEngine: reload failed:", err.message);
+      throw err;
     }
   }
 
+  // Setup routes
+  const router = pluginsRoutes({
+    logger,
+    ajv,
+    publicKeyPem,
+    prisma,
+    loader,
+    registry,
+    engine: { reload, registry, runAction }
+  });
+
+  app.use("/api/plugins", router);
+  app.use("/plugins/ui", pluginUIRoutes({ logger }));
+
+  // ✅ FIXED: Expose complete engine with reload method
   const engine = {
     loader,
     registry,
     vmExecutor,
     wasmExecutor,
     plugins,
+    getAction,
     runAction,
-    isLocked: (p, a) => isLocked(`${p}:${a}`)
+    reload  // ✅ CRITICAL
   };
 
-  // --------------------------------------------------
-  // ROUTES (single mount point)
-  // --------------------------------------------------
-  const apiRouter = express.Router();
-
-  apiRouter.use(
-    pluginsRoutes({
-      logger,
-      ajv,
-      publicKeyPem,
-      prisma,
-      loader,
-      registry,
-      engine
-    })
-  );
-
-  apiRouter.use(
-    pluginConfigRoutes({
-      prisma,
-      registry,
-      logger,
-      ajv
-    })
-  );
-
-  app.use("/api/plugins", apiRouter);
-
-  // UI routes are separate by design
-  app.use("/plugins/ui", pluginUIRoutes({ logger }));
-
-  // Expose engine
   app.locals.pluginEngine = engine;
 
   logger.info("✅ Plugin Module Ready");
+  logger.info("   • Plugins: " + Object.keys(plugins).length);
+  logger.info("   • API: GET  /api/plugins/list");
+  logger.info("   • API: POST /api/plugins/upload");
+  logger.info("   • Engine: Reload available");
 
   return engine;
 };

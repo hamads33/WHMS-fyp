@@ -1,27 +1,35 @@
-// Path: src/modules/orders/routes/admin.order.routes.js
+/**
+ * ADMIN ORDER ROUTES
+ * Base mount: /api/admin/orders
+ */
 
-const router = require("express").Router();
+const express = require("express");
+const adminRouter = express.Router();
+
 const controller = require("../controllers/order.controller");
 
-// FR-ORD-04: List all orders (admin)
-router.get("/orders", controller.adminListOrders);
+// List all orders
+adminRouter.get("/", controller.adminListOrders);
 
-// FR-ORD-03: Get specific order details (admin can access any)
-router.get("/orders/:id", controller.getOrder);
+// Get order statistics
+adminRouter.get("/stats", controller.getOrderStats);
 
-// FR-ORD-05: Activate pending order (admin only)
-router.post("/orders/:id/activate", controller.activateOrder);
+// Get specific order
+adminRouter.get("/:id", controller.getOrder);
 
-// FR-ORD-06: Renew order (admin action)
-router.post("/orders/:id/renew", controller.renewOrder);
+// Activate pending order
+adminRouter.post("/:id/activate", controller.activateOrder);
 
-// FR-ORD-07: Suspend order (admin only)
-router.post("/orders/:id/suspend", controller.suspendOrder);
+// Renew order
+adminRouter.post("/:id/renew", controller.renewOrder);
 
-// FR-ORD-08: Resume order (admin only)
-router.post("/orders/:id/resume", controller.resumeOrder);
+// Suspend active order
+adminRouter.post("/:id/suspend", controller.suspendOrder);
 
-// FR-ORD-09: Terminate order (admin only - terminal state)
-router.post("/orders/:id/terminate", controller.terminateOrder);
+// Resume suspended order
+adminRouter.post("/:id/resume", controller.resumeOrder);
 
-module.exports = router;
+// Terminate order (terminal state)
+adminRouter.post("/:id/terminate", controller.terminateOrder);
+
+module.exports = adminRouter;

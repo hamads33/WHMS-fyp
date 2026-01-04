@@ -693,38 +693,7 @@ model Tld {
   updatedAt     DateTime  @updatedAt
 }
 
-////////////////////////////////////////////////////////////
-// PLUGIN REGISTRY
-////////////////////////////////////////////////////////////
 
-model Plugin {
-  id           String   @id @default(uuid())
-  name         String
-  version      String
-  folder       String
-  type         String?  @default("ui")
-  enabled      Boolean  @default(true)
-  installedAt  DateTime @default(now())
-  configSchema Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  settings PluginSetting[]
-}
-
-model PluginSetting {
-  id        Int      @id @default(autoincrement())
-  pluginId  String
-  key       String
-  value     Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  plugin Plugin @relation(fields: [pluginId], references: [id])
-
-  @@unique([pluginId, key])
-  @@index([pluginId])
-}
 
 ////////////////////////////////////////////////////////////
 // AUTOMATION SYSTEM
