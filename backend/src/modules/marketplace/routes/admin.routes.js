@@ -1,4 +1,4 @@
-// src/modules/marketplace/routes/admin.routes.js
+// src/modules/marketplace/routes/admin.routes.js - FIXED
 // Admin management and approval API (FR-M11)
 
 const express = require('express');
@@ -31,7 +31,7 @@ module.exports = function adminRoutes({
           include: {
             product: {
               include: {
-                developer: {
+                seller: {
                   select: {
                     storeName: true,
                     displayName: true,
@@ -54,11 +54,11 @@ module.exports = function adminRoutes({
         data: submissions.map(s => ({
           id: s.id,
           productId: s.product.id,
-          productName: s.product.name,
+          productName: s.product.title,
           version: s.version?.version,
-          developer: {
-            name: s.product.developer?.storeName || s.product.developer?.displayName,
-            email: s.product.developer?.user.email
+          seller: {
+            name: s.product.seller?.storeName || s.product.seller?.displayName,
+            email: s.product.seller?.user.email
           },
           status: s.status,
           submittedAt: s.createdAt,
@@ -88,7 +88,7 @@ module.exports = function adminRoutes({
         include: {
           product: {
             include: {
-              developer: {
+              seller: {
                 select: {
                   storeName: true,
                   displayName: true,
@@ -124,23 +124,6 @@ module.exports = function adminRoutes({
         submission.versionId
       );
 
-      // Get dependency check
-      let dependencies = null;
-      if (submission.version?.manifestJson) {
-        try {
-          const manifest = typeof submission.version.manifestJson === 'string'
-            ? JSON.parse(submission.version.manifestJson)
-            : submission.version.manifestJson;
-          dependencies = await dependencyService.checkDependencies(
-            submission.productId,
-            submission.versionId,
-            manifest
-          );
-        } catch (e) {
-          logger.warn('Failed to check dependencies:', e.message);
-        }
-      }
-
       res.json({
         ok: true,
         data: {
@@ -148,25 +131,25 @@ module.exports = function adminRoutes({
           status: submission.status,
           product: {
             id: submission.product.id,
-            name: submission.product.name,
+            title: submission.product.title,
             slug: submission.product.slug,
-            description: submission.product.description,
-            category: submission.product.category,
-            icon: submission.product.icon,
+            shortDesc: submission.product.shortDesc,
+            longDesc: submission.product.longDesc,
+            categoryId: submission.product.categoryId,
+            logo: submission.product.logo,
             versions: submission.product.versions
           },
           version: {
             id: submission.version?.id,
             version: submission.version?.version,
             changelog: submission.version?.changelog,
-            manifest: submission.version?.manifestJson
+            manifestJson: submission.version?.manifestJson
           },
-          developer: {
-            name: submission.product.developer?.storeName || submission.product.developer?.displayName,
-            email: submission.product.developer?.user.email
+          seller: {
+            name: submission.product.seller?.storeName || submission.product.seller?.displayName,
+            email: submission.product.seller?.user.email
           },
           verification,
-          dependencies,
           submittedAt: submission.createdAt,
           reviewer: submission.reviewer?.email || null,
           notes: submission.notes
@@ -228,11 +211,11 @@ module.exports = function adminRoutes({
    */
   router.get('/products', async (req, res, next) => {
     try {
-      const { page = 1, limit = 20, status, category } = req.query;
+      const { page = 1, limit = 20, status, categoryId } = req.query;
 
       const where = {};
       if (status) where.status = status;
-      if (category) where.category = category;
+      if (categoryId) where.categoryId = categoryId;
 
       const [products, total] = await Promise.all([
         prisma.marketplaceProduct.findMany({
@@ -241,7 +224,7 @@ module.exports = function adminRoutes({
           take: parseInt(limit),
           orderBy: { createdAt: 'desc' },
           include: {
-            developer: {
+            seller: {
               select: {
                 storeName: true,
                 user: { select: { email: true } }
@@ -259,17 +242,17 @@ module.exports = function adminRoutes({
         ok: true,
         data: products.map(p => ({
           id: p.id,
-          name: p.name,
+          title: p.title,
           slug: p.slug,
           status: p.status,
-          category: p.category,
-          developer: p.developer?.storeName,
-          avgRating: p.avgRating,
-          totalRatings: p.totalRatings,
-          totalDownloads: p.totalDownloads,
+          categoryId: p.categoryId,
+          seller: p.seller?.storeName,
+          ratingAvg: p.ratingAvg,
+          ratingCount: p.ratingCount,
+          downloadCount: p.downloadCount,
           reviewCount: p._count.reviews,
-          disabled: p.disabled,
-          createdAt: p.createdAt
+          createdAt: p.createdAt,
+          approvedAt: p.approvedAt
         })),
         pagination: {
           page: parseInt(page),
@@ -292,7 +275,7 @@ module.exports = function adminRoutes({
       const product = await prisma.marketplaceProduct.findUnique({
         where: { id: req.params.id },
         include: {
-          developer: {
+          seller: {
             select: {
               storeName: true,
               user: { select: { email: true } }
@@ -344,22 +327,18 @@ module.exports = function adminRoutes({
     try {
       const {
         status,
-        disabled,
-        category,
+        categoryId,
         tags,
-        licenseRequired,
-        licenseType
+        rejectReason
       } = req.body;
 
       const updated = await prisma.marketplaceProduct.update({
         where: { id: req.params.id },
         data: {
           ...(status && { status }),
-          ...(typeof disabled === 'boolean' && { disabled }),
-          ...(category && { category }),
+          ...(categoryId && { categoryId }),
           ...(tags && { tags }),
-          ...(typeof licenseRequired === 'boolean' && { licenseRequired }),
-          ...(licenseType && { licenseType })
+          ...(rejectReason && { rejectReason })
         }
       });
 
@@ -370,48 +349,6 @@ module.exports = function adminRoutes({
       });
     } catch (error) {
       logger.error('[Admin] Update product error:', error.message);
-      next(error);
-    }
-  });
-
-  /**
-   * DELETE /admin/products/:id - Disable product
-   */
-  router.delete('/products/:id', async (req, res, next) => {
-    try {
-      const updated = await prisma.marketplaceProduct.update({
-        where: { id: req.params.id },
-        data: { disabled: true }
-      });
-
-      res.json({
-        ok: true,
-        data: updated,
-        message: 'Product disabled'
-      });
-    } catch (error) {
-      logger.error('[Admin] Disable product error:', error.message);
-      next(error);
-    }
-  });
-
-  /**
-   * POST /admin/products/:id/restore - Re-enable product
-   */
-  router.post('/products/:id/restore', async (req, res, next) => {
-    try {
-      const updated = await prisma.marketplaceProduct.update({
-        where: { id: req.params.id },
-        data: { disabled: false }
-      });
-
-      res.json({
-        ok: true,
-        data: updated,
-        message: 'Product restored'
-      });
-    } catch (error) {
-      logger.error('[Admin] Restore product error:', error.message);
       next(error);
     }
   });
@@ -432,11 +369,11 @@ module.exports = function adminRoutes({
           where: { status: 'pending_review' }
         }),
         prisma.marketplaceProduct.count({
-          where: { status: 'approved', disabled: false }
+          where: { status: 'approved' }
         }),
         prisma.marketplaceProduct.count({}),
         prisma.marketplaceProduct.aggregate({
-          _sum: { totalDownloads: true }
+          _sum: { downloadCount: true }
         }),
         prisma.marketplaceReview.count({})
       ]);
@@ -447,7 +384,7 @@ module.exports = function adminRoutes({
           pendingSubmissions,
           approvedProducts,
           totalProducts,
-          totalDownloads: totalDownloads._sum.totalDownloads || 0,
+          totalDownloads: totalDownloads._sum.downloadCount || 0,
           totalReviews
         }
       });

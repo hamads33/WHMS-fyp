@@ -46,19 +46,21 @@ router.get("/", authGuard, async (req, res) => {
       (b) => b.status === "queued"
     ).length;
 
-    /* ------------------ Storage usage ------------------ */
+    /* ------------------ Storage usage (FIX: Handle BigInt) ------------------ */
     const totalStorageUsedBytes = allBackups.reduce(
-      (sum, b) => sum + (b.sizeBytes || 0),
-      0
+      (sum, b) => sum + BigInt(b.sizeBytes || 0),
+      0n
     );
 
-    /* ------------------ Average backup size ------------------ */
+    /* ------------------ Average backup size (FIX: Handle BigInt) ------------------ */
     const backupsWithSize = allBackups.filter((b) => b.sizeBytes > 0);
     const averageBackupSizeBytes =
       backupsWithSize.length > 0
         ? Math.floor(
-            backupsWithSize.reduce((sum, b) => sum + b.sizeBytes, 0) /
-              backupsWithSize.length
+            Number(
+              backupsWithSize.reduce((sum, b) => sum + BigInt(b.sizeBytes), 0n) /
+                BigInt(backupsWithSize.length)
+            )
           )
         : 0;
 
@@ -145,9 +147,9 @@ router.get("/", authGuard, async (req, res) => {
         runningBackups,
         queuedBackups,
         successRate,
-        totalStorageUsedBytes,
+        totalStorageUsedBytes: Number(totalStorageUsedBytes),
         totalStorageUsedGB: Number(
-          (totalStorageUsedBytes / (1024 ** 3)).toFixed(2)
+          (Number(totalStorageUsedBytes) / (1024 ** 3)).toFixed(2)
         ),
         averageBackupSizeBytes,
         averageBackupSizeMB: Number(

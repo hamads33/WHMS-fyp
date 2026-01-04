@@ -5,7 +5,8 @@
  * Supports: ${variable.path}, ${variable[0]}, interpolation
  *
  * Example:
- *   resolve("Hello ${user.name}", { user: { name: "John" } })
+ *   const resolver = new VariableResolver();
+ *   resolver.resolve("Hello ${user.name}", { user: { name: "John" } })
  *   → "Hello John"
  */
 
@@ -45,7 +46,7 @@ class VariableResolver {
     return str.replace(/\$\{([^}]+)\}/g, (match, path) => {
       try {
         const value = this.getValue(path, context);
-        
+
         if (value === undefined) {
           if (this.allowUndefined) {
             this.logger.warn(`Variable not found: ${path}`);
@@ -53,7 +54,7 @@ class VariableResolver {
           }
           throw new Error(`Variable not found: ${path}`);
         }
-        
+
         return String(value);
       } catch (error) {
         this.logger.error(`Error resolving variable ${path}:`, error);

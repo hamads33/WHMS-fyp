@@ -24,29 +24,28 @@ class MarketplaceService {
 
     const skip = (page - 1) * limit;
 
-    // Build filter conditions
+    // Build filter conditions - FIXED: Use correct schema field names
     const where = {
-      status: 'approved',
-      disabled: false,
-      latestVersion: {
-        isNot: null
-      }
+      status: 'approved', // MarketplaceProduct.status
+      // NO disabled field in schema - removed
+      // latestVersion: { isNot: null } - no latestVersion relation in schema
     };
 
     if (category) {
-      where.category = category;
+      where.categoryId = category;
     }
 
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
+        { title: { contains: search, mode: 'insensitive' } },
+        { shortDesc: { contains: search, mode: 'insensitive' } },
+        { longDesc: { contains: search, mode: 'insensitive' } },
         { tags: { hasSome: [search.toLowerCase()] } }
       ];
     }
 
     if (minRating > 0) {
-      where.avgRating = {
+      where.ratingAvg = {
         gte: minRating
       };
     }
@@ -62,16 +61,16 @@ class MarketplaceService {
           take: limit,
           orderBy,
           include: {
-            developer: {
+            seller: {
               select: {
                 storeName: true,
                 displayName: true
               }
             },
-            latestVersion: {
+            category: {
               select: {
-                version: true,
-                releaseDate: true
+                name: true,
+                slug: true
               }
             },
             reviews: {
@@ -79,10 +78,13 @@ class MarketplaceService {
                 rating: true
               }
             },
-            dependencies: {
+            versions: {
               select: {
-                dependencyId: true
-              }
+                version: true,
+                createdAt: true
+              },
+              orderBy: { createdAt: 'desc' },
+              take: 1
             }
           }
         }),
@@ -114,7 +116,7 @@ class MarketplaceService {
       const product = await this.prisma.marketplaceProduct.findUnique({
         where: { id: productId },
         include: {
-          developer: {
+          seller: {
             select: {
               user: {
                 select: {
@@ -127,26 +129,21 @@ class MarketplaceService {
               github: true
             }
           },
+          category: {
+            select: {
+              name: true,
+              slug: true
+            }
+          },
           versions: {
-            where: { approved: true },
-            orderBy: { releaseDate: 'desc' },
+            where: { approvedAt: { not: null } },
+            orderBy: { createdAt: 'desc' },
             take: 10,
             select: {
               id: true,
               version: true,
-              releaseDate: true,
-              changelog: true,
-              downloads: true
-            }
-          },
-          latestVersion: {
-            select: {
-              id: true,
-              version: true,
-              releaseDate: true,
-              downloadUrl: true,
-              manifestJson: true,
-              fileSize: true,
+              createdAt: true,
+              approvedAt: true,
               changelog: true
             }
           },
@@ -154,8 +151,7 @@ class MarketplaceService {
             select: {
               id: true,
               rating: true,
-              text: true,
-              userId: true,
+              review: true,
               createdAt: true
             },
             orderBy: { createdAt: 'desc' },
@@ -163,9 +159,9 @@ class MarketplaceService {
           },
           dependencies: {
             select: {
-              dependencyId: true,
-              required: true,
-              minVersion: true
+              id: true,
+              versionRange: true,
+              approved: true
             }
           },
           analytics: {
@@ -183,68 +179,55 @@ class MarketplaceService {
         throw new Error('plugin_not_available');
       }
 
-      // Format manifest for response
-      let manifest = null;
-      if (product.latestVersion?.manifestJson) {
-        try {
-          manifest = typeof product.latestVersion.manifestJson === 'string'
-            ? JSON.parse(product.latestVersion.manifestJson)
-            : product.latestVersion.manifestJson;
-        } catch (e) {
-          this.logger.warn('Failed to parse manifest:', e.message);
-        }
-      }
+      // Get latest approved version
+      const latestVersion = product.versions.length > 0 ? product.versions[0] : null;
 
       return {
         id: product.id,
-        name: product.name,
+        title: product.title,
         slug: product.slug,
-        description: product.description,
-        icon: product.icon,
-        category: product.category,
+        shortDesc: product.shortDesc,
+        longDesc: product.longDesc,
+        logo: product.logo,
+        screenshots: product.screenshots,
+        documentation: product.documentation,
+        category: product.category ? {
+          id: product.category.name,
+          name: product.category.name,
+          slug: product.category.slug
+        } : null,
         tags: product.tags,
         status: product.status,
-        avgRating: product.avgRating,
-        totalRatings: product.totalRatings,
-        developer: {
-          name: product.developer?.storeName || product.developer?.displayName,
-          website: product.developer?.website,
-          github: product.developer?.github
+        ratingAvg: product.ratingAvg,
+        ratingCount: product.ratingCount,
+        seller: {
+          name: product.seller?.storeName || product.seller?.displayName,
+          website: product.seller?.website,
+          github: product.seller?.github
         },
-        currentVersion: {
-          version: product.latestVersion?.version,
-          releaseDate: product.latestVersion?.releaseDate,
-          fileSize: product.latestVersion?.fileSize,
-          changelog: product.latestVersion?.changelog,
-          downloadUrl: product.latestVersion?.downloadUrl
-        },
-        manifest: manifest ? {
-          id: manifest.id,
-          name: manifest.name,
-          version: manifest.version,
-          description: manifest.description,
-          actions: manifest.actions,
-          hooks: manifest.hooks,
-          ui: manifest.ui,
-          dependencies: manifest.dependencies
+        currentVersion: latestVersion ? {
+          id: latestVersion.id,
+          version: latestVersion.version,
+          releaseDate: latestVersion.createdAt,
+          approvedAt: latestVersion.approvedAt,
+          changelog: latestVersion.changelog
         } : null,
-        allVersions: product.versions,
+        allVersions: product.versions.map(v => ({
+          id: v.id,
+          version: v.version,
+          releaseDate: v.createdAt,
+          approved: !!v.approvedAt
+        })),
         reviews: product.reviews.map(r => ({
           id: r.id,
           rating: r.rating,
-          text: r.text,
-          userId: r.userId,
+          text: r.review,
           createdAt: r.createdAt
         })),
         dependencies: product.dependencies,
         stats: {
-          downloads: product.totalDownloads,
-          active: product.activeInstances,
-          crashes: product.totalCrashes
-        },
-        license: {
-          type: product.licenseType,
-          required: product.licenseRequired
+          installCount: product.installCount,
+          downloadCount: product.downloadCount
         }
       };
     } catch (error) {
@@ -292,8 +275,7 @@ class MarketplaceService {
           where: { id: existingReview.id },
           data: {
             rating,
-            text: text || null,
-            updatedAt: new Date()
+            review: text || null
           }
         });
       } else {
@@ -303,7 +285,7 @@ class MarketplaceService {
             productId,
             userId,
             rating,
-            text: text || null
+            review: text || null
           }
         });
       }
@@ -314,9 +296,8 @@ class MarketplaceService {
       return {
         id: review.id,
         rating: review.rating,
-        text: review.text,
-        createdAt: review.createdAt,
-        updatedAt: review.updatedAt
+        text: review.review,
+        createdAt: review.createdAt
       };
     } catch (error) {
       this.logger.error(`[Marketplace] Submit rating failed: ${error.message}`);
@@ -344,7 +325,7 @@ class MarketplaceService {
           select: {
             id: true,
             rating: true,
-            text: true,
+            review: true,
             userId: true,
             createdAt: true
           }
@@ -375,18 +356,16 @@ class MarketplaceService {
    */
   async getCategories() {
     try {
-      const categories = await this.prisma.marketplaceProduct.findMany({
-        distinct: ['category'],
-        where: {
-          status: 'approved',
-          disabled: false
-        },
+      const categories = await this.prisma.marketplaceCategory.findMany({
         select: {
-          category: true
+          id: true,
+          name: true,
+          slug: true,
+          icon: true
         }
       });
 
-      return categories.map(c => c.category).filter(Boolean);
+      return categories;
     } catch (error) {
       this.logger.error('[Marketplace] Get categories failed:', error.message);
       throw error;
@@ -400,17 +379,17 @@ class MarketplaceService {
     return {
       id: product.id,
       slug: product.slug,
-      name: product.name,
-      description: product.description,
-      icon: product.icon,
-      category: product.category,
+      title: product.title,
+      shortDesc: product.shortDesc,
+      logo: product.logo,
+      category: product.category?.name,
       tags: product.tags,
-      version: product.latestVersion?.version || 'unknown',
-      avgRating: product.avgRating,
-      totalRatings: product.totalRatings,
-      downloads: product.totalDownloads,
-      developer: product.developer?.storeName || 'Unknown Developer',
-      licenseRequired: product.licenseRequired
+      version: product.versions[0]?.version || 'unknown',
+      ratingAvg: product.ratingAvg,
+      ratingCount: product.ratingCount,
+      installCount: product.installCount,
+      downloadCount: product.downloadCount,
+      seller: product.seller?.storeName || 'Unknown Developer'
     };
   }
 
@@ -420,12 +399,12 @@ class MarketplaceService {
   _getSortOrder(sortBy) {
     switch (sortBy) {
       case 'rating':
-        return { avgRating: 'desc' };
+        return { ratingAvg: 'desc' };
       case 'newest':
         return { createdAt: 'desc' };
       case 'downloads':
       default:
-        return { totalDownloads: 'desc' };
+        return { downloadCount: 'desc' };
     }
   }
 
@@ -434,22 +413,19 @@ class MarketplaceService {
    */
   async _updateAverageRating(productId) {
     try {
-      const ratings = await this.prisma.marketplaceReview.groupBy({
-        by: ['productId'],
+      const ratings = await this.prisma.marketplaceReview.findMany({
         where: { productId },
-        _avg: { rating: true },
-        _count: { id: true }
+        select: { rating: true }
       });
 
       if (ratings.length > 0) {
-        const avgRating = ratings[0]._avg.rating || 0;
-        const totalRatings = ratings[0]._count.id || 0;
+        const avgRating = ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length;
 
         await this.prisma.marketplaceProduct.update({
           where: { id: productId },
           data: {
-            avgRating: parseFloat(avgRating.toFixed(2)),
-            totalRatings
+            ratingAvg: parseFloat(avgRating.toFixed(2)),
+            ratingCount: ratings.length
           }
         });
       }

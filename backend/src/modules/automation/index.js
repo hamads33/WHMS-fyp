@@ -1,109 +1,63 @@
 /**
  * Automation Module Bootstrap
  * ------------------------------------------------------------------
- * This file initializes the Automation module in an API-first manner.
- *
- * Responsibilities:
- *  - Wire together Stores, Services, Controllers (Dependency Injection)
- *  - Initialize scheduler and load persisted automation profiles
- *  - Register REST API routes under /api/automation
- *  - Initialize enterprise workflow system
- *
- * Architectural Notes:
- *  - Follows modular-monolith pattern (similar to WHMCS)
- *  - Controllers do NOT contain business logic
- *  - Scheduler is initialized once during system startup
- *  - Execution is asynchronous via Redis + BullMQ workers
- *  - Workflow system is enterprise-grade with full CRUD + execution
- *
- * Design Rationale:
- *  - Keeps automation isolated from core system modules
- *  - Allows future extraction into a microservice if needed
- *  - Strict API-first compliance (no UI assumptions)
- *  - Workflow system scales independently
+ * API-first automation & workflow engine.
+ * Integrates profiles, tasks, runs, and workflows into unified system.
  */
 
 const express = require("express");
-
-// Logger
 const automationLogger = require("./lib/logger");
 
 // ============================================================
-// CORE STORES
+// STORES
 // ============================================================
 const ProfileStore = require("./store/profileStore");
 const TaskStore = require("./store/taskStore");
 const ExecutionLogStore = require("./store/executionLogStore");
-
-// ============================================================
-// WORKFLOW STORES
-// ============================================================
 const WorkflowStore = require("./store/workflow_store");
 
 // ============================================================
-// CORE SERVICES
+// SERVICES
 // ============================================================
 const AuditService = require("./services/audit.service");
 const ExecutorService = require("./services/executor.service");
 const SchedulerService = require("./services/scheduler.redis.service");
-
-// ============================================================
-// WORKFLOW SERVICES
-// ============================================================
 const WorkflowService = require("./workflows/services/workflow_services");
 
 // ============================================================
 // WORKFLOW ENGINE
 // ============================================================
-const WorkflowValidator = require("./workflows/engine/workflow_validator");
-const VariableResolver = require("./workflows/engine/ variable_resolver");
+const VariableResolver = require("./workflows/engine/variable_resolver");
 const WorkflowEngine = require("./workflows/engine/workflow_engine");
 
 // ============================================================
-// CORE CONTROLLERS
+// CONTROLLERS
 // ============================================================
 const ProfileController = require("./controllers/profile.controller");
 const TaskController = require("./controllers/task.controller");
 const RunController = require("./controllers/run.controller");
 const AuditController = require("./controllers/audit.controller");
-
-// ============================================================
-// WORKFLOW CONTROLLERS
-// ============================================================
 const WorkflowController = require("./workflows/controllers/workflow_controller");
 
 // ============================================================
-// CORE MIDDLEWARES
+// MIDDLEWARE
 // ============================================================
 const responseFormatter = require("./middleware/responseFormatter");
 const validate = require("./middleware/validate");
 const auditContext = require("./middleware/auditContext");
 const automationErrorHandler = require("./middleware/errorHandler");
+const createWorkflowErrorHandler = require("./middleware/workflow_error_handler");
 
 // ============================================================
-// WORKFLOW MIDDLEWARES
+// GUARDS
 // ============================================================
-const workflowErrorHandler = require("./middleware/workflow_error_handler");
-const {
-  createGuards,
-  rateLimit,
-} = require("./lib/workflow_guards");
+const createGuards = require("./lib/workflow_guards");
 
 // ============================================================
-// WORKFLOW VALIDATORS
+// VALIDATORS
 // ============================================================
-const {
-  workflowDefinitionSchema,
-  workflowCreateSchema,
-  workflowUpdateSchema,
-  workflowExecutionInputSchema,
-  dryRunSchema,
-  workflowValidateSchema,
-} = require("./validators/workflow_validators");
+const WorkflowValidator = require("./validators/workflow_validators");
 
-// ============================================================
-// CORE VALIDATORS
-// ============================================================
 const profileSchema = require("./validators/profile.validator");
 const taskSchema = require("./validators/task.validator");
 
@@ -113,28 +67,26 @@ const {
   taskIdParamSchema,
 } = require("./validators/params.validator");
 
+// ============================================================
+// MODULE INIT
+// ============================================================
 module.exports = async function initAutomationModule({
   app,
   prismaClient,
   logger = automationLogger,
-  config = {},
 }) {
   logger.info("⚙️ Initializing Automation Module...");
 
   // ============================================================
-  // CORE STORES INITIALIZATION
+  // STORES
   // ============================================================
   const profileStore = new ProfileStore({ prisma: prismaClient });
   const taskStore = new TaskStore({ prisma: prismaClient });
   const executionLogStore = new ExecutionLogStore({ prisma: prismaClient });
-
-  // ============================================================
-  // WORKFLOW STORES INITIALIZATION
-  // ============================================================
   const workflowStore = new WorkflowStore({ prisma: prismaClient, logger });
 
   // ============================================================
-  // CORE SERVICES INITIALIZATION
+  // SERVICES
   // ============================================================
   const audit = new AuditService({ prisma: prismaClient, logger });
 
@@ -142,7 +94,7 @@ module.exports = async function initAutomationModule({
     logger,
     prisma: prismaClient,
     audit,
-    app, // required for plugin engine if used locally
+    app,
   });
 
   const scheduler = new SchedulerService({
@@ -154,13 +106,13 @@ module.exports = async function initAutomationModule({
     logger,
   });
 
-  // Load and schedule all enabled profiles
   await scheduler.loadAndScheduleAll();
 
   // ============================================================
-  // WORKFLOW ENGINE INITIALIZATION
+  // WORKFLOW ENGINE
   // ============================================================
   const workflowValidator = new WorkflowValidator();
+
   const variableResolver = new VariableResolver({
     logger,
     allowUndefined: false,
@@ -174,9 +126,6 @@ module.exports = async function initAutomationModule({
     validator: workflowValidator,
   });
 
-  // ============================================================
-  // WORKFLOW SERVICE INITIALIZATION
-  // ============================================================
   const workflowService = new WorkflowService({
     prisma: prismaClient,
     logger,
@@ -188,7 +137,7 @@ module.exports = async function initAutomationModule({
   });
 
   // ============================================================
-  // CORE CONTROLLERS INITIALIZATION
+  // CONTROLLERS
   // ============================================================
   const profileCtrl = new ProfileController({
     profileStore,
@@ -218,9 +167,6 @@ module.exports = async function initAutomationModule({
 
   const auditCtrl = new AuditController({ auditService: audit });
 
-  // ============================================================
-  // WORKFLOW CONTROLLERS INITIALIZATION
-  // ============================================================
   const workflowCtrl = new WorkflowController({
     workflowService,
     logger,
@@ -228,32 +174,21 @@ module.exports = async function initAutomationModule({
   });
 
   // ============================================================
-  // WORKFLOW GUARDS INITIALIZATION
-  // ============================================================
-  const guards = createGuards(prismaClient);
-
-  // ============================================================
-  // ROUTER SETUP
+  // ROUTER
   // ============================================================
   const router = express.Router();
+  const guards = createGuards(prismaClient);
+  const workflowErrorHandler = createWorkflowErrorHandler(logger);
 
-  // Middleware: Format responses
   router.use(responseFormatter);
-
-  // Middleware: Extract audit context (IP, user, user agent)
   router.use(auditContext());
 
   // ============================================================
   // PROFILES
   // ============================================================
-
   router.get("/profiles", profileCtrl.list.bind(profileCtrl));
 
-  router.post(
-    "/profiles",
-    validate(profileSchema),
-    profileCtrl.create.bind(profileCtrl)
-  );
+  router.post("/profiles", validate(profileSchema), profileCtrl.create.bind(profileCtrl));
 
   router.get(
     "/profiles/:id",
@@ -289,7 +224,6 @@ module.exports = async function initAutomationModule({
   // ============================================================
   // TASKS
   // ============================================================
-
   router.get(
     "/profiles/:profileId/tasks",
     validate(profileIdParamSchema, "params"),
@@ -303,25 +237,6 @@ module.exports = async function initAutomationModule({
     taskCtrl.createForProfile.bind(taskCtrl)
   );
 
-  router.get(
-    "/tasks/:taskId",
-    validate(taskIdParamSchema, "params"),
-    taskCtrl.get.bind(taskCtrl)
-  );
-
-  router.put(
-    "/tasks/:taskId",
-    validate(taskIdParamSchema, "params"),
-    validate(taskSchema),
-    taskCtrl.update.bind(taskCtrl)
-  );
-
-  router.delete(
-    "/tasks/:taskId",
-    validate(taskIdParamSchema, "params"),
-    taskCtrl.delete.bind(taskCtrl)
-  );
-
   router.post(
     "/tasks/:taskId/run",
     validate(taskIdParamSchema, "params"),
@@ -329,203 +244,95 @@ module.exports = async function initAutomationModule({
   );
 
   // ============================================================
-  // RUN PROFILE NOW
+  // WORKFLOWS - CRUD
   // ============================================================
+  router.get(
+    "/workflows",
+    workflowCtrl.list.bind(workflowCtrl)
+  );
 
   router.post(
-    "/run/:profileId",
-    validate(profileIdParamSchema, "params"),
-    runCtrl.runNow.bind(runCtrl)
-  );
-
-  // ============================================================
-  // ACTION REGISTRY (Built-in + Plugins later)
-  // ============================================================
-  router.get("/actions", (req, res) => {
-    try {
-      const ActionRegistry = require("./actions/registry");
-      return res.success(ActionRegistry.list());
-    } catch (err) {
-      return res.error(err, 500);
-    }
-  });
-
-  // ============================================================
-  // AUDIT LOGS (READ-ONLY)
-  // ============================================================
-
-  // Disable cache for audit routes
-  router.use("/audit", (req, res, next) => {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    next();
-  });
-
-  // GET /api/automation/audit/logs
-  router.get(
-    "/audit/logs",
-    auditCtrl.getLogs.bind(auditCtrl)
-  );
-
-  // GET /api/automation/audit/profiles/:profileId/logs
-  router.get(
-    "/audit/profiles/:profileId/logs",
-    validate(profileIdParamSchema, "params"),
-    auditCtrl.getLogsForProfile.bind(auditCtrl)
-  );
-
-  // GET /api/automation/audit/logs/count
-  router.get(
-    "/audit/logs/count",
-    auditCtrl.getTotalLogs.bind(auditCtrl)
-  );
-
-  // GET /api/automation/audit/profiles/:profileId/logs/count
-  router.get(
-    "/audit/profiles/:profileId/logs/count",
-    validate(profileIdParamSchema, "params"),
-    auditCtrl.getProfileLogCount.bind(auditCtrl)
-  );
-
-  // ============================================================
-  // ENTERPRISE WORKFLOWS
-  // ============================================================
-
-  // Disable cache for workflow routes
-  router.use("/workflows", (req, res, next) => {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    next();
-  });
-
-  // List workflows for profile
-  router.get(
-    "/profiles/:profileId/workflows",
-    validate(profileIdParamSchema, "params"),
-    workflowCtrl.listForProfile.bind(workflowCtrl)
-  );
-
-  // Create workflow for profile
-  router.post(
-    "/profiles/:profileId/workflows",
-    validate(profileIdParamSchema, "params"),
-    validate(workflowCreateSchema),
-    guards.verifyProfileExists,
+    "/workflows",
+    validate(WorkflowValidator.workflowCreateSchema),
     workflowCtrl.create.bind(workflowCtrl)
   );
 
-  // Get single workflow
   router.get(
     "/workflows/:workflowId",
-    guards.verifyWorkflowOwnership,
+    guards.verifyWorkflowExists,
     workflowCtrl.get.bind(workflowCtrl)
   );
 
-  // Update workflow
   router.put(
     "/workflows/:workflowId",
-    guards.verifyWorkflowOwnership,
+    guards.verifyWorkflowExists,
     guards.checkCanModifyWorkflow,
-    validate(workflowUpdateSchema),
+    validate(WorkflowValidator.workflowUpdateSchema),
     workflowCtrl.update.bind(workflowCtrl)
   );
 
-  // Delete workflow
   router.delete(
     "/workflows/:workflowId",
-    guards.verifyWorkflowOwnership,
-    guards.checkCanModifyWorkflow,
+    guards.verifyWorkflowExists,
     workflowCtrl.delete.bind(workflowCtrl)
   );
 
-  // Execute workflow
+  // ============================================================
+  // WORKFLOWS - EXECUTION
+  // ============================================================
   router.post(
     "/workflows/:workflowId/run",
-    guards.verifyWorkflowOwnership,
+    guards.verifyWorkflowExists,
     guards.checkWorkflowEnabled,
     guards.checkNoExecutionInProgress,
-    rateLimit(10), // 10 executions per minute
-    validate(workflowExecutionInputSchema),
+    guards.rateLimitDatabase(10),
+    validate(WorkflowValidator.workflowExecutionInputSchema),
     workflowCtrl.execute.bind(workflowCtrl)
   );
 
-  // Dry run (preview execution without side effects)
   router.post(
     "/workflows/:workflowId/dry-run",
-    guards.verifyWorkflowOwnership,
-    guards.checkWorkflowEnabled,
-    validate(dryRunSchema),
+    guards.verifyWorkflowExists,
+    validate(WorkflowValidator.dryRunSchema),
     workflowCtrl.dryRun.bind(workflowCtrl)
   );
 
-  // Validate workflow definition
   router.post(
     "/workflows/validate",
-    validate(workflowValidateSchema),
+    validate(WorkflowValidator.workflowValidateSchema),
     workflowCtrl.validate.bind(workflowCtrl)
   );
 
-  // Get execution history
+  // ============================================================
+  // WORKFLOWS - HISTORY & METRICS
+  // ============================================================
   router.get(
     "/workflows/:workflowId/history",
-    guards.verifyWorkflowOwnership,
+    guards.verifyWorkflowExists,
     workflowCtrl.getHistory.bind(workflowCtrl)
   );
 
-  // Get execution details
   router.get(
     "/workflows/runs/:runId",
     workflowCtrl.getExecutionDetails.bind(workflowCtrl)
   );
 
-  // Get workflow metrics
   router.get(
     "/workflows/:workflowId/metrics",
-    guards.verifyWorkflowOwnership,
+    guards.verifyWorkflowExists,
     workflowCtrl.getMetrics.bind(workflowCtrl)
   );
 
   // ============================================================
-  // TEST PLUGIN RUN (For development)
-  // ============================================================
-  router.post("/test-plugin-run", async (req, res) => {
-    try {
-      const { pluginId, actionName, meta } = req.body;
-
-      if (!pluginId || !actionName) {
-        return res.fail(
-          "pluginId and actionName are required",
-          400,
-          "missing_params"
-        );
-      }
-
-      const result = await executor.run({
-        actionType: `plugin:${pluginId}:${actionName}`,
-        actionMeta: meta || {},
-      });
-
-      return res.success({ ok: true, result });
-    } catch (err) {
-      logger.error("Test plugin run error:", err);
-      return res.error(err, 500);
-    }
-  });
-
-  // ============================================================
   // ERROR HANDLERS
   // ============================================================
-  
-  // Workflow-specific error handler (for workflow routes)
-  router.use("/workflows", workflowErrorHandler(logger));
-  
-  // General automation error handler
+  // Workflow error handler (must be before general error handler)
+  router.use("/workflows", workflowErrorHandler);
+  // General automation error handler (catches remaining errors)
   router.use(automationErrorHandler(logger));
 
   // ============================================================
-  // MOUNT ROUTER
+  // MOUNT
   // ============================================================
   app.use("/api/automation", router);
 
@@ -533,9 +340,20 @@ module.exports = async function initAutomationModule({
   logger.info("📊 Core automation system initialized");
   logger.info("🚀 Enterprise workflow system ready");
 
-  return { 
+  // ============================================================
+  // RETURN PUBLIC API
+  // ============================================================
+  return {
+    // Existing API
     scheduler,
+    // Workflow system API
     workflowService,
     workflowEngine,
+    workflowValidator,
+    variableResolver,
+    workflowStore,
+    // Support services
+    audit,
+    executor,
   };
 };

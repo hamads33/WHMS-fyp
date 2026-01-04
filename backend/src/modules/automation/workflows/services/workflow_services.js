@@ -2,10 +2,10 @@
  * Workflow Service
  * ============================================================
  * Business logic layer for workflow management
- * 
+ *
  * Handles:
  *  - Workflow CRUD operations
- *  - Workflow execution
+ *  - Workflow execution with transactions
  *  - Workflow validation
  *  - Execution history
  *  - Metrics & monitoring
@@ -34,13 +34,13 @@ class WorkflowService {
   ===================================================== */
 
   /**
-   * List all workflows for a profile
+   * List all workflows
    */
-  async listWorkflows(profileId) {
+  async listAll() {
     try {
-      return await this.store.listWorkflows(profileId);
+      return await this.store.listAll();
     } catch (error) {
-      this.logger.error(`Error listing workflows for profile ${profileId}:`, error);
+      this.logger.error("Error listing workflows:", error);
       throw error;
     }
   }
@@ -48,9 +48,9 @@ class WorkflowService {
   /**
    * Get single workflow
    */
-  async getWorkflow(workflowId) {
+  async getById(workflowId) {
     try {
-      return await this.store.getWorkflow(workflowId);
+      return await this.store.getById(workflowId);
     } catch (error) {
       this.logger.error(`Error getting workflow ${workflowId}:`, error);
       throw error;
@@ -60,7 +60,7 @@ class WorkflowService {
   /**
    * Create workflow
    */
-  async createWorkflow(profileId, payload) {
+  async create(payload) {
     try {
       // Validate definition
       if (this.validator) {
@@ -71,28 +71,27 @@ class WorkflowService {
       }
 
       // Create in database
-      const workflow = await this.store.createWorkflow(profileId, {
+      const workflow = await this.store.create({
         name: payload.name,
         description: payload.description,
-        type: payload.type || "sequential",
-        trigger: payload.trigger || "manual",
         definition: payload.definition,
         enabled: payload.enabled ?? true,
       });
 
       // Audit log
       if (this.audit) {
-        await this.audit.log({
-          action: "workflow_created",
-          resourceType: "workflow",
-          resourceId: workflow.id,
-          meta: { profileId, name: workflow.name },
+        await this.audit.system("workflow_created", {
+          entity: "AutomationWorkflow",
+          entityId: workflow.id,
+          data: {
+            name: workflow.name
+          },
         });
       }
 
       return workflow;
     } catch (error) {
-      this.logger.error(`Error creating workflow:`, error);
+      this.logger.error("Error creating workflow:", error);
       throw error;
     }
   }
@@ -100,7 +99,7 @@ class WorkflowService {
   /**
    * Update workflow
    */
-  async updateWorkflow(workflowId, payload) {
+  async update(workflowId, payload) {
     try {
       // Validate if definition provided
       if (payload.definition && this.validator) {
@@ -111,15 +110,16 @@ class WorkflowService {
       }
 
       // Update in database
-      const workflow = await this.store.updateWorkflow(workflowId, payload);
+      const workflow = await this.store.update(workflowId, payload);
 
       // Audit log
       if (this.audit) {
-        await this.audit.log({
-          action: "workflow_updated",
-          resourceType: "workflow",
-          resourceId: workflowId,
-          meta: { changes: Object.keys(payload) },
+        await this.audit.system("workflow_updated", {
+          entity: "AutomationWorkflow",
+          entityId: workflowId,
+          data: {
+            changes: Object.keys(payload)
+          },
         });
       }
 
@@ -133,16 +133,15 @@ class WorkflowService {
   /**
    * Delete workflow
    */
-  async deleteWorkflow(workflowId) {
+  async delete(workflowId) {
     try {
-      await this.store.deleteWorkflow(workflowId);
+      await this.store.delete(workflowId);
 
       // Audit log
       if (this.audit) {
-        await this.audit.log({
-          action: "workflow_deleted",
-          resourceType: "workflow",
-          resourceId: workflowId,
+        await this.audit.system("workflow_deleted", {
+          entity: "AutomationWorkflow",
+          entityId: workflowId,
         });
       }
 
@@ -154,15 +153,17 @@ class WorkflowService {
   }
 
   /* =====================================================
-     WORKFLOW EXECUTION
+     WORKFLOW EXECUTION - WITH TRANSACTION SUPPORT
   ===================================================== */
 
   /**
-   * Execute workflow
+   * Execute workflow with transaction for data consistency
    */
-  async runWorkflow(workflowId, input = {}) {
+  async executeWorkflow(workflowId, input = {}) {
+    let run = null;
+
     try {
-      const workflow = await this.store.getWorkflow(workflowId);
+      const workflow = await this.store.getByIdSimple(workflowId);
       if (!workflow) {
         throw new Error(`Workflow not found: ${workflowId}`);
       }
@@ -171,42 +172,53 @@ class WorkflowService {
         throw new Error(`Workflow is disabled: ${workflowId}`);
       }
 
-      // Execute using engine
-      const result = await this.engine.execute(
+      // Execute within transaction
+      run = await this.store.executeWorkflowTransaction(
         workflowId,
-        workflow.definition,
         input,
-        { continueOnError: false }
-      );
+        async (runId) => {
+          // Execute using engine
+          const result = await this.engine.execute(
+            workflowId,
+            workflow.definition,
+            input,
+            { continueOnError: false }
+          );
 
-      // Record execution
-      if (this.store.recordExecution) {
-        await this.store.recordExecution(workflowId, result);
-      }
+          return {
+            status: result.status,
+            output: result.output,
+            error: result.error,
+            duration: result.duration,
+            successCount: result.context?.successCount || 0,
+            failureCount: result.context?.failureCount || 0,
+            taskCount: workflow.definition.tasks?.length || 0,
+            skippedCount: 0,
+          };
+        }
+      );
 
       // Audit log
       if (this.audit) {
-        await this.audit.log({
-          action: "workflow_executed",
-          resourceType: "workflow",
-          resourceId: workflowId,
-          meta: { status: result.status, duration: result.duration },
+        await this.audit.automation("workflow.executed", {
+          runId: run.id,
+          status: run.status,
+          duration: run.totalDuration,
+          workflowId
         });
       }
 
-      return result;
+      return run;
     } catch (error) {
       this.logger.error(`Error running workflow ${workflowId}:`, error);
-      
+
       // Audit failure
       if (this.audit) {
-        await this.audit.log({
-          action: "workflow_execution_failed",
-          resourceType: "workflow",
-          resourceId: workflowId,
-          meta: { error: error.message },
-          level: "error",
-        });
+        await this.audit.automation("workflow.execution_failed", {
+          error: error.message,
+          runId: run?.id,
+          workflowId
+        }, "system", "ERROR");
       }
 
       throw error;
@@ -214,21 +226,19 @@ class WorkflowService {
   }
 
   /**
-   * Dry run workflow (preview)
+   * Dry run workflow (preview without side effects)
    */
   async dryRunWorkflow(workflowId, input = {}) {
     try {
-      const workflow = await this.store.getWorkflow(workflowId);
+      const workflow = await this.store.getByIdSimple(workflowId);
       if (!workflow) {
         throw new Error(`Workflow not found: ${workflowId}`);
       }
 
-      // Execute in dry-run mode
-      const result = await this.engine.execute(
-        `${workflowId}-dryrun`,
+      // Execute in dry-run mode (no side effects)
+      const result = await this.engine.dryRun(
         workflow.definition,
-        input,
-        { skipActions: true, continueOnError: true }
+        input
       );
 
       return result;
@@ -256,16 +266,18 @@ class WorkflowService {
   /**
    * Get workflow execution history
    */
-  async getWorkflowHistory(workflowId, options = {}) {
+  async getExecutionHistory(workflowId, limit = 50, offset = 0) {
     try {
-      const limit = options.limit || 50;
-      const offset = options.offset || 0;
+      const runs = await this.store.listRuns(workflowId, limit, offset);
+      const total = await this.store.countRuns(workflowId);
 
-      if (!this.store.getWorkflowHistory) {
-        return { executions: [], total: 0 };
-      }
-
-      return await this.store.getWorkflowHistory(workflowId, { limit, offset });
+      return {
+        runs,
+        total,
+        limit,
+        offset,
+        pages: Math.ceil(total / limit),
+      };
     } catch (error) {
       this.logger.error(`Error getting workflow history ${workflowId}:`, error);
       throw error;
@@ -273,38 +285,25 @@ class WorkflowService {
   }
 
   /**
-   * Get workflow metrics
+   * Get execution details
    */
-  async getWorkflowMetrics(workflowId) {
+  async getExecutionDetails(runId) {
     try {
-      if (!this.store.getWorkflowMetrics) {
-        return {
-          totalRuns: 0,
-          successCount: 0,
-          failureCount: 0,
-          avgDurationMs: 0,
-        };
-      }
-
-      return await this.store.getWorkflowMetrics(workflowId);
+      return await this.store.getRun(runId);
     } catch (error) {
-      this.logger.error(`Error getting workflow metrics ${workflowId}:`, error);
+      this.logger.error(`Error getting execution details ${runId}:`, error);
       throw error;
     }
   }
 
   /**
-   * Get workflow run details
+   * Get workflow metrics
    */
-  async getWorkflowRun(runId) {
+  async getMetrics(workflowId) {
     try {
-      if (!this.store.getWorkflowRun) {
-        return null;
-      }
-
-      return await this.store.getWorkflowRun(runId);
+      return await this.store.getMetrics(workflowId);
     } catch (error) {
-      this.logger.error(`Error getting workflow run ${runId}:`, error);
+      this.logger.error(`Error getting workflow metrics ${workflowId}:`, error);
       throw error;
     }
   }
@@ -318,7 +317,7 @@ class WorkflowService {
    */
   async enableWorkflow(workflowId) {
     try {
-      return await this.store.updateWorkflow(workflowId, { enabled: true });
+      return await this.store.setEnabled(workflowId, true);
     } catch (error) {
       this.logger.error(`Error enabling workflow ${workflowId}:`, error);
       throw error;
@@ -330,7 +329,7 @@ class WorkflowService {
    */
   async disableWorkflow(workflowId) {
     try {
-      return await this.store.updateWorkflow(workflowId, { enabled: false });
+      return await this.store.setEnabled(workflowId, false);
     } catch (error) {
       this.logger.error(`Error disabling workflow ${workflowId}:`, error);
       throw error;
@@ -342,16 +341,14 @@ class WorkflowService {
    */
   async cloneWorkflow(workflowId, newName) {
     try {
-      const workflow = await this.store.getWorkflow(workflowId);
+      const workflow = await this.store.getByIdSimple(workflowId);
       if (!workflow) {
         throw new Error(`Workflow not found: ${workflowId}`);
       }
 
-      return await this.store.createWorkflow(workflow.profileId, {
+      return await this.store.create({
         name: newName || `${workflow.name} (Copy)`,
         description: `Clone of ${workflow.name}`,
-        type: workflow.type,
-        trigger: workflow.trigger,
         definition: workflow.definition,
         enabled: false, // Clone is disabled by default
       });

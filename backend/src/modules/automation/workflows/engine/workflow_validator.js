@@ -2,17 +2,6 @@
  * Workflow Validator
  * ------------------------------------------------------------------
  * Validates workflow definitions against expected schema.
- *
- * Responsibilities:
- *  - Validate workflow structure
- *  - Check for cyclic dependencies
- *  - Validate task references
- *  - Type checking
- *
- * Why this matters:
- *  - Catch errors before execution
- *  - Provide clear validation messages
- *  - Prevent infinite loops
  */
 
 const Ajv = require("ajv").default;
@@ -22,7 +11,57 @@ const ajv = new Ajv({ allErrors: true });
 addFormats(ajv);
 
 // ============================================================
-// JSON SCHEMAS
+// ROUTE-LEVEL SCHEMAS (FOR validate() MIDDLEWARE)
+// ============================================================
+
+const workflowCreateSchema = {
+  type: "object",
+  required: ["name", "definition"],
+  additionalProperties: false,
+  properties: {
+    name: { type: "string", minLength: 1 },
+    definition: { type: "object" }
+  }
+};
+
+const workflowUpdateSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    name: { type: "string", minLength: 1 },
+    description: { type: "string" },
+    definition: { type: "object" },
+    enabled: { type: "boolean" }
+  }
+};
+
+const workflowExecutionInputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    input: { type: "object" }
+  }
+};
+
+const dryRunSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    input: { type: "object" }
+  }
+};
+
+const workflowValidateSchema = {
+  type: "object",
+  required: ["definition"],
+  additionalProperties: false,
+  properties: {
+    definition: { type: "object" }
+  }
+};
+
+// ============================================================
+// INTERNAL WORKFLOW SCHEMA
 // ============================================================
 
 const workflowSchema = {
@@ -32,83 +71,69 @@ const workflowSchema = {
     name: { type: "string", minLength: 1 },
     description: { type: "string" },
     version: { type: "integer", minimum: 1 },
-    
     input: { $ref: "#/$defs/jsonSchema" },
     output: { $ref: "#/$defs/jsonSchema" },
-    
     tasks: {
       type: "array",
       minItems: 1,
       items: { $ref: "#/$defs/workflowTask" }
     },
-    
     timeout: { type: "integer", minimum: 1000 },
     maxRetries: { type: "integer", minimum: 0 }
   },
   required: ["name", "tasks"],
   $defs: {
     jsonSchema: {
-      type: ["object", "null"]
+      type: ["object", "null"],
+      properties: {},
+      additionalProperties: true
     },
     workflowTask: {
       type: "object",
+      required: ["id", "type"],
+      additionalProperties: false,
       properties: {
         id: { type: "string", pattern: "^[a-zA-Z0-9_-]+$" },
         type: { enum: ["action", "condition", "loop", "parallel"] },
         description: { type: "string" },
-        
-        // Action task
         actionType: { type: "string" },
-        input: { type: ["object", "null"] },
-        
-        // Condition task
+        input: { type: ["object", "null"], additionalProperties: true },
         condition: { type: "string" },
         onTrue: { type: "string" },
         onFalse: { type: "string" },
-        
-        // Loop task
         items: { type: "string" },
         itemName: { type: "string" },
         tasks: {
           type: "array",
           items: { $ref: "#/$defs/workflowTask" }
         },
-        
-        // Parallel task
-        parallel: {
-          type: "array",
-          items: { type: "string" }
-        },
-        
-        // Common properties
+        parallel: { type: "array", items: { type: "string" } },
         skipIf: { type: "string" },
         retry: { $ref: "#/$defs/retryPolicy" },
         onError: { $ref: "#/$defs/errorHandler" },
         timeout: { type: "integer", minimum: 1000 }
-      },
-      required: ["id", "type"],
-      additionalProperties: false
+      }
     },
     retryPolicy: {
       type: "object",
+      required: ["times", "delayMs"],
+      additionalProperties: false,
       properties: {
         times: { type: "integer", minimum: 1, maximum: 10 },
         delayMs: { type: "integer", minimum: 1000 },
         backoff: { enum: ["linear", "exponential"] },
         maxDelayMs: { type: "integer", minimum: 1000 }
-      },
-      required: ["times", "delayMs"],
-      additionalProperties: false
+      }
     },
     errorHandler: {
       type: "object",
+      additionalProperties: false,
       properties: {
         retry: { $ref: "#/$defs/retryPolicy" },
         fallback: { type: "string" },
         notify: { type: "string" },
         timeout: { type: "integer", minimum: 1000 }
-      },
-      additionalProperties: false
+      }
     }
   }
 };
@@ -122,247 +147,147 @@ class WorkflowValidator {
     this.validate = ajv.compile(workflowSchema);
   }
 
-  /**
-   * Validate complete workflow definition
-   */
   validateWorkflow(definition) {
     const errors = [];
 
-    // 1. JSON Schema validation
     if (!this.validate(definition)) {
       errors.push(...this._formatSchemaErrors(this.validate.errors));
       return { valid: false, errors };
     }
 
-    // 2. Check for duplicate task IDs
     const taskIds = this._extractTaskIds(definition.tasks);
     const duplicates = this._findDuplicates(taskIds);
-    if (duplicates.length > 0) {
+    if (duplicates.length) {
       errors.push(`Duplicate task IDs: ${duplicates.join(", ")}`);
     }
 
-    // 3. Validate task references
-    const refErrors = this._validateTaskReferences(definition.tasks, taskIds);
-    errors.push(...refErrors);
+    errors.push(
+      ...this._validateTaskReferences(definition.tasks, taskIds),
+      ...this._detectCycles(definition.tasks, taskIds),
+      ...this._validateVariables(definition)
+    );
 
-    // 4. Check for cyclic dependencies
-    const cycleErrors = this._detectCycles(definition.tasks, taskIds);
-    errors.push(...cycleErrors);
-
-    // 5. Validate variable interpolations
-    const varErrors = this._validateVariables(definition);
-    errors.push(...varErrors);
-
-    return {
-      valid: errors.length === 0,
-      errors
-    };
+    return { valid: errors.length === 0, errors };
   }
 
-  /**
-   * Extract all task IDs recursively
-   */
   _extractTaskIds(tasks) {
     const ids = [];
-    const traverse = (taskList) => {
-      for (const task of taskList) {
-        ids.push(task.id);
-        if (task.tasks) traverse(task.tasks); // Loop tasks
+    const walk = list => {
+      for (const t of list) {
+        ids.push(t.id);
+        if (t.tasks) walk(t.tasks);
       }
     };
-    traverse(tasks);
+    walk(tasks);
     return ids;
   }
 
-  /**
-   * Find duplicate values in array
-   */
   _findDuplicates(arr) {
     const seen = new Set();
-    const dups = new Set();
-    for (const item of arr) {
-      if (seen.has(item)) dups.add(item);
-      seen.add(item);
+    const dup = new Set();
+    for (const v of arr) {
+      if (seen.has(v)) dup.add(v);
+      seen.add(v);
     }
-    return Array.from(dups);
+    return [...dup];
   }
 
-  /**
-   * Validate that all referenced tasks exist
-   */
-  _validateTaskReferences(tasks, allTaskIds, parentPath = "") {
+  _validateTaskReferences(tasks, ids) {
     const errors = [];
-
-    const validate = (taskList, path) => {
-      for (const task of taskList) {
-        const taskPath = path ? `${path}.${task.id}` : task.id;
-
-        // Check onTrue/onFalse references
-        if (task.type === "condition") {
-          if (task.onTrue && !allTaskIds.includes(task.onTrue)) {
-            errors.push(`Task ${taskPath}: onTrue references non-existent task "${task.onTrue}"`);
-          }
-          if (task.onFalse && !allTaskIds.includes(task.onFalse)) {
-            errors.push(`Task ${taskPath}: onFalse references non-existent task "${task.onFalse}"`);
-          }
+    const walk = list => {
+      for (const t of list) {
+        if (t.type === "condition") {
+          if (t.onTrue && !ids.includes(t.onTrue))
+            errors.push(`onTrue references missing task "${t.onTrue}"`);
+          if (t.onFalse && !ids.includes(t.onFalse))
+            errors.push(`onFalse references missing task "${t.onFalse}"`);
         }
-
-        // Check parallel references
-        if (task.type === "parallel") {
-          for (const ref of task.parallel || []) {
-            if (!allTaskIds.includes(ref)) {
-              errors.push(`Task ${taskPath}: parallel references non-existent task "${ref}"`);
-            }
+        if (t.type === "parallel") {
+          for (const r of t.parallel || []) {
+            if (!ids.includes(r))
+              errors.push(`parallel references missing task "${r}"`);
           }
         }
-
-        // Check error fallback
-        if (task.onError?.fallback && !allTaskIds.includes(task.onError.fallback)) {
-          errors.push(`Task ${taskPath}: onError.fallback references non-existent task "${task.onError.fallback}"`);
+        if (t.onError?.fallback && !ids.includes(t.onError.fallback)) {
+          errors.push(`fallback references missing task "${t.onError.fallback}"`);
         }
-
-        // Recurse into loop tasks
-        if (task.tasks) {
-          validate(task.tasks, taskPath);
-        }
+        if (t.tasks) walk(t.tasks);
       }
     };
-
-    validate(tasks, parentPath);
+    walk(tasks);
     return errors;
   }
 
-  /**
-   * Detect cyclic dependencies
-   */
-  _detectCycles(tasks, allTaskIds) {
-    const errors = [];
+  _detectCycles(tasks, ids) {
+    const graph = {};
+    for (const t of tasks) {
+      graph[t.id] = [];
+      if (t.onTrue) graph[t.id].push(t.onTrue);
+      if (t.onFalse) graph[t.id].push(t.onFalse);
+      if (t.parallel) graph[t.id].push(...t.parallel);
+      if (t.onError?.fallback) graph[t.id].push(t.onError.fallback);
+    }
+
     const visited = new Set();
-    const recursionStack = new Set();
+    const stack = new Set();
+    const errors = [];
 
-    const buildGraph = (taskList) => {
-      const graph = {};
-      for (const task of taskList) {
-        graph[task.id] = [];
-
-        if (task.type === "condition") {
-          if (task.onTrue) graph[task.id].push(task.onTrue);
-          if (task.onFalse) graph[task.id].push(task.onFalse);
-        } else if (task.type === "parallel") {
-          graph[task.id].push(...(task.parallel || []));
-        }
-
-        if (task.onError?.fallback) {
-          graph[task.id].push(task.onError.fallback);
-        }
+    const dfs = n => {
+      visited.add(n);
+      stack.add(n);
+      for (const k of graph[n] || []) {
+        if (!visited.has(k) && dfs(k)) return true;
+        if (stack.has(k)) return true;
       }
-      return graph;
-    };
-
-    const graph = buildGraph(tasks);
-
-    const hasCycle = (node, stack) => {
-      visited.add(node);
-      stack.add(node);
-
-      for (const neighbor of graph[node] || []) {
-        if (!visited.has(neighbor)) {
-          if (hasCycle(neighbor, stack)) return true;
-        } else if (stack.has(neighbor)) {
-          return true;
-        }
-      }
-
-      stack.delete(node);
+      stack.delete(n);
       return false;
     };
 
-    for (const taskId of allTaskIds) {
-      if (!visited.has(taskId)) {
-        if (hasCycle(taskId, new Set())) {
-          errors.push(`Cyclic dependency detected involving task "${taskId}"`);
-        }
+    for (const id of ids) {
+      if (!visited.has(id) && dfs(id)) {
+        errors.push(`Cyclic dependency detected at "${id}"`);
       }
     }
-
     return errors;
   }
 
-  /**
-   * Validate variable interpolations
-   */
   _validateVariables(definition) {
     const errors = [];
+    const ids = this._extractTaskIds(definition.tasks);
+    const re = /\$\{([^}]+)\}/g;
 
-    const validateExpression = (expr, taskIds) => {
-      if (typeof expr !== "string") return;
-
-      // Find all ${...} expressions
-      const varRegex = /\$\{([^}]+)\}/g;
-      let match;
-
-      while ((match = varRegex.exec(expr)) !== null) {
-        const ref = match[1];
-
-        // Parse: taskId.output.field or input.field
-        const parts = ref.split(".");
-        const source = parts[0]; // "taskId" or "input"
-
-        if (source !== "input" && !taskIds.includes(source)) {
-          errors.push(`Variable reference "$${match[0]}" references non-existent task "${source}"`);
-        }
-      }
-    };
-
-    const walkTasks = (tasks, taskIds) => {
-      for (const task of tasks) {
-        // Validate input variables
-        if (task.input && typeof task.input === "object") {
-          const validateObj = (obj) => {
-            for (const value of Object.values(obj)) {
-              if (typeof value === "string") {
-                validateExpression(value, taskIds);
-              } else if (typeof value === "object") {
-                validateObj(value);
-              }
+    const walk = obj => {
+      if (!obj || typeof obj !== "object") return;
+      for (const v of Object.values(obj)) {
+        if (typeof v === "string") {
+          let m;
+          while ((m = re.exec(v))) {
+            const src = m[1].split(".")[0];
+            if (src !== "input" && !ids.includes(src)) {
+              errors.push(`Invalid variable reference "${m[0]}"`);
             }
-          };
-          validateObj(task.input);
-        }
-
-        // Validate condition
-        if (task.condition) {
-          validateExpression(task.condition, taskIds);
-        }
-
-        // Validate skipIf
-        if (task.skipIf) {
-          validateExpression(task.skipIf, taskIds);
-        }
-
-        // Recurse
-        if (task.tasks) {
-          walkTasks(task.tasks, taskIds);
-        }
+          }
+        } else walk(v);
       }
     };
 
-    const taskIds = this._extractTaskIds(definition.tasks);
-    walkTasks(definition.tasks, taskIds);
-
+    walk(definition);
     return errors;
   }
 
-  /**
-   * Format AJV validation errors
-   */
-  _formatSchemaErrors(errors) {
-    return errors.map(err => {
-      const path = err.instancePath || "/";
-      const message = err.message || "Invalid";
-      return `${path}: ${message}`;
-    });
+  _formatSchemaErrors(errors = []) {
+    return errors.map(e => `${e.instancePath || "/"} ${e.message}`);
   }
 }
 
+// ============================================================
+// EXPORTS
+// ============================================================
+
 module.exports = WorkflowValidator;
+
+module.exports.workflowCreateSchema = workflowCreateSchema;
+module.exports.workflowUpdateSchema = workflowUpdateSchema;
+module.exports.workflowExecutionInputSchema = workflowExecutionInputSchema;
+module.exports.dryRunSchema = dryRunSchema;
+module.exports.workflowValidateSchema = workflowValidateSchema;

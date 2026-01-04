@@ -780,8 +780,7 @@ model AutomationProfile {
   tasks       AutomationTask[]
   runs        AutomationRun[]
   auditLogs   AuditLog[]
-  workflows   AutomationWorkflow[]
-  workflowRuns WorkflowRun[]
+  
 
   // Indexes
   @@unique([name])
@@ -837,7 +836,6 @@ model AutomationRun {
 
 model AutomationWorkflow {
   id          Int     @id @default(autoincrement())
-  profileId   Int
   name        String  @db.VarChar(255)
   description String? @db.Text
 
@@ -852,11 +850,9 @@ model AutomationWorkflow {
   updatedAt DateTime @updatedAt
 
   // Relations
-  profile AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   runs    WorkflowRun[]
 
   // Indexes
-  @@index([profileId])
   @@index([enabled])
   @@index([createdAt])
 }
@@ -864,7 +860,6 @@ model AutomationWorkflow {
 model WorkflowRun {
   id            Int               @id @default(autoincrement())
   workflowId    Int
-  profileId     Int
   status        WorkflowRunStatus @default(pending)
 
   startedAt    DateTime?
@@ -890,12 +885,10 @@ model WorkflowRun {
 
   // Relations
   workflow AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  profile  AutomationProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   taskRuns WorkflowTaskRun[]
 
   // Indexes
   @@index([workflowId])
-  @@index([profileId])
   @@index([status])
   @@index([createdAt])
 }

@@ -10,12 +10,29 @@
  *  - Business logic errors
  */
 
-const { NotFoundError, ValidationError } = require("../lib/errors");
+class NotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NotFoundError";
+    this.code = "workflow_not_found";
+  }
+}
 
-module.exports = function workflowErrorHandler(logger) {
+class ValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ValidationError";
+    this.code = "workflow_validation";
+  }
+}
+
+/**
+ * Create workflow error handler middleware
+ */
+function createWorkflowErrorHandler(logger) {
   return (err, req, res, next) => {
     // Workflow validation errors
-    if (err instanceof ValidationError && err.code === "workflow_validation") {
+    if (err instanceof ValidationError || err.code === "workflow_validation") {
       logger.warn(`Workflow validation failed: ${err.message}`);
       return res.fail(
         "Workflow validation failed",
@@ -26,7 +43,7 @@ module.exports = function workflowErrorHandler(logger) {
     }
 
     // Workflow not found
-    if (err instanceof NotFoundError && err.code === "workflow_not_found") {
+    if (err instanceof NotFoundError || err.code === "workflow_not_found") {
       logger.debug(`Workflow not found: ${err.message}`);
       return res.fail(
         "Workflow not found",
@@ -43,7 +60,10 @@ module.exports = function workflowErrorHandler(logger) {
         "Workflow execution failed",
         500,
         "workflow_execution_error",
-        { message: err.message, stack: process.env.NODE_ENV === "development" ? err.stack : undefined }
+        {
+          message: err.message,
+          stack: process.env.NODE_ENV === "development" ? err.stack : undefined
+        }
       );
     }
 
@@ -118,7 +138,13 @@ module.exports = function workflowErrorHandler(logger) {
       "Internal server error",
       500,
       "internal_error",
-      process.env.NODE_ENV === "development" ? { message: err.message, stack: err.stack } : null
+      process.env.NODE_ENV === "development"
+        ? { message: err.message, stack: err.stack }
+        : null
     );
   };
-};
+}
+
+module.exports = createWorkflowErrorHandler;
+module.exports.NotFoundError = NotFoundError;
+module.exports.ValidationError = ValidationError;

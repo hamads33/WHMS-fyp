@@ -18,7 +18,7 @@
 class WorkflowController {
   constructor({ workflowService, logger, audit }) {
     this.workflowService = workflowService;
-    this.logger = logger;
+    this.logger = logger || console;
     this.audit = audit;
   }
 
@@ -26,10 +26,13 @@ class WorkflowController {
   // CRUD OPERATIONS
   // ============================================================
 
-  async listForProfile(req, res) {
+  /**
+   * List all workflows
+   * GET /api/workflows
+   */
+  async list(req, res) {
     try {
-      const profileId = Number(req.params.profileId);
-      const workflows = await this.workflowService.listForProfile(profileId);
+      const workflows = await this.workflowService.listAll();
       return res.success(workflows);
     } catch (err) {
       this.logger.error("Failed to list workflows:", err);
@@ -37,16 +40,19 @@ class WorkflowController {
     }
   }
 
+  /**
+   * Create workflow
+   * POST /api/workflows
+   */
   async create(req, res) {
     try {
-      const profileId = Number(req.params.profileId);
       const { name, description, definition } = req.body;
 
       if (!definition) {
         return res.fail("Workflow definition is required", 400);
       }
 
-      const workflow = await this.workflowService.create(profileId, {
+      const workflow = await this.workflowService.create({
         name,
         description,
         definition
@@ -58,7 +64,7 @@ class WorkflowController {
         entityId: workflow.id,
         ip: req.auditContext?.ip || null,
         userAgent: req.auditContext?.userAgent || null,
-        data: workflow
+        data: { id: workflow.id, name: workflow.name }
       });
 
       return res.success(workflow, {}, 201);
@@ -68,10 +74,19 @@ class WorkflowController {
     }
   }
 
+  /**
+   * Get single workflow
+   * GET /api/workflows/:workflowId
+   */
   async get(req, res) {
     try {
       const workflowId = Number(req.params.workflowId);
       const workflow = await this.workflowService.getById(workflowId);
+
+      if (!workflow) {
+        return res.fail("Workflow not found", 404);
+      }
+
       return res.success(workflow);
     } catch (err) {
       this.logger.error("Failed to get workflow:", err);
@@ -79,6 +94,10 @@ class WorkflowController {
     }
   }
 
+  /**
+   * Update workflow
+   * PUT /api/workflows/:workflowId
+   */
   async update(req, res) {
     try {
       const workflowId = Number(req.params.workflowId);
@@ -106,6 +125,10 @@ class WorkflowController {
     }
   }
 
+  /**
+   * Delete workflow
+   * DELETE /api/workflows/:workflowId
+   */
   async delete(req, res) {
     try {
       const workflowId = Number(req.params.workflowId);
@@ -130,6 +153,10 @@ class WorkflowController {
   // EXECUTION
   // ============================================================
 
+  /**
+   * Execute workflow
+   * POST /api/workflows/:workflowId/run
+   */
   async execute(req, res) {
     try {
       const workflowId = Number(req.params.workflowId);
@@ -137,8 +164,7 @@ class WorkflowController {
 
       const run = await this.workflowService.executeWorkflow(
         workflowId,
-        input || {},
-        "manual"
+        input || {}
       );
 
       await this.audit.automation("workflow.manual_run", {
@@ -146,7 +172,11 @@ class WorkflowController {
         runId: run.id
       }, req.auditContext?.userId || "system");
 
-      return res.success({ runId: run.id, status: run.status });
+      return res.success({
+        runId: run.id,
+        status: run.status,
+        totalDuration: run.totalDuration
+      });
     } catch (err) {
       this.logger.error("Failed to execute workflow:", err);
       return res.error(err, 500);
@@ -157,12 +187,16 @@ class WorkflowController {
   // DRY RUN & VALIDATION
   // ============================================================
 
+  /**
+   * Dry run workflow (preview without side effects)
+   * POST /api/workflows/:workflowId/dry-run
+   */
   async dryRun(req, res) {
     try {
       const workflowId = Number(req.params.workflowId);
       const { input } = req.body || {};
 
-      const result = await this.workflowService.dryRun(
+      const result = await this.workflowService.dryRunWorkflow(
         workflowId,
         input || {}
       );
@@ -174,6 +208,10 @@ class WorkflowController {
     }
   }
 
+  /**
+   * Validate workflow definition
+   * POST /api/workflows/validate
+   */
   async validate(req, res) {
     try {
       const { definition } = req.body;
@@ -205,6 +243,10 @@ class WorkflowController {
   // EXECUTION HISTORY & METRICS
   // ============================================================
 
+  /**
+   * Get execution history
+   * GET /api/workflows/:workflowId/history?limit=20&offset=0
+   */
   async getHistory(req, res) {
     try {
       const workflowId = Number(req.params.workflowId);
@@ -223,10 +265,19 @@ class WorkflowController {
     }
   }
 
+  /**
+   * Get execution details
+   * GET /api/workflows/runs/:runId
+   */
   async getExecutionDetails(req, res) {
     try {
       const runId = Number(req.params.runId);
       const details = await this.workflowService.getExecutionDetails(runId);
+
+      if (!details) {
+        return res.fail("Execution not found", 404);
+      }
+
       return res.success(details);
     } catch (err) {
       this.logger.error("Failed to get execution details:", err);
@@ -234,6 +285,10 @@ class WorkflowController {
     }
   }
 
+  /**
+   * Get workflow metrics
+   * GET /api/workflows/:workflowId/metrics
+   */
   async getMetrics(req, res) {
     try {
       const workflowId = Number(req.params.workflowId);

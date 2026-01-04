@@ -3,7 +3,7 @@
 
 const express = require("express");
 
-// Services (ALL are default exports)
+// Services
 const MarketplaceService = require("./services/marketplace.service");
 const SubmissionService = require("./services/submission.service");
 const VerificationService = require("./services/verification.service");
@@ -17,9 +17,12 @@ const developerRoutes = require("./routes/developer.routes");
 const adminRoutes = require("./routes/admin.routes");
 const installationRoutes = require("./routes/installation.routes");
 
-// Middleware
-const { requireAuth } = require("./middleware/auth.middleware");
-const { validateDeveloper } = require("./middleware/developer.middleware");
+// Middleware (MIDDLEWARE ONLY — NO FACTORIES)
+const {
+  requireAuth,
+  requireDeveloper,
+  requireAdmin, // kept for future use
+} = require("./middleware/auth.middleware");
 
 module.exports = async function initMarketplaceModule({
   app,
@@ -79,7 +82,9 @@ module.exports = async function initMarketplaceModule({
 
   const router = express.Router();
 
-  // Public marketplace routes
+  // -----------------------------------------------------
+  // Public Marketplace Routes (NO AUTH)
+  // -----------------------------------------------------
   router.use(
     "/",
     marketplaceRoutes({
@@ -92,11 +97,13 @@ module.exports = async function initMarketplaceModule({
     })
   );
 
-  // Developer routes
+  // -----------------------------------------------------
+  // Developer Routes (AUTH + ROLE ONLY)
+  // -----------------------------------------------------
   router.use(
     "/developer",
     requireAuth,
-    validateDeveloper,
+    requireDeveloper,
     developerRoutes({
       submissionService,
       marketplaceService,
@@ -108,7 +115,9 @@ module.exports = async function initMarketplaceModule({
     })
   );
 
-  // Admin routes
+  // -----------------------------------------------------
+  // Admin Routes (AUTH ONLY — ROLE CAN BE ADDED LATER)
+  // -----------------------------------------------------
   router.use(
     "/admin",
     requireAuth,
@@ -122,7 +131,9 @@ module.exports = async function initMarketplaceModule({
     })
   );
 
-  // Installation routes
+  // -----------------------------------------------------
+  // Installation Routes (AUTH REQUIRED)
+  // -----------------------------------------------------
   router.use(
     "/install",
     requireAuth,
@@ -144,7 +155,10 @@ module.exports = async function initMarketplaceModule({
 
   app.use("/api/marketplace", router);
 
-  // Expose services (for automation / plugins / other modules)
+  // =====================================================
+  // Expose Marketplace Services
+  // =====================================================
+
   app.locals.marketplaceServices = {
     marketplace: marketplaceService,
     submission: submissionService,

@@ -2,7 +2,7 @@
  * Workflow Engine
  * ============================================================
  * Core execution engine for enterprise workflows
- * 
+ *
  * Handles:
  *  - Task execution
  *  - Variable resolution
@@ -17,9 +17,10 @@ class WorkflowEngine {
     this.executor = options.executor;
     this.logger = options.logger || console;
     this.prisma = options.prisma;
-    this.variableResolver = options.variableResolver; // ✅ Accept instance, not class
+    this.variableResolver = options.variableResolver;
     this.validator = options.validator;
-    
+    this.workflowDefinition = null;
+
     if (!this.executor) {
       throw new Error("WorkflowEngine requires executor");
     }
@@ -37,11 +38,14 @@ class WorkflowEngine {
       workflow: { id: workflowId },
       input,
       variables: options.variables || {},
-      results: {}, // Store task results
+      results: {},
     };
 
     try {
       this.logger.info(`Starting workflow execution: ${workflowId}`);
+
+      // Store definition for _findTask
+      this.workflowDefinition = definition;
 
       // Validate definition
       if (this.validator) {
@@ -89,7 +93,6 @@ class WorkflowEngine {
 
     for (const task of tasks) {
       if (options.skipActions) {
-        // Dry-run mode: skip actual action execution
         this.logger.info(`[DRY-RUN] Task: ${task.id}`);
         results[task.id] = { skipped: true };
         continue;
@@ -117,11 +120,13 @@ class WorkflowEngine {
           const nextTaskId = condition ? task.onTrue : task.onFalse;
 
           if (nextTaskId) {
-            const nextTask = this._findTask(nextTaskId, context);
+            const nextTask = this._findTask(nextTaskId);
             if (nextTask) {
               const branchResult = await this._executeTask(nextTask, context, options);
               results[nextTaskId] = branchResult;
               context.results[nextTaskId] = branchResult;
+            } else {
+              this.logger.warn(`Referenced task not found: ${nextTaskId}`);
             }
           }
         }
@@ -129,11 +134,12 @@ class WorkflowEngine {
         // Handle parallel execution
         if (task.type === "parallel") {
           const parallelResults = await Promise.all(
-            (task.parallel || []).map(taskId =>
-              this._findTask(taskId, context)
-                ? this._executeTask(this._findTask(taskId, context), context, options)
-                : Promise.resolve({ error: `Task not found: ${taskId}` })
-            )
+            (task.parallel || []).map(taskId => {
+              const parallelTask = this._findTask(taskId);
+              return parallelTask
+                ? this._executeTask(parallelTask, context, options)
+                : Promise.resolve({ error: `Task not found: ${taskId}` });
+            })
           );
           results[task.id] = { parallel: parallelResults };
         }
@@ -143,15 +149,25 @@ class WorkflowEngine {
           const items = this.variableResolver.resolve(task.items, context);
           const itemArray = Array.isArray(items) ? items : [items];
 
-          for (const item of itemArray) {
+          const loopResults = [];
+          for (let i = 0; i < itemArray.length; i++) {
+            const item = itemArray[i];
             const loopContext = {
-              ...context,
-              [task.itemName]: item,
+              workflow: context.workflow,
+              input: context.input,
+              variables: {
+                ...context.variables,
+                [task.itemName]: item,
+                __loopIndex: i,
+                __loopItem: item,
+              },
+              results: context.results,
             };
+
             const loopResult = await this._executeTasks(task.tasks || [], loopContext, options);
-            if (!results[task.id]) results[task.id] = [];
-            results[task.id].push(loopResult);
+            loopResults.push(loopResult);
           }
+          results[task.id] = loopResults;
         }
       } catch (error) {
         this.logger.error(`Task failed: ${task.id}`, error);
@@ -161,10 +177,19 @@ class WorkflowEngine {
           const retryResult = await this._retryTask(task, context, options, error);
           results[task.id] = retryResult;
         } else if (task.onError?.fallback) {
-          const fallbackTask = this._findTask(task.onError.fallback, context);
-          if (fallbackTask) {
-            const fallbackResult = await this._executeTask(fallbackTask, context, options);
-            results[task.id] = { fallback: fallbackResult };
+          // Check for circular fallback
+          if (this._hasCircularFallback(task, new Set())) {
+            this.logger.error(`Circular fallback detected for task: ${task.id}`);
+            results[task.id] = { error: `Circular fallback detected`, fallback: true };
+          } else {
+            const fallbackTask = this._findTask(task.onError.fallback);
+            if (fallbackTask) {
+              const fallbackResult = await this._executeTask(fallbackTask, context, options);
+              results[task.id] = { fallback: fallbackResult };
+            } else {
+              this.logger.warn(`Fallback task not found: ${task.onError.fallback}`);
+              results[task.id] = { error: error.message };
+            }
           }
         } else {
           results[task.id] = { error: error.message };
@@ -179,17 +204,28 @@ class WorkflowEngine {
   }
 
   /**
-   * Execute single task
+   * Execute single task with timeout
    */
   async _executeTask(task, context, options = {}) {
     const taskTimeout = task.timeout || 30000;
+    let timeoutHandle = null;
+    let timedOut = false;
 
-    return Promise.race([
-      this._executeTaskInternal(task, context, options),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Task timeout: ${task.id}`)), taskTimeout)
-      ),
-    ]);
+    try {
+      return await Promise.race([
+        this._executeTaskInternal(task, context, options),
+        new Promise((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            timedOut = true;
+            reject(new Error(`Task timeout: ${task.id} (${taskTimeout}ms)`));
+          }, taskTimeout);
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
   }
 
   /**
@@ -222,7 +258,9 @@ class WorkflowEngine {
           task.retry.backoff
         );
 
-        this.logger.warn(`Retrying task ${task.id} after ${delayMs}ms (attempt ${attempt + 1})`);
+        this.logger.warn(
+          `Retrying task ${task.id} after ${delayMs}ms (attempt ${attempt + 1}/${task.retry.times})`
+        );
 
         await new Promise(resolve => setTimeout(resolve, delayMs));
 
@@ -272,6 +310,49 @@ class WorkflowEngine {
   }
 
   /**
+   * Find task by ID in workflow definition
+   */
+  _findTask(taskId) {
+    if (!this.workflowDefinition || !this.workflowDefinition.tasks) {
+      return null;
+    }
+
+    const traverse = (tasks) => {
+      for (const task of tasks) {
+        if (task.id === taskId) return task;
+        // Search in nested tasks (loops)
+        if (task.tasks && Array.isArray(task.tasks)) {
+          const found = traverse(task.tasks);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    return traverse(this.workflowDefinition.tasks);
+  }
+
+  /**
+   * Detect circular fallback chains
+   */
+  _hasCircularFallback(task, visited = new Set()) {
+    if (!task.onError?.fallback) return false;
+
+    const fallbackId = task.onError.fallback;
+
+    if (visited.has(fallbackId)) {
+      return true; // Circular dependency found
+    }
+
+    visited.add(task.id);
+    const fallbackTask = this._findTask(fallbackId);
+
+    if (!fallbackTask) return false;
+
+    return this._hasCircularFallback(fallbackTask, visited);
+  }
+
+  /**
    * Evaluate conditional expression
    */
   _evaluateCondition(expression, context) {
@@ -285,15 +366,6 @@ class WorkflowEngine {
       this.logger.error(`Condition evaluation failed: ${expression}`, error);
       return false;
     }
-  }
-
-  /**
-   * Find task by ID
-   */
-  _findTask(taskId, context) {
-    // This would typically search through the workflow definition
-    // For now, return null (implement based on your needs)
-    return null;
   }
 
   /**

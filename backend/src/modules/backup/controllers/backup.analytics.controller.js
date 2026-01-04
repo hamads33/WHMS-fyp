@@ -89,7 +89,7 @@ router.get("/timeline", authGuard, async (req, res) => {
           successful: 0,
           failed: 0,
           running: 0,
-          storageUsedBytes: 0,
+          storageUsedBytes: 0n,
         };
       }
 
@@ -97,13 +97,15 @@ router.get("/timeline", authGuard, async (req, res) => {
       if (backup.status === "success") timelineData[key].successful++;
       if (backup.status === "failed") timelineData[key].failed++;
       if (backup.status === "running") timelineData[key].running++;
-      timelineData[key].storageUsedBytes += backup.sizeBytes || 0;
+      // FIX: Convert to BigInt and add as BigInt
+      timelineData[key].storageUsedBytes += BigInt(backup.sizeBytes || 0);
     });
 
     const result = Object.values(timelineData).map((item) => ({
       ...item,
+      storageUsedBytes: Number(item.storageUsedBytes),
       storageUsedMB: Number(
-        (item.storageUsedBytes / (1024 ** 2)).toFixed(2)
+        (Number(item.storageUsedBytes) / (1024 ** 2)).toFixed(2)
       ),
     }));
 
@@ -148,16 +150,16 @@ router.get("/storage-usage", authGuard, async (req, res) => {
       },
     });
 
-    let cumulative = 0;
+    let cumulative = 0n;
     const storageGrowth = backups.map((backup) => {
-      cumulative += backup.sizeBytes;
+      cumulative += BigInt(backup.sizeBytes);
       return {
         date: backup.finishedAt,
         backupName: backup.name,
-        sizeBytes: backup.sizeBytes,
-        sizeMB: Number((backup.sizeBytes / (1024 ** 2)).toFixed(2)),
-        cumulativeBytes: cumulative,
-        cumulativeGB: Number((cumulative / (1024 ** 3)).toFixed(2)),
+        sizeBytes: Number(backup.sizeBytes),
+        sizeMB: Number((Number(backup.sizeBytes) / (1024 ** 2)).toFixed(2)),
+        cumulativeBytes: Number(cumulative),
+        cumulativeGB: Number((Number(cumulative) / (1024 ** 3)).toFixed(2)),
       };
     });
 
@@ -259,20 +261,22 @@ router.get("/type-distribution", authGuard, async (req, res) => {
           count: 0,
           successful: 0,
           failed: 0,
-          totalSizeBytes: 0,
+          totalSizeBytes: 0n,
         };
       }
 
       distribution[type].count++;
       if (backup.status === "success") distribution[type].successful++;
       if (backup.status === "failed") distribution[type].failed++;
-      distribution[type].totalSizeBytes += backup.sizeBytes || 0;
+      // FIX: Convert to BigInt and add as BigInt
+      distribution[type].totalSizeBytes += BigInt(backup.sizeBytes || 0);
     });
 
     const result = Object.values(distribution).map((item) => ({
       ...item,
+      totalSizeBytes: Number(item.totalSizeBytes),
       totalSizeGB: Number(
-        (item.totalSizeBytes / (1024 ** 3)).toFixed(2)
+        (Number(item.totalSizeBytes) / (1024 ** 3)).toFixed(2)
       ),
       successRate:
         item.count > 0

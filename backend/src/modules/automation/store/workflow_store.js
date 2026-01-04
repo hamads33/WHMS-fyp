@@ -7,30 +7,24 @@
  *  - CRUD operations for workflows
  *  - Fetch with relations
  *  - Bulk operations
- *
- * Why separate store?
- *  - Keep business logic out of controllers
- *  - Reusable across services
- *  - Easy to test
- *  - Easy to swap implementations
+ *  - Transaction handling for execution
  */
 
 class WorkflowStore {
   constructor({ prisma, logger }) {
     this.prisma = prisma;
-    this.logger = logger;
+    this.logger = logger || console;
   }
 
   // ============================================================
   // CREATE
   // ============================================================
 
-  async create(profileId, data) {
+  async create(data) {
     return this.prisma.automationWorkflow.create({
       data: {
-        profileId,
         name: data.name,
-        description: data.description,
+        description: data.description || "",
         definition: data.definition,
         enabled: data.enabled !== false,
         version: 1
@@ -46,7 +40,6 @@ class WorkflowStore {
     return this.prisma.automationWorkflow.findUnique({
       where: { id },
       include: {
-        profile: true,
         runs: {
           orderBy: { createdAt: "desc" },
           take: 10  // Latest 10 runs
@@ -61,14 +54,11 @@ class WorkflowStore {
     });
   }
 
-  async listForProfile(profileId, enabled = null) {
-    const where = { profileId };
-    if (enabled !== null) {
-      where.enabled = enabled;
-    }
-
+  /**
+   * List all workflows
+   */
+  async listAll() {
     return this.prisma.automationWorkflow.findMany({
-      where,
       orderBy: { createdAt: "desc" },
       include: {
         _count: {
@@ -78,25 +68,10 @@ class WorkflowStore {
     });
   }
 
-  async listAll(enabled = null) {
-    const where = {};
-    if (enabled !== null) {
-      where.enabled = enabled;
-    }
-
-    return this.prisma.automationWorkflow.findMany({
-      where,
-      orderBy: { createdAt: "desc" }
-    });
-  }
-
   async listWithMeta() {
     return this.prisma.automationWorkflow.findMany({
       orderBy: { createdAt: "desc" },
       include: {
-        profile: {
-          select: { id: true, name: true }
-        },
         _count: {
           select: { runs: true }
         }
@@ -143,21 +118,14 @@ class WorkflowStore {
     });
   }
 
-  async deleteForProfile(profileId) {
-    return this.prisma.automationWorkflow.deleteMany({
-      where: { profileId }
-    });
-  }
-
   // ============================================================
-  // RUNS (Execution History)
+  // RUNS (Execution History) - WITH TRANSACTION SUPPORT
   // ============================================================
 
-  async createRun(workflowId, profileId, data = {}) {
+  async createRun(workflowId, data = {}) {
     return this.prisma.workflowRun.create({
       data: {
         workflowId,
-        profileId,
         status: data.status || "pending",
         triggeredBy: data.triggeredBy || "manual",
         input: data.input || {},
@@ -184,10 +152,13 @@ class WorkflowStore {
     if (data.status !== undefined) updates.status = data.status;
     if (data.output !== undefined) updates.output = data.output;
     if (data.errorMessage !== undefined) updates.errorMessage = data.errorMessage;
+    if (data.errorStack !== undefined) updates.errorStack = data.errorStack;
     if (data.totalDuration !== undefined) updates.totalDuration = data.totalDuration;
     if (data.finishedAt !== undefined) updates.finishedAt = data.finishedAt;
     if (data.successCount !== undefined) updates.successCount = data.successCount;
     if (data.failureCount !== undefined) updates.failureCount = data.failureCount;
+    if (data.taskCount !== undefined) updates.taskCount = data.taskCount;
+    if (data.skippedCount !== undefined) updates.skippedCount = data.skippedCount;
 
     return this.prisma.workflowRun.update({
       where: { id: runId },
@@ -212,6 +183,74 @@ class WorkflowStore {
   async countRuns(workflowId) {
     return this.prisma.workflowRun.count({
       where: { workflowId }
+    });
+  }
+
+  // ============================================================
+  // WORKFLOW EXECUTION WITH TRANSACTION
+  // ============================================================
+
+  /**
+   * Execute workflow within a transaction for atomicity
+   */
+  async executeWorkflowTransaction(workflowId, input = {}, executorFn) {
+    return this.prisma.$transaction(async (tx) => {
+      try {
+        // Create workflow run record
+        const run = await tx.workflowRun.create({
+          data: {
+            workflowId,
+            status: "running",
+            triggeredBy: "manual",
+            input,
+            startedAt: new Date(),
+            taskCount: 0,
+            successCount: 0,
+            failureCount: 0,
+            skippedCount: 0,
+          }
+        });
+
+        try {
+          // Execute workflow
+          const result = await executorFn(run.id);
+
+          // Update run with results
+          await tx.workflowRun.update({
+            where: { id: run.id },
+            data: {
+              status: result.status,
+              output: result.output,
+              totalDuration: result.duration,
+              finishedAt: new Date(),
+              errorMessage: result.error || null,
+              errorStack: null,
+              successCount: result.successCount || 0,
+              failureCount: result.failureCount || 0,
+              taskCount: result.taskCount || 0,
+              skippedCount: result.skippedCount || 0,
+            }
+          });
+
+          return run;
+        } catch (executionError) {
+          // Mark run as failed
+          await tx.workflowRun.update({
+            where: { id: run.id },
+            data: {
+              status: "failed",
+              errorMessage: executionError.message,
+              errorStack: executionError.stack,
+              finishedAt: new Date(),
+            }
+          });
+
+          throw executionError;
+        }
+      } catch (error) {
+        // Transaction will rollback automatically
+        throw error;
+      }
     });
   }
 
@@ -244,6 +283,7 @@ class WorkflowStore {
     if (data.status !== undefined) updates.status = data.status;
     if (data.output !== undefined) updates.output = data.output;
     if (data.errorMessage !== undefined) updates.errorMessage = data.errorMessage;
+    if (data.errorStack !== undefined) updates.errorStack = data.errorStack;
     if (data.duration !== undefined) updates.duration = data.duration;
     if (data.finishedAt !== undefined) updates.finishedAt = data.finishedAt;
     if (data.retryCount !== undefined) updates.retryCount = data.retryCount;
@@ -307,7 +347,7 @@ class WorkflowStore {
       totalRuns: runs.length,
       successCount: runs.filter(r => r.status === "success").length,
       failureCount: runs.filter(r => r.status === "failed").length,
-      avgDuration: runs.length > 0 
+      avgDuration: runs.length > 0
         ? Math.round(runs.reduce((sum, r) => sum + (r.totalDuration || 0), 0) / runs.length)
         : 0
     };

@@ -3,223 +3,163 @@
  * ------------------------------------------------------------------
  * Authorization and permission checks for workflow operations.
  *
- * Guards:
- *  - Workflow ownership verification
- *  - Profile access check
- *  - Execution permission check
+ * IMPORTANT:
+ * - Only middleware returned from createGuards() should be used in routes
+ * - Low-level helpers are kept PRIVATE to avoid Express misuse
  */
 
-const { NotFoundError, ForbiddenError } = require("../lib/errors");
-
-/**
- * Verify workflow exists and belongs to profile
- */
-async function verifyWorkflowOwnership(req, res, next, prisma) {
-  try {
-    const workflowId = Number(req.params.workflowId);
-    const profileId = req.params.profileId ? Number(req.params.profileId) : null;
-
-    const workflow = await prisma.automationWorkflow.findUnique({
-      where: { id: workflowId },
-      select: { id: true, profileId: true }
-    });
-
-    if (!workflow) {
-      throw new NotFoundError("Workflow not found");
-    }
-
-    // If profileId provided, verify it matches
-    if (profileId && workflow.profileId !== profileId) {
-      throw new ForbiddenError("Workflow does not belong to this profile");
-    }
-
-    // Attach to request for use in controller
-    req.workflow = workflow;
-    next();
-  } catch (err) {
-    next(err);
+class NotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NotFoundError";
+    this.code = "workflow_not_found";
   }
 }
 
-/**
- * Verify profile exists
- */
-async function verifyProfileExists(req, res, next, prisma) {
-  try {
-    const profileId = Number(req.params.profileId);
-
-    const profile = await prisma.automationProfile.findUnique({
-      where: { id: profileId },
-      select: { id: true, name: true }
-    });
-
-    if (!profile) {
-      throw new NotFoundError("Profile not found");
-    }
-
-    req.profile = profile;
-    next();
-  } catch (err) {
-    next(err);
+class ForbiddenError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ForbiddenError";
+    this.code = "workflow_forbidden";
   }
 }
 
-/**
- * Check if workflow is enabled
- */
-async function checkWorkflowEnabled(req, res, next, prisma) {
-  try {
-    const workflowId = Number(req.params.workflowId);
+// ============================================================
+// INTERNAL HELPERS (NOT EXPRESS MIDDLEWARE)
+// ============================================================
 
-    const workflow = await prisma.automationWorkflow.findUnique({
-      where: { id: workflowId },
-      select: { enabled: true }
-    });
+async function _verifyWorkflowExists(prisma, req) {
+  const workflowId = Number(req.params.workflowId);
 
-    if (!workflow) {
-      throw new NotFoundError("Workflow not found");
-    }
+  const workflow = await prisma.automationWorkflow.findUnique({
+    where: { id: workflowId },
+    select: { id: true }
+  });
 
-    if (!workflow.enabled) {
-      throw new ForbiddenError("Workflow is disabled");
-    }
+  if (!workflow) {
+    throw new NotFoundError("Workflow not found");
+  }
 
-    next();
-  } catch (err) {
-    next(err);
+  req.workflow = workflow;
+}
+
+async function _checkWorkflowEnabled(prisma, req) {
+  const workflowId = Number(req.params.workflowId);
+
+  const workflow = await prisma.automationWorkflow.findUnique({
+    where: { id: workflowId },
+    select: { enabled: true }
+  });
+
+  if (!workflow) {
+    throw new NotFoundError("Workflow not found");
+  }
+
+  if (!workflow.enabled) {
+    throw new ForbiddenError("Workflow is disabled");
   }
 }
 
-/**
- * Check if execution is already in progress
- */
-async function checkNoExecutionInProgress(req, res, next, prisma) {
-  try {
-    const workflowId = Number(req.params.workflowId);
+async function _checkNoExecutionInProgress(prisma, req) {
+  const workflowId = Number(req.params.workflowId);
 
-    const runningCount = await prisma.workflowRun.count({
-      where: {
-        workflowId,
-        status: "running"
-      }
-    });
+  const runningCount = await prisma.workflowRun.count({
+    where: { workflowId, status: "running" }
+  });
 
-    if (runningCount > 0) {
-      throw new ForbiddenError("Workflow already executing");
-    }
-
-    next();
-  } catch (err) {
-    next(err);
+  if (runningCount > 0) {
+    throw new ForbiddenError("Workflow already executing");
   }
 }
 
-/**
- * Rate limit workflow executions
- */
-function rateLimit(maxPerMinute = 10) {
-  const executions = new Map();
+async function _checkCanModifyWorkflow(prisma, req) {
+  const workflowId = Number(req.params.workflowId);
 
-  return (req, res, next) => {
-    const workflowId = Number(req.params.workflowId);
-    const now = Date.now();
-    const minute = Math.floor(now / 60000);
-    const key = `${workflowId}:${minute}`;
+  const runningCount = await prisma.workflowRun.count({
+    where: { workflowId, status: "running" }
+  });
 
-    if (!executions.has(key)) {
-      executions.set(key, 0);
-    }
-
-    const count = executions.get(key);
-
-    if (count >= maxPerMinute) {
-      return res.fail(
-        `Rate limit exceeded. Max ${maxPerMinute} executions per minute`,
-        429,
-        "rate_limit_exceeded"
-      );
-    }
-
-    executions.set(key, count + 1);
-
-    // Clean old entries
-    if (executions.size > 1000) {
-      executions.clear();
-    }
-
-    next();
-  };
-}
-
-/**
- * Validate workflow can be modified
- */
-async function checkCanModifyWorkflow(req, res, next, prisma) {
-  try {
-    const workflowId = Number(req.params.workflowId);
-
-    // Check if workflow has running executions
-    const runningCount = await prisma.workflowRun.count({
-      where: {
-        workflowId,
-        status: "running"
-      }
-    });
-
-    if (runningCount > 0) {
-      throw new ForbiddenError("Cannot modify workflow while it's executing");
-    }
-
-    next();
-  } catch (err) {
-    next(err);
+  if (runningCount > 0) {
+    throw new ForbiddenError("Cannot modify workflow while it's executing");
   }
 }
 
-/**
- * Validate workflow definition is valid JSON
- */
-function validateDefinitionJson(req, res, next) {
-  try {
-    const { definition } = req.body;
+// ============================================================
+// FACTORY - THIS IS WHAT ROUTES MUST USE
+// ============================================================
 
-    if (!definition) {
-      return res.fail("Definition is required", 400);
-    }
-
-    // Check if it's valid JSON-serializable object
-    try {
-      JSON.stringify(definition);
-    } catch (err) {
-      return res.fail("Definition must be valid JSON", 400);
-    }
-
-    next();
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * Create guard middleware factory
- */
 function createGuards(prisma) {
   return {
-    verifyWorkflowOwnership: (req, res, next) => verifyWorkflowOwnership(req, res, next, prisma),
-    verifyProfileExists: (req, res, next) => verifyProfileExists(req, res, next, prisma),
-    checkWorkflowEnabled: (req, res, next) => checkWorkflowEnabled(req, res, next, prisma),
-    checkNoExecutionInProgress: (req, res, next) => checkNoExecutionInProgress(req, res, next, prisma),
-    checkCanModifyWorkflow: (req, res, next) => checkCanModifyWorkflow(req, res, next, prisma)
+    verifyWorkflowExists: async (req, res, next) => {
+      try {
+        await _verifyWorkflowExists(prisma, req);
+        next();
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    checkWorkflowEnabled: async (req, res, next) => {
+      try {
+        await _checkWorkflowEnabled(prisma, req);
+        next();
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    checkNoExecutionInProgress: async (req, res, next) => {
+      try {
+        await _checkNoExecutionInProgress(prisma, req);
+        next();
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    checkCanModifyWorkflow: async (req, res, next) => {
+      try {
+        await _checkCanModifyWorkflow(prisma, req);
+        next();
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    rateLimitDatabase: (maxPerMinute = 10) => {
+      return async (req, res, next) => {
+        try {
+          const workflowId = Number(req.params.workflowId);
+          const oneMinuteAgo = new Date(Date.now() - 60_000);
+
+          const count = await prisma.workflowRun.count({
+            where: {
+              workflowId,
+              createdAt: { gte: oneMinuteAgo }
+            }
+          });
+
+          if (count >= maxPerMinute) {
+            return res.fail(
+              `Rate limit exceeded. Max ${maxPerMinute} executions per minute`,
+              429,
+              "rate_limit_exceeded"
+            );
+          }
+
+          next();
+        } catch (err) {
+          next(err);
+        }
+      };
+    }
   };
 }
 
-module.exports = {
-  verifyWorkflowOwnership,
-  verifyProfileExists,
-  checkWorkflowEnabled,
-  checkNoExecutionInProgress,
-  checkCanModifyWorkflow,
-  validateDefinitionJson,
-  rateLimit,
-  createGuards
-};
+// ============================================================
+// EXPORTS (SAFE)
+// ============================================================
+
+module.exports = createGuards;
+module.exports.NotFoundError = NotFoundError;
+module.exports.ForbiddenError = ForbiddenError;

@@ -149,9 +149,9 @@ function sanitizeWorkflow(workflow) {
   // Remove sensitive input data
   if (sanitized.input && typeof sanitized.input === "object") {
     for (const key in sanitized.input) {
-      if (key.toLowerCase().includes("password") || 
-          key.toLowerCase().includes("token") ||
-          key.toLowerCase().includes("secret")) {
+      if (key.toLowerCase().includes("password") ||
+        key.toLowerCase().includes("token") ||
+        key.toLowerCase().includes("secret")) {
         sanitized.input[key] = "***REDACTED***";
       }
     }
@@ -179,16 +179,16 @@ function generateTaskId() {
  */
 function getStatusBadge(status) {
   const badges = {
-    success: "✅",
-    failed: "❌",
+    success: "✔",
+    failed: "✗",
     running: "⏳",
     pending: "⏱️",
     cancelled: "⛔",
-    paused: "⏸️",
-    skipped: "⏭️"
+    paused: "⸸️",
+    skipped: "⭕"
   };
 
-  return badges[status] || "❓";
+  return badges[status] || "●";
 }
 
 /**
@@ -243,6 +243,10 @@ function validateWorkflowStructure(definition) {
     errors
   };
 }
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   deepClone,

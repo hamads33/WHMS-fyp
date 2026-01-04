@@ -1,4 +1,4 @@
-// src/modules/marketplace/routes/installation.routes.js
+// src/modules/marketplace/routes/installation.routes.js - FIXED
 // Plugin installation and update API (FR-M03, FR-M04)
 
 const express = require('express');
@@ -24,17 +24,27 @@ module.exports = function installationRoutes({
       const { productId } = req.params;
       const { versionId } = req.body;
 
-      // 1. Get product
+      // 1. Get product with latest approved version
       const product = await prisma.marketplaceProduct.findUnique({
         where: { id: productId },
         include: {
-          latestVersion: true,
+          versions: {
+            where: { approvedAt: { not: null } },
+            orderBy: { createdAt: 'desc' },
+            take: 1
+          },
           dependencies: {
             include: {
-              dependency: {
+              product: {
                 select: {
-                  latestVersion: true,
-                  slug: true
+                  id: true,
+                  slug: true,
+                  title: true,
+                  versions: {
+                    where: { approvedAt: { not: null } },
+                    select: { version: true },
+                    take: 1
+                  }
                 }
               }
             }
@@ -49,7 +59,7 @@ module.exports = function installationRoutes({
         });
       }
 
-      if (product.status !== 'approved' || product.disabled) {
+      if (product.status !== 'approved') {
         return res.status(403).json({
           ok: false,
           error: 'Plugin not available for installation'
@@ -57,7 +67,7 @@ module.exports = function installationRoutes({
       }
 
       // Get specific version or use latest
-      let version = product.latestVersion;
+      let version = product.versions[0];
       if (versionId) {
         version = await prisma.marketplaceVersion.findUnique({
           where: { id: versionId }
@@ -78,22 +88,7 @@ module.exports = function installationRoutes({
         });
       }
 
-      // 2. Check licensing (FR-M05)
-      if (product.licenseRequired) {
-        const licenseCheck = await licensingService.checkLicense(productId, userId);
-        if (!licenseCheck.canInstall) {
-          return res.status(403).json({
-            ok: false,
-            error: 'License required',
-            licenseInfo: {
-              type: licenseCheck.licenseType,
-              message: licenseCheck.message
-            }
-          });
-        }
-      }
-
-      // 3. Resolve and check dependencies (FR-M07)
+      // 2. Parse manifest
       let manifest;
       try {
         manifest = typeof version.manifestJson === 'string'
@@ -106,6 +101,7 @@ module.exports = function installationRoutes({
         });
       }
 
+      // 3. Check dependencies (FR-M07)
       const dependencyCheck = await dependencyService.checkDependencies(
         productId,
         version.id,
@@ -143,26 +139,36 @@ module.exports = function installationRoutes({
             // Recursively install dependencies
             const depInstall = await prisma.marketplaceProduct.findUnique({
               where: { id: dep.productId },
-              include: { latestVersion: true }
+              include: {
+                versions: {
+                  where: { approvedAt: { not: null } },
+                  take: 1
+                }
+              }
             });
 
-            if (depInstall && pluginInstaller) {
+            if (depInstall && depInstall.versions[0] && pluginInstaller) {
+              const depVersion = depInstall.versions[0];
+              const depManifest = typeof depVersion.manifestJson === 'string'
+                ? JSON.parse(depVersion.manifestJson)
+                : depVersion.manifestJson;
+
               await pluginInstaller.install({
-                pluginId: dep.name,
-                archivePath: depInstall.latestVersion?.archivePath,
-                manifest: depInstall.latestVersion?.manifestJson
+                pluginId: depManifest.id || dep.productId,
+                archivePath: depVersion.archivePath,
+                manifest: depManifest
               });
 
               installationLog.steps.push({
                 type: 'dependency_installed',
-                dependency: dep.name,
-                version: dep.requiredVersion
+                dependency: dep.productId,
+                version: depVersion.version
               });
             }
           } catch (error) {
             installationLog.errors.push({
               type: 'dependency_failed',
-              dependency: dep.name,
+              dependency: dep.productId,
               message: error.message
             });
           }
@@ -173,7 +179,7 @@ module.exports = function installationRoutes({
       try {
         if (pluginInstaller) {
           const result = await pluginInstaller.install({
-            pluginId: product.slug || product.name,
+            pluginId: manifest.id || product.slug || product.title,
             archivePath: version.archivePath,
             manifest
           });
@@ -215,13 +221,12 @@ module.exports = function installationRoutes({
 
       // 7. Track analytics (FR-M09)
       try {
-        await analyticsService.trackEvent(
+        await analyticsService.trackEvent('install', {
           productId,
-          version.id,
+          versionId: version.id,
           userId,
-          'install',
-          { userAgent: req.get('user-agent') }
-        );
+          meta: { userAgent: req.get('user-agent') }
+        });
 
         installationLog.steps.push({
           type: 'analytics_tracked'
@@ -235,7 +240,7 @@ module.exports = function installationRoutes({
         message: 'Plugin installed successfully',
         data: {
           productId,
-          productName: product.name,
+          productName: product.title,
           version: version.version,
           installed: true,
           log: installationLog
@@ -274,7 +279,7 @@ module.exports = function installationRoutes({
         });
       }
 
-      if (product.status !== 'approved' || product.disabled) {
+      if (product.status !== 'approved') {
         return res.status(403).json({
           ok: false,
           error: 'Plugin not available'
@@ -298,17 +303,6 @@ module.exports = function installationRoutes({
           ok: false,
           error: 'No approved version available'
         });
-      }
-
-      // Re-run license check
-      if (product.licenseRequired) {
-        const licenseCheck = await licensingService.checkLicense(productId, userId);
-        if (!licenseCheck.canInstall) {
-          return res.status(403).json({
-            ok: false,
-            error: 'License required for update'
-          });
-        }
       }
 
       // Parse manifest
@@ -342,7 +336,6 @@ module.exports = function installationRoutes({
       // Update plugin (essentially reinstall with new version)
       const updateLog = {
         productId,
-        fromVersion: null, // Could be tracked if we store installed versions
         toVersion: targetVersion.version,
         versionId: targetVersion.id,
         userId,
@@ -353,7 +346,7 @@ module.exports = function installationRoutes({
       try {
         if (pluginInstaller) {
           const result = await pluginInstaller.install({
-            pluginId: product.slug || product.name,
+            pluginId: manifest.id || product.slug || product.title,
             archivePath: targetVersion.archivePath,
             manifest,
             isUpdate: true
@@ -391,13 +384,12 @@ module.exports = function installationRoutes({
 
       // Track analytics
       try {
-        await analyticsService.trackEvent(
+        await analyticsService.trackEvent('update', {
           productId,
-          targetVersion.id,
+          versionId: targetVersion.id,
           userId,
-          'update',
-          { userAgent: req.get('user-agent') }
-        );
+          meta: { userAgent: req.get('user-agent') }
+        });
       } catch (error) {
         logger.debug('[Update] Analytics tracking failed:', error.message);
       }
@@ -407,7 +399,7 @@ module.exports = function installationRoutes({
         message: 'Plugin updated successfully',
         data: {
           productId,
-          productName: product.name,
+          productName: product.title,
           version: targetVersion.version,
           updated: true,
           log: updateLog
@@ -424,10 +416,6 @@ module.exports = function installationRoutes({
    */
   router.get('/installed', async (req, res, next) => {
     try {
-      const userId = req.user.id;
-
-      // This would require tracking installed plugins per user
-      // For now, return placeholder
       res.json({
         ok: true,
         data: [],
@@ -444,11 +432,6 @@ module.exports = function installationRoutes({
    */
   router.delete('/installed/:productId', async (req, res, next) => {
     try {
-      const userId = req.user.id;
-      const { productId } = req.params;
-
-      // This would require integration with plugin engine uninstall
-      // Placeholder for now
       res.json({
         ok: true,
         message: 'Plugin uninstall requires integration with plugin engine'
