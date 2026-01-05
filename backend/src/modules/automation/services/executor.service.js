@@ -8,10 +8,6 @@
  *  - Plugin-defined actions
  *  - Graceful error handling for unknown actions
  *
- * Why this abstraction exists:
- *  - Decouples automation logic from execution source
- *  - Allows marketplace plugins to hook into automation
- *
  * Execution Flow:
  *  Task → Executor → (Built-in | Plugin) → Result
  *
@@ -33,20 +29,48 @@ class ExecutorService {
    * run()
    * ------------------------------------------------------------------
    * Main entry point for executing a single automation task
-   *
-   * @param {String} actionType  - e.g. "http_request" or "plugin:backup:create"
-   * @param {Object} actionMeta  - JSON metadata for the action
-   *
-   * @throws {Error} If action type is invalid or execution fails
-   * ------------------------------------------------------------------
    */
-  async run({ actionType, actionMeta }) {
+  async run(actionTypeOrPayload, actionMeta) {
+    let actionType;
+    let meta;
+
+    // Normalize call signature
+    if (typeof actionTypeOrPayload === "string") {
+      actionType = actionTypeOrPayload;
+      meta = actionMeta || {};
+    } else if (
+      actionTypeOrPayload &&
+      typeof actionTypeOrPayload === "object"
+    ) {
+      actionType = actionTypeOrPayload.actionType;
+      meta = actionTypeOrPayload.actionMeta || {};
+    } else {
+      throw new Error("Invalid arguments to executor.run()");
+    }
+
     if (!actionType) {
       throw new Error("Invalid actionType");
     }
 
-    const meta = actionMeta || {};
     const profileId = meta.profileId || null;
+
+    /* ============================================================
+       🔒 BACKWARD COMPATIBILITY NORMALIZATION (CRITICAL)
+       Handles legacy tasks created before canonical keys existed
+    ============================================================ */
+    const LEGACY_ACTION_MAP = {
+      "HTTP Request": "http_request",
+    };
+
+    if (LEGACY_ACTION_MAP[actionType]) {
+      this.logger.warn({
+        msg: "[automation] Normalizing legacy actionType",
+        from: actionType,
+        to: LEGACY_ACTION_MAP[actionType],
+      });
+
+      actionType = LEGACY_ACTION_MAP[actionType];
+    }
 
     /* ============================================================
        1) PLUGIN ACTION HANDLING
@@ -65,7 +89,7 @@ class ExecutorService {
 
       const pluginEngine = this.app?.locals?.pluginEngine;
       if (!pluginEngine) {
-        throw new Error("Plugin engine not initialized (check configuration)");
+        throw new Error("Plugin engine not initialized");
       }
 
       const action = pluginEngine.getAction(pluginId, actionName);
@@ -78,11 +102,7 @@ class ExecutorService {
       let result;
 
       if (typeof pluginEngine.runAction === "function") {
-        result = await pluginEngine.runAction(
-          pluginId,
-          actionName,
-          meta
-        );
+        result = await pluginEngine.runAction(pluginId, actionName, meta);
       } else if (typeof pluginEngine.runFile === "function") {
         result = await pluginEngine.runFile(
           action.file,
@@ -90,7 +110,7 @@ class ExecutorService {
           meta
         );
       } else {
-        throw new Error("Plugin engine missing runAction/runFile methods");
+        throw new Error("Plugin engine missing runAction/runFile");
       }
 
       await this.audit.automation("plugin.action.execute", {
@@ -105,7 +125,7 @@ class ExecutorService {
     }
 
     /* ============================================================
-       2) BUILT-IN ACTION HANDLING (Registry-based)
+       2) BUILT-IN ACTION HANDLING
     ============================================================ */
     const action = ActionRegistry.get(actionType);
 
@@ -128,12 +148,16 @@ class ExecutorService {
     }
 
     /* ============================================================
-       3) UNKNOWN ACTION → ERROR (don't silent-fail)
+       3) UNKNOWN ACTION → HARD FAIL
     ============================================================ */
     const error = new Error(`Unknown automation action: ${actionType}`);
     error.code = "unknown_action";
 
-    this.logger.error(`Unknown action attempted: ${actionType}`);
+    this.logger.error({
+      msg: "[automation] Unknown action attempted",
+      actionType,
+      meta,
+    });
 
     await this.audit.automation(
       "action.failed",
@@ -141,7 +165,7 @@ class ExecutorService {
         profileId,
         actionType,
         meta,
-        reason: "Unknown action type"
+        reason: "Unknown action type",
       },
       "system",
       "ERROR"

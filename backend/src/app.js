@@ -31,6 +31,40 @@ app.use((req, res, next) => {
 });
 
 /* ================================================================
+   RESPONSE HELPER MIDDLEWARE (CRITICAL - ADD EARLY)
+   – Provides res.success(), res.fail(), res.error()
+   – Must be before all route handlers
+================================================================ */
+app.use((req, res, next) => {
+  res.success = (data, message = "Success", statusCode = 200) => {
+    res.status(statusCode).json({
+      success: true,
+      data,
+      message,
+    });
+  };
+
+  res.fail = (message, statusCode = 400, errorCode = "error") => {
+    res.status(statusCode).json({
+      success: false,
+      message,
+      error: errorCode,
+    });
+  };
+
+  res.error = (message, statusCode = 500) => {
+    const errorMsg = typeof message === "string" ? message : message?.message || "Internal Server Error";
+    res.status(statusCode).json({
+      success: false,
+      error: errorMsg,
+      message: "An error occurred",
+    });
+  };
+
+  next();
+});
+
+/* ================================================================
    AUTHENTICATION MIDDLEWARE (GLOBAL)
    – Protects all routes by default
 ================================================================ */
@@ -63,11 +97,11 @@ app.use(
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
-        console.log("✓ CORS Allowed:", origin);
+        console.log("✔ CORS Allowed:", origin);
         return callback(null, true);
       }
 
-      console.log("✗ CORS Blocked:", origin);
+      console.log("✖ CORS Blocked:", origin);
       return callback(null, false);
     },
 
@@ -78,8 +112,23 @@ app.use(
 );
 
 console.log("Google Client ID:", process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
+const { registerBackupAuditHooks } = require("./modules/backup/bootstrap");
+// ======================= AUDIT MODULE =======================
+const { initAuditModule } = require("./modules/audit");
+const logger = console;
 
-/* ================================================================
+initAuditModule({
+  app,
+  prisma,
+  logger,
+});
+registerBackupAuditHooks({
+  auditLogger: app.locals.auditLogger,
+});
+
+
+/////////////////////////////////////////////////////////////////////
+/* ===============================================AUDIT=================  
    AUDIT CONTEXT MIDDLEWARE (NEW + REQUIRED)
    – Extracts IP, userAgent, userId from request
    – Makes automation logs fully traceable
@@ -133,29 +182,26 @@ app.use("/api/v1/clients", require("./modules/clients/clients.routes"));
 const domainRoutes = require("./modules/domains/index");
 app.use("/api", domainRoutes);
 
-
-
 /////services
 app.use("/api/admin", require("./modules/services").adminRoutes);
 app.use("/api/client", require("./modules/services").clientRoutes);
+
 /// orders (FIXED & CONSISTENT)
 const ordersModule = require("./modules/orders");
 
 app.use("/api/client/orders", ordersModule.clientRoutes);
 app.use("/api/admin/orders", ordersModule.adminRoutes);
 
-
-
 /* ================================================================
    BACKUP MODULE (AUTO-LOADS PROVIDERS + ROUTES)
 ================================================================ */
 const backupApi = require("./modules/backup/api");
 app.use("/api", backupApi);
+
 ////////email///
 // ADD your routes AFTER app is loaded (optional)
 const emailRoutes = require("./modules/email/email.routes");
 app.use("/api/v1/email", emailRoutes);
-
 
 ///////////////
 /* ================================================================
@@ -166,7 +212,6 @@ app.use("/api/v1/email", emailRoutes);
 // NOTE: Marketplace initialization is deferred to init() function
 // This ensures pluginEngine is available before marketplace is initialized
 // See init() function below for marketplace async setup
-
 
 /* ================================================================
    HEALTH CHECK
@@ -231,7 +276,7 @@ async function init() {
     webhookService: null,
   });
 
-  console.log("🏪 Marketplace module initialized successfully");
+  console.log("🪐 Marketplace module initialized successfully");
 } catch (err) {
   console.error("❌ Marketplace initialization failed:", err.message);
 }
@@ -284,8 +329,8 @@ async function init() {
    – Captures any unhandled backend errors
 ================================================================ */
 app.use((err, req, res, next) => {
-  console.error("🔥 Backend Error:", err);
-  res.status(500).json({ success: false, error: "Internal Server Error" });
+  console.error("💥 Backend Error:", err);
+  res.error(err.message || "Internal Server Error", 500);
 });
 
 /* ================================================================

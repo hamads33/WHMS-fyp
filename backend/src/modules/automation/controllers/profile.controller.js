@@ -79,8 +79,14 @@ class ProfileController {
   // ==================================================
   async get(req, res) {
     try {
-      const id = Number(req.params.id);
-      const profile = await this.profileStore.getById(id);
+      // âœ… FIXED: Use profileId from params (matches route definition)
+      const profileId = Number(req.params.profileId);
+
+      if (!Number.isInteger(profileId) || profileId <= 0) {
+        return res.fail("Invalid profileId", 400, "invalid_param");
+      }
+
+      const profile = await this.profileStore.getById(profileId);
       
       if (!profile) {
         return res.fail("Profile not found", 404);
@@ -98,23 +104,29 @@ class ProfileController {
   // ==================================================
   async update(req, res) {
     try {
-      const id = Number(req.params.id);
+      // âœ… FIXED: Use profileId from params
+      const profileId = Number(req.params.profileId);
+
+      if (!Number.isInteger(profileId) || profileId <= 0) {
+        return res.fail("Invalid profileId", 400, "invalid_param");
+      }
+
       const data = req.body;
 
-      const profile = await this.profileStore.update(id, data);
+      const profile = await this.profileStore.update(profileId, data);
 
       // Reschedule if modified
       if (profile.enabled) {
         this.scheduler.scheduleProfile(profile);
       } else {
-        this.scheduler.stopProfile(id);
+        this.scheduler.stopProfile(profileId);
       }
 
       // Audit the update
       await this.audit.system("automation.profile.update", {
         userId: req.auditContext?.userId || null,
         entity: "AutomationProfile",
-        entityId: id,
+        entityId: profileId,
         ip: req.auditContext?.ip || null,
         userAgent: req.auditContext?.userAgent || null,
         data
@@ -132,16 +144,21 @@ class ProfileController {
   // ==================================================
   async delete(req, res) {
     try {
-      const id = Number(req.params.id);
+      // âœ… FIXED: Use profileId from params
+      const profileId = Number(req.params.profileId);
 
-      await this.profileStore.delete(id);
-      this.scheduler.stopProfile(id);
+      if (!Number.isInteger(profileId) || profileId <= 0) {
+        return res.fail("Invalid profileId", 400, "invalid_param");
+      }
+
+      await this.profileStore.delete(profileId);
+      this.scheduler.stopProfile(profileId);
 
       // Audit the deletion
       await this.audit.system("automation.profile.delete", {
         userId: req.auditContext?.userId || null,
         entity: "AutomationProfile",
-        entityId: id,
+        entityId: profileId,
         ip: req.auditContext?.ip || null,
         userAgent: req.auditContext?.userAgent || null,
         data: null
@@ -159,10 +176,15 @@ class ProfileController {
   // ==================================================
   async enable(req, res) {
     try {
-      const id = Number(req.params.id);
+      // âœ… FIXED: Use profileId from params
+      const profileId = Number(req.params.profileId);
 
-      await this.profileStore.setEnabled(id, true);
-      const profile = await this.profileStore.getById(id);
+      if (!Number.isInteger(profileId) || profileId <= 0) {
+        return res.fail("Invalid profileId", 400, "invalid_param");
+      }
+
+      await this.profileStore.setEnabled(profileId, true);
+      const profile = await this.profileStore.getById(profileId);
 
       if (profile) {
         this.scheduler.scheduleProfile(profile);
@@ -171,7 +193,7 @@ class ProfileController {
       // Audit the enable
       await this.audit.automation(
         "profile.enable",
-        { profileId: id },
+        { profileId },
         req.auditContext?.userId || "system"
       );
 
@@ -187,15 +209,20 @@ class ProfileController {
   // ==================================================
   async disable(req, res) {
     try {
-      const id = Number(req.params.id);
+      // âœ… FIXED: Use profileId from params
+      const profileId = Number(req.params.profileId);
 
-      await this.profileStore.setEnabled(id, false);
-      this.scheduler.stopProfile(id);
+      if (!Number.isInteger(profileId) || profileId <= 0) {
+        return res.fail("Invalid profileId", 400, "invalid_param");
+      }
+
+      await this.profileStore.setEnabled(profileId, false);
+      this.scheduler.stopProfile(profileId);
 
       // Audit the disable
       await this.audit.automation(
         "profile.disable",
-        { profileId: id },
+        { profileId },
         req.auditContext?.userId || "system"
       );
 

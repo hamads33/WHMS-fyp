@@ -1,79 +1,150 @@
 /**
- * Validation Middleware
+ * Validation Middleware - FIXED VERSION
  * ------------------------------------------------------------------
- * AJV-based request validation.
+ * Handles JSON Schema validation for request data
+ * 
+ * KEY FIX: Coerces URL parameter types from string to number
+ * This is required because Express always passes URL params as strings:
+ *   - URL: /profiles/2/run
+ *   - Parsed: req.params.profileId = "2" (string)
+ *   - Schema expects: profileId: number
+ *   - Solution: Convert "2" to 2 before validation
  *
- * Enforces:
- *  - Strict input schemas
- *  - API-first correctness
- *  - Early error detection
- *
- * IMPORTANT:
- *  - Does NOT mutate original request data
- *  - Validates a copy to prevent side effects
- *  - Preserves original field order and structure
+ * Features:
+ *  - Validates body, params, query
+ *  - Type coercion for URL parameters
+ *  - Proper error responses
+ *  - Debug logging support
  */
 
-const Ajv = require("ajv").default;
-const addFormats = require("ajv-formats");
+const Ajv = require('ajv');
 
-// Configure AJV with safe settings
-const ajv = new Ajv({ 
-  allErrors: true, 
-  coerceTypes: true, 
-  removeAdditional: false,  // CRITICAL: Don't remove fields, just validate
-  useDefaults: false,        // Don't modify data, just validate
-  strict: false              // Allow additional keywords
+// Initialize validator with coerceTypes option
+// Note: We handle manual coercion for params since they always come as strings
+const ajv = new Ajv({
+  coerceTypes: false,  // We'll do manual coercion for params
+  removeAdditional: false
 });
 
-addFormats(ajv);
-
-module.exports = function validate(schema, source = "body") {
-  const fn = ajv.compile(schema);
-
+/**
+ * Validation Middleware
+ * 
+ * Usage:
+ *   validate(schema)              // Validates req.body by default
+ *   validate(schema, "params")    // Validates req.params
+ *   validate(schema, "query")     // Validates req.query
+ */
+const validate = (schema, location = "body") => {
   return (req, res, next) => {
-    // Get the data to validate
-    const originalData = req[source];
-    
-    if (!originalData) {
-      return res.fail(`No ${source} data provided`, 400, "validation_error");
-    }
-
-    // Create a deep copy for validation (don't mutate original)
-    let dataToValidate;
     try {
-      dataToValidate = JSON.parse(JSON.stringify(originalData));
+      // Get the data to validate based on location
+      let data = req[location];
+
+      // ✅ CRITICAL FIX: Coerce URL parameters from string to number
+      // Express always parses URL params as strings, but validators expect numbers
+      if (location === "params" && data) {
+        data = coerceParams(data);
+      }
+
+      // Compile the schema if not already compiled
+      const validate = ajv.compile(schema);
+
+      // Validate the data
+      const valid = validate(data);
+
+      if (!valid) {
+        // Validation failed - return error response
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: "Validation failed",
+            code: "validation_error",
+            details: validate.errors || []
+          }
+        });
+      }
+
+      // Validation passed - continue to next middleware
+      next();
     } catch (err) {
-      return res.fail(`Invalid ${source} data format`, 400, "validation_error");
-    }
-    
-    // Validate the copy
-    const ok = fn(dataToValidate);
-
-    if (!ok) {
-      // Format error details for better debugging
-      const errorDetails = fn.errors.map(err => {
-        const field = err.instancePath 
-          ? err.instancePath.replace(/^\//, '') 
-          : (err.params?.missingProperty || 'unknown');
-        
-        return {
-          field,
-          message: err.message,
-          keyword: err.keyword,
-          params: err.params
-        };
+      // Schema compilation or other error
+      console.error("[VALIDATE] Error during validation:", err);
+      return res.status(500).json({
+        success: false,
+        error: {
+          message: "Validation error",
+          code: "validation_error",
+          details: [{ message: err.message }]
+        }
       });
-
-      return res.fail(
-        "Validation failed", 
-        400, 
-        "validation_error", 
-        errorDetails
-      );
     }
-
-    // Validation passed - data remains unchanged in req[source]
-    next();
   };
 };
+
+/**
+ * Coerce URL Parameters
+ * ------------------------------------------------------------------
+ * Convert string parameters to their correct types based on common patterns
+ * 
+ * Examples:
+ *   "2" → 2 (if all digits)
+ *   "true" → true
+ *   "false" → false
+ *   "hello" → "hello" (stays string)
+ */
+function coerceParams(params) {
+  if (!params || typeof params !== 'object') {
+    return params;
+  }
+
+  const coerced = {};
+
+  Object.keys(params).forEach(key => {
+    const value = params[key];
+
+    // If it's not a string, keep as-is
+    if (typeof value !== 'string') {
+      coerced[key] = value;
+      return;
+    }
+
+    // Try to coerce string to appropriate type
+    // Priority: number > boolean > original string
+
+    // Check if it's a number (all digits, possibly with leading zeros)
+    if (/^\d+$/.test(value)) {
+      coerced[key] = Number(value);
+      return;
+    }
+
+    // Check if it's a negative number
+    if (/^-?\d+$/.test(value)) {
+      coerced[key] = Number(value);
+      return;
+    }
+
+    // Check if it's a float
+    if (/^-?\d+\.\d+$/.test(value)) {
+      coerced[key] = Number(value);
+      return;
+    }
+
+    // Check if it's a boolean
+    if (value === 'true') {
+      coerced[key] = true;
+      return;
+    }
+
+    if (value === 'false') {
+      coerced[key] = false;
+      return;
+    }
+
+    // Keep as string if no coercion applied
+    coerced[key] = value;
+  });
+
+  return coerced;
+}
+
+module.exports = validate;

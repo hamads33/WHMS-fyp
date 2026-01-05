@@ -7,6 +7,8 @@
  *  - CRUD operations for tasks
  *  - Manual task execution via queue
  *  - Maintain execution order inside a profile
+ *
+ * FIXED: Better validation and logging for task creation
  */
 
 class TaskController {
@@ -41,6 +43,7 @@ class TaskController {
       const tasks = await this.taskStore.listForProfile(profileId);
       return res.success(tasks);
     } catch (err) {
+      this.logger.error("Failed to list tasks:", err);
       return res.error(err, 500);
     }
   }
@@ -53,12 +56,36 @@ class TaskController {
       const profileId = Number(req.params.profileId);
       const payload = req.body;
 
+      this.logger.info({
+        msg: '[TaskController] Creating task',
+        profileId,
+        payloadKeys: Object.keys(payload || {}),
+        actionType: payload?.actionType,
+        actionMetaKeys: Object.keys(payload?.actionMeta || {}),
+      });
+
       const profile = await this.profileStore.getById(profileId);
       if (!profile) return res.fail("Profile not found", 404);
 
       if (!payload.actionType) {
-        return res.fail("actionType is required", 400);
+        return res.fail("actionType is required", 400, "missing_action_type");
       }
+
+      // ✅ FIXED: Validate actionMeta exists and has required fields
+      if (!payload.actionMeta || typeof payload.actionMeta !== 'object') {
+        return res.fail(
+          "actionMeta is required and must be an object",
+          400,
+          "invalid_action_meta"
+        );
+      }
+
+      // Log what we're about to save
+      this.logger.info({
+        msg: '[TaskController] Task payload validated',
+        actionType: payload.actionType,
+        actionMeta: payload.actionMeta,
+      });
 
       // Build task data with defaults
       const taskData = {
@@ -68,6 +95,14 @@ class TaskController {
       };
 
       const task = await this.taskStore.create(profileId, taskData);
+
+      this.logger.info({
+        msg: '[TaskController] Task created successfully',
+        taskId: task.id,
+        profileId,
+        actionType: task.actionType,
+        actionMeta: task.actionMeta,
+      });
 
       // Re-schedule profile if it's enabled
       if (profile.enabled) {
@@ -101,8 +136,16 @@ class TaskController {
       const task = await this.taskStore.getById(taskId);
       if (!task) return res.fail("Task not found", 404);
 
+      this.logger.debug({
+        msg: '[TaskController] Retrieved task',
+        taskId,
+        actionType: task.actionType,
+        actionMetaKeys: Object.keys(task.actionMeta || {}),
+      });
+
       return res.success(task);
     } catch (err) {
+      this.logger.error("Failed to get task:", err);
       return res.error(err, 500);
     }
   }
@@ -115,10 +158,32 @@ class TaskController {
       const taskId = Number(req.params.taskId);
       const payload = req.body;
 
+      this.logger.info({
+        msg: '[TaskController] Updating task',
+        taskId,
+        payloadKeys: Object.keys(payload || {}),
+      });
+
       const task = await this.taskStore.getById(taskId);
       if (!task) return res.fail("Task not found", 404);
 
+      // ✅ FIXED: Validate actionMeta if present
+      if (payload.actionMeta && typeof payload.actionMeta !== 'object') {
+        return res.fail(
+          "actionMeta must be an object",
+          400,
+          "invalid_action_meta"
+        );
+      }
+
       const updated = await this.taskStore.update(taskId, payload);
+
+      this.logger.info({
+        msg: '[TaskController] Task updated successfully',
+        taskId,
+        actionType: updated.actionType,
+        actionMeta: updated.actionMeta,
+      });
 
       // Re-schedule profile if enabled
       const profile = await this.profileStore.getById(task.profileId);
@@ -155,6 +220,11 @@ class TaskController {
 
       await this.taskStore.delete(taskId);
 
+      this.logger.info({
+        msg: '[TaskController] Task deleted',
+        taskId,
+      });
+
       // Re-schedule profile if enabled
       const profile = await this.profileStore.getById(task.profileId);
       if (profile?.enabled) {
@@ -188,6 +258,23 @@ class TaskController {
       const task = await this.taskStore.getById(taskId);
       if (!task) return res.fail("Task not found", 404);
 
+      // ✅ FIXED: Validate task has required fields before queuing
+      if (!task.actionType) {
+        return res.fail(
+          "Task has no actionType defined",
+          400,
+          "invalid_task"
+        );
+      }
+
+      if (!task.actionMeta || typeof task.actionMeta !== 'object' || Object.keys(task.actionMeta).length === 0) {
+        return res.fail(
+          "Task has no actionMeta or it is empty. Task must be properly configured before execution.",
+          400,
+          "invalid_task_meta"
+        );
+      }
+
       // Create pending run record
       const runRecord = await this.executionLogStore.createPending(
         task.profileId,
@@ -197,6 +284,13 @@ class TaskController {
       // Enqueue job
       const { createQueue } = require("../queue/jobQueue");
       const { queue } = createQueue("automation");
+
+      this.logger.info({
+        msg: '[TaskController] Enqueueing task execution',
+        taskId,
+        runId: runRecord.id,
+        actionType: task.actionType,
+      });
 
       await queue.add(
         "run-task",
@@ -217,12 +311,13 @@ class TaskController {
         {
           profileId: task.profileId,
           taskId: task.id,
-          runId: runRecord.id
+          runId: runRecord.id,
+          actionType: task.actionType,
         },
         req.auditContext?.userId || "system"
       );
 
-      return res.success({ runId: runRecord.id });
+      return res.success({ runId: runRecord.id }, {}, 202);
     } catch (err) {
       this.logger.error("Failed to run task:", err);
       return res.error(err, 500);

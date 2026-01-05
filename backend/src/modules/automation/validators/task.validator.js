@@ -12,6 +12,11 @@
  *  - Matches Prisma schema exactly (AutomationTask model)
  *  - More permissive to allow backend defaults to work
  *  - Does NOT use additionalProperties: false to prevent field removal
+ *  - profileId comes from URL params, NOT from body
+ *
+ * FIXED:
+ *  ✅ Added missing comma after required array (line 32)
+ *  ✅ Ensured valid JSON/JavaScript object syntax
  */
 
 module.exports = {
@@ -29,7 +34,8 @@ module.exports = {
       minimum: 0
     }
   },
-  required: ["actionType"]
+  required: ["actionType"],
   // NOTE: No additionalProperties restriction
   // This allows Prisma defaults to work correctly
-}
+  // profileId comes from URL params, validated separately
+};

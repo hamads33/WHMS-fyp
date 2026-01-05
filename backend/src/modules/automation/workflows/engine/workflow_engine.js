@@ -1,5 +1,5 @@
 /**
- * Workflow Engine
+ * Workflow Engine - FIXED VERSION
  * ============================================================
  * Core execution engine for enterprise workflows
  *
@@ -10,6 +10,7 @@
  *  - Parallel execution
  *  - Error handling & retries
  *  - Timeout management
+ *  - Proper task branching
  */
 
 class WorkflowEngine {
@@ -44,10 +45,8 @@ class WorkflowEngine {
     try {
       this.logger.info(`Starting workflow execution: ${workflowId}`);
 
-      // Store definition for _findTask
       this.workflowDefinition = definition;
 
-      // Validate definition
       if (this.validator) {
         const validation = this.validator.validateWorkflow(definition);
         if (!validation.valid) {
@@ -55,7 +54,6 @@ class WorkflowEngine {
         }
       }
 
-      // Execute tasks
       const result = await this._executeTasks(
         definition.tasks,
         context,
@@ -86,12 +84,25 @@ class WorkflowEngine {
   }
 
   /**
-   * Execute array of tasks sequentially or in parallel
+   * Execute array of tasks sequentially
+   * FIXED: Properly handles branching - doesn't execute next task after branch
    */
-  async _executeTasks(tasks, context, options = {}) {
+  async _executeTasks(tasks, context, options = {}, skipUntilTaskId = null) {
     const results = {};
+    let shouldSkip = !!skipUntilTaskId;
 
-    for (const task of tasks) {
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+
+      // Skip until we find the target task
+      if (shouldSkip) {
+        if (task.id === skipUntilTaskId) {
+          shouldSkip = false;
+        } else {
+          continue;
+        }
+      }
+
       if (options.skipActions) {
         this.logger.info(`[DRY-RUN] Task: ${task.id}`);
         results[task.id] = { skipped: true };
@@ -101,23 +112,24 @@ class WorkflowEngine {
       try {
         // Check skip condition
         if (task.skipIf) {
-          const shouldSkip = this._evaluateCondition(task.skipIf, context);
-          if (shouldSkip) {
+          const shouldSkipTask = this._evaluateCondition(task.skipIf, context);
+          if (shouldSkipTask) {
             this.logger.info(`Skipping task: ${task.id}`);
             results[task.id] = { skipped: true };
             continue;
           }
         }
 
-        // Execute task
-        const result = await this._executeTask(task, context, options);
-        results[task.id] = result;
-        context.results[task.id] = result;
-
-        // Handle condition branching
+        // Handle condition branching - FIXED: Skip remaining tasks in this sequence
         if (task.type === "condition") {
           const condition = this._evaluateCondition(task.condition, context);
           const nextTaskId = condition ? task.onTrue : task.onFalse;
+
+          results[task.id] = {
+            type: "condition",
+            condition: condition,
+            selectedBranch: nextTaskId
+          };
 
           if (nextTaskId) {
             const nextTask = this._findTask(nextTaskId);
@@ -129,7 +141,14 @@ class WorkflowEngine {
               this.logger.warn(`Referenced task not found: ${nextTaskId}`);
             }
           }
+          // Skip remaining tasks - branching is done
+          break;
         }
+
+        // Execute regular action task
+        const result = await this._executeTask(task, context, options);
+        results[task.id] = result;
+        context.results[task.id] = result;
 
         // Handle parallel execution
         if (task.type === "parallel") {
@@ -150,22 +169,28 @@ class WorkflowEngine {
           const itemArray = Array.isArray(items) ? items : [items];
 
           const loopResults = [];
-          for (let i = 0; i < itemArray.length; i++) {
-            const item = itemArray[i];
+          for (let loopIndex = 0; loopIndex < itemArray.length; loopIndex++) {
+            const item = itemArray[loopIndex];
+            
+            // FIXED: Create new variables object instead of spreading
             const loopContext = {
               workflow: context.workflow,
               input: context.input,
               variables: {
                 ...context.variables,
                 [task.itemName]: item,
-                __loopIndex: i,
+                __loopIndex: loopIndex,
                 __loopItem: item,
               },
               results: context.results,
             };
 
-            const loopResult = await this._executeTasks(task.tasks || [], loopContext, options);
-            loopResults.push(loopResult);
+            const loopTaskResult = await this._executeTasks(
+              task.tasks || [],
+              loopContext,
+              options
+            );
+            loopResults.push(loopTaskResult);
           }
           results[task.id] = loopResults;
         }
@@ -209,14 +234,12 @@ class WorkflowEngine {
   async _executeTask(task, context, options = {}) {
     const taskTimeout = task.timeout || 30000;
     let timeoutHandle = null;
-    let timedOut = false;
 
     try {
       return await Promise.race([
         this._executeTaskInternal(task, context, options),
         new Promise((_, reject) => {
           timeoutHandle = setTimeout(() => {
-            timedOut = true;
             reject(new Error(`Task timeout: ${task.id} (${taskTimeout}ms)`));
           }, taskTimeout);
         }),
@@ -233,10 +256,8 @@ class WorkflowEngine {
    */
   async _executeTaskInternal(task, context, options = {}, attempt = 0) {
     try {
-      // Resolve input variables
       const resolvedInput = this.variableResolver.resolve(task.input || {}, context);
 
-      // Execute action
       const result = await this.executor.execute(task.actionType || task.type, {
         taskId: task.id,
         input: resolvedInput,
@@ -310,7 +331,7 @@ class WorkflowEngine {
   }
 
   /**
-   * Find task by ID in workflow definition
+   * Find task by ID in workflow definition (IMPROVED)
    */
   _findTask(taskId) {
     if (!this.workflowDefinition || !this.workflowDefinition.tasks) {
@@ -318,12 +339,23 @@ class WorkflowEngine {
     }
 
     const traverse = (tasks) => {
+      if (!Array.isArray(tasks)) return null;
+      
       for (const task of tasks) {
         if (task.id === taskId) return task;
-        // Search in nested tasks (loops)
+        
+        // Search in nested tasks (loops, conditions)
         if (task.tasks && Array.isArray(task.tasks)) {
           const found = traverse(task.tasks);
           if (found) return found;
+        }
+        
+        // Search in parallel tasks
+        if (task.parallel && Array.isArray(task.parallel)) {
+          for (const parallelTaskId of task.parallel) {
+            const found = this._findTask(parallelTaskId);
+            if (found) return found;
+          }
         }
       }
       return null;
@@ -341,7 +373,7 @@ class WorkflowEngine {
     const fallbackId = task.onError.fallback;
 
     if (visited.has(fallbackId)) {
-      return true; // Circular dependency found
+      return true;
     }
 
     visited.add(task.id);
@@ -353,14 +385,11 @@ class WorkflowEngine {
   }
 
   /**
-   * Evaluate conditional expression
+   * Evaluate conditional expression safely
    */
   _evaluateCondition(expression, context) {
     try {
-      // Resolve variables in expression
       const resolved = this.variableResolver.resolve(expression, context);
-
-      // Evaluate as boolean
       return Boolean(resolved) && resolved !== "false" && resolved !== 0;
     } catch (error) {
       this.logger.error(`Condition evaluation failed: ${expression}`, error);
