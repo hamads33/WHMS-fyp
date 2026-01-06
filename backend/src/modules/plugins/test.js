@@ -1,83 +1,100 @@
-// test.js - Fixed Plugin System Test Suite
-// Run with: node test.js
-// Fixed version with better error handling, delays, and reporting
+#!/usr/bin/env node
+
+// Plugin Module Complete Test Script
+// Tests all functionality of the plugin system
+// Run: node plugin-test.js
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { URL } = require('url');
 
 // ============================================
-// Test Configuration
+// Configuration
 // ============================================
 const CONFIG = {
-  baseUrl: 'http://localhost:3000',
+  baseUrl: process.env.TEST_URL || 'http://localhost:4000',
   apiPath: '/api/plugins',
-  testPluginId: 'test-plugin',
-  timeout: 5000,
-  installDelay: 300 // Delay after installation for loader to reload
+  testPluginId: 'test-plugin-complete',
+  timeout: 10000,
+  installDelay: 500,
+  verbose: process.argv.includes('--verbose') || process.argv.includes('-v')
 };
 
-// Colors for console output
-const colors = {
+// ============================================
+// Colors
+// ============================================
+const c = {
   reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
   red: '\x1b[31m',
   green: '\x1b[32m',
   yellow: '\x1b[33m',
   blue: '\x1b[34m',
+  magenta: '\x1b[35m',
   cyan: '\x1b[36m',
   gray: '\x1b[90m'
 };
 
-// Test results
+// ============================================
+// Test Results
+// ============================================
 const results = {
   passed: 0,
   failed: 0,
   skipped: 0,
-  tests: []
+  tests: [],
+  startTime: Date.now()
 };
 
 // ============================================
-// HTTP Helper Functions
+// HTTP Helper
 // ============================================
-function request(method, path, data = null) {
+function request(method, urlPath, data = null, headers = {}) {
   return new Promise((resolve, reject) => {
-    const url = new URL(path, CONFIG.baseUrl);
+    const url = new URL(urlPath, CONFIG.baseUrl);
+    const isHttps = url.protocol === 'https:';
+    const client = isHttps ? https : http;
+
     const options = {
       method,
       hostname: url.hostname,
-      port: url.port,
+      port: url.port || (isHttps ? 443 : 80),
       path: url.pathname + url.search,
       headers: {
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+        ...headers
+      },
+      timeout: CONFIG.timeout
     };
 
-    if (data) {
+    if (data && method !== 'GET') {
       const body = JSON.stringify(data);
       options.headers['Content-Length'] = Buffer.byteLength(body);
     }
 
-    const req = http.request(options, (res) => {
+    const req = client.request(options, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
         try {
           const json = body ? JSON.parse(body) : {};
-          resolve({ status: res.statusCode, data: json, headers: res.headers });
+          resolve({ status: res.statusCode, data: json, headers: res.headers, raw: body });
         } catch (e) {
-          resolve({ status: res.statusCode, data: body, headers: res.headers });
+          resolve({ status: res.statusCode, data: body, headers: res.headers, raw: body });
         }
       });
     });
 
     req.on('error', reject);
-    req.setTimeout(CONFIG.timeout, () => {
+    req.on('timeout', () => {
       req.destroy();
       reject(new Error('Request timeout'));
     });
 
-    if (data) {
+    if (data && method !== 'GET') {
       req.write(JSON.stringify(data));
     }
 
@@ -85,48 +102,35 @@ function request(method, path, data = null) {
   });
 }
 
-// ============================================
-// Assertion Helpers
-// ============================================
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message || 'Assertion failed');
-  }
-}
-
-function assertEqual(actual, expected, message) {
-  if (actual !== expected) {
-    throw new Error(
-      message || `Expected ${expected}, got ${actual}`
-    );
-  }
-}
-
-function assertOk(data, message) {
-  assert(data.ok === true, message || `Expected ok=true, got ${data.ok}`);
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ============================================
-// Test Framework (Improved)
+// Logging
+// ============================================
+function log(level, ...args) {
+  if (level === 'debug' && !CONFIG.verbose) return;
+  console.log(...args);
+}
+
+// ============================================
+// Test Framework
 // ============================================
 async function test(name, fn) {
-  process.stdout.write(`  ${colors.cyan}▶${colors.reset} ${name} ... `);
+  process.stdout.write(`  ${c.cyan}▶${c.reset} ${name} ... `);
   
   try {
     await fn();
-    console.log(`${colors.green}✓ PASS${colors.reset}`);
+    console.log(`${c.green}✓ PASS${c.reset}`);
     results.passed++;
     results.tests.push({ name, status: 'passed' });
   } catch (error) {
-    console.log(`${colors.red}✗ FAIL${colors.reset}`);
-    console.log(`    ${colors.red}Error: ${error.message}${colors.reset}`);
+    console.log(`${c.red}✗ FAIL${c.reset}`);
+    console.log(`    ${c.red}${error.message}${c.reset}`);
     
-    // Show more details for debugging
-    if (error.response) {
-      console.log(`    ${colors.gray}Status: ${error.response.status}${colors.reset}`);
-      if (error.response.data) {
-        console.log(`    ${colors.gray}Response: ${JSON.stringify(error.response.data).substring(0, 100)}${colors.reset}`);
-      }
+    if (CONFIG.verbose && error.details) {
+      console.log(`    ${c.gray}${JSON.stringify(error.details, null, 2)}${c.reset}`);
     }
     
     results.failed++;
@@ -135,52 +139,123 @@ async function test(name, fn) {
 }
 
 function skip(name, reason) {
-  console.log(`  ${colors.yellow}⊘${colors.reset} ${name} ... ${colors.yellow}SKIPPED${colors.reset} (${reason})`);
+  console.log(`  ${c.yellow}⊘${c.reset} ${name} ... ${c.yellow}SKIPPED${c.reset} (${reason})`);
   results.skipped++;
   results.tests.push({ name, status: 'skipped', reason });
 }
 
 function describe(suite, fn) {
-  console.log(`\n${colors.blue}━━━ ${suite} ━━━${colors.reset}`);
+  console.log(`\n${c.blue}${c.bright}━━━ ${suite} ━━━${c.reset}`);
   return fn();
+}
+
+// ============================================
+// Assertions
+// ============================================
+function assert(condition, message, details = null) {
+  if (!condition) {
+    const err = new Error(message || 'Assertion failed');
+    if (details) err.details = details;
+    throw err;
+  }
+}
+
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) {
+    throw new Error(message || `Expected ${expected}, got ${actual}`);
+  }
+}
+
+function assertStatus(response, expected, message) {
+  if (response.status !== expected) {
+    const err = new Error(
+      message || `Expected status ${expected}, got ${response.status}`
+    );
+    err.details = { status: response.status, data: response.data };
+    throw err;
+  }
+}
+
+function assertOk(data, message) {
+  assert(
+    data.ok === true || data.success === true,
+    message || `Expected ok=true, got ${JSON.stringify(data)}`
+  );
 }
 
 // ============================================
 // Test Plugin Creation
 // ============================================
 function createTestPlugin() {
-  const pluginDir = path.join(process.cwd(), 'test-plugin-temp');
+  const pluginDir = path.join(process.cwd(), 'test-plugin-temp-complete');
   
-  if (!fs.existsSync(pluginDir)) {
-    fs.mkdirSync(pluginDir, { recursive: true });
-    fs.mkdirSync(path.join(pluginDir, 'actions'), { recursive: true });
+  if (fs.existsSync(pluginDir)) {
+    fs.rmSync(pluginDir, { recursive: true, force: true });
   }
+  
+  fs.mkdirSync(pluginDir, { recursive: true });
+  fs.mkdirSync(path.join(pluginDir, 'actions'), { recursive: true });
+  fs.mkdirSync(path.join(pluginDir, 'ui'), { recursive: true });
 
-  // Create manifest
+  // Manifest
   const manifest = {
     id: CONFIG.testPluginId,
-    name: 'Test Plugin',
+    name: 'Complete Test Plugin',
     version: '1.0.0',
-    description: 'A test plugin for automated testing',
+    description: 'Comprehensive test plugin for all features',
+    author: 'Test Suite',
+    type: 'action',
     actions: {
       hello: {
         file: 'actions/hello.js',
         fnName: 'handler',
-        description: 'Simple hello action'
+        description: 'Simple hello world'
       },
       echo: {
         file: 'actions/echo.js',
-        description: 'Echo back the input'
+        description: 'Echo input back'
       },
       math: {
         file: 'actions/math.js',
-        description: 'Simple math operation'
+        description: 'Math operations'
+      },
+      async_action: {
+        file: 'actions/async.js',
+        description: 'Async operation'
+      },
+      error_action: {
+        file: 'actions/error.js',
+        description: 'Intentionally throws error'
       }
     },
     hooks: {
       'test.event': {
         action: 'actions/testHook.js',
         description: 'Test hook handler'
+      }
+    },
+    ui: {
+      pages: {
+        settings: 'ui/settings.html'
+      },
+      menu: {
+        title: 'Test Plugin',
+        icon: 'test-icon',
+        path: '/plugins/ui/' + CONFIG.testPluginId
+      },
+      configSchema: {
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean' },
+          apiKey: { type: 'string' },
+          timeout: { type: 'number' }
+        }
+      }
+    },
+    configSchema: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean', default: true }
       }
     }
   };
@@ -190,30 +265,31 @@ function createTestPlugin() {
     JSON.stringify(manifest, null, 2)
   );
 
-  // Create hello action
+  // Hello action
   fs.writeFileSync(
     path.join(pluginDir, 'actions', 'hello.js'),
     `module.exports.handler = async function({ meta }) {
   return {
     success: true,
     message: 'Hello from test plugin!',
-    meta: meta || {}
+    receivedMeta: meta || {}
   };
 };`
   );
 
-  // Create echo action
+  // Echo action
   fs.writeFileSync(
     path.join(pluginDir, 'actions', 'echo.js'),
     `module.exports = async function({ meta }) {
   return {
     success: true,
-    echo: meta || {}
+    echo: meta || {},
+    timestamp: new Date().toISOString()
   };
 };`
   );
 
-  // Create math action
+  // Math action
   fs.writeFileSync(
     path.join(pluginDir, 'actions', 'math.js'),
     `module.exports = async function({ meta }) {
@@ -232,69 +308,132 @@ function createTestPlugin() {
 };`
   );
 
-  // Create hook action
+  // Async action
+  fs.writeFileSync(
+    path.join(pluginDir, 'actions', 'async.js'),
+    `module.exports = async function({ meta }) {
+  const delay = meta.delay || 100;
+  await new Promise(resolve => setTimeout(resolve, delay));
+  return { success: true, delayed: delay };
+};`
+  );
+
+  // Error action
+  fs.writeFileSync(
+    path.join(pluginDir, 'actions', 'error.js'),
+    `module.exports = async function({ meta }) {
+  throw new Error('Intentional test error');
+};`
+  );
+
+  // Hook action
   fs.writeFileSync(
     path.join(pluginDir, 'actions', 'testHook.js'),
     `module.exports = async function({ meta }) {
-  console.log('[Test Hook] Event received:', meta);
-  return { success: true, hookExecuted: true };
+  console.log('[Test Hook] Event received:', JSON.stringify(meta));
+  return { success: true, hookExecuted: true, receivedMeta: meta };
 };`
+  );
+
+  // UI files
+  fs.writeFileSync(
+    path.join(pluginDir, 'ui', 'index.html'),
+    `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Plugin UI</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    h1 { color: #333; }
+  </style>
+</head>
+<body>
+  <h1>Test Plugin UI</h1>
+  <p>This is the test plugin user interface.</p>
+  <button onclick="alert('Test plugin loaded!')">Test Button</button>
+</body>
+</html>`
+  );
+
+  fs.writeFileSync(
+    path.join(pluginDir, 'ui', 'settings.html'),
+    `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Plugin Settings</title>
+</head>
+<body>
+  <h2>Settings</h2>
+  <p>Plugin settings would go here.</p>
+</body>
+</html>`
   );
 
   return pluginDir;
 }
 
 function cleanupTestPlugin() {
-  const pluginDir = path.join(process.cwd(), 'test-plugin-temp');
+  const pluginDir = path.join(process.cwd(), 'test-plugin-temp-complete');
   if (fs.existsSync(pluginDir)) {
     fs.rmSync(pluginDir, { recursive: true, force: true });
   }
 }
 
 // ============================================
-// Test Suites (FIXED)
+// Test Suites
 // ============================================
 
 async function testServerConnection() {
-  await describe('Server Connection', async () => {
-    await test('Server is running and accessible', async () => {
+  await describe('1. Server Connection', async () => {
+    await test('Server is accessible', async () => {
       const res = await request('GET', '/api/plugins');
-      assert(res.status === 200, `Expected status 200, got ${res.status}`);
+      assert(res.status === 200 || res.status === 401, 
+        `Server returned status ${res.status}`);
     });
   });
 }
 
-async function testPluginAPI() {
-  await describe('Plugin API - List & Metadata', async () => {
-    await test('GET /api/plugins returns list', async () => {
+async function testPluginListingAPI() {
+  await describe('2. Plugin Listing API', async () => {
+    await test('GET /api/plugins returns plugin list', async () => {
       const res = await request('GET', '/api/plugins');
-      assertEqual(res.status, 200);
-      assert(res.data.ok === true || Array.isArray(res.data.plugins) || typeof res.data === 'object', 
-        'Should return ok or plugins list');
+      assertStatus(res, 200);
+      assert(
+        res.data.ok || res.data.plugins || Array.isArray(res.data),
+        'Should return plugin list structure'
+      );
     });
 
-    await test('GET /api/plugins/:id/metadata returns 404 for non-existent plugin', async () => {
-      const res = await request('GET', '/api/plugins/non-existent-plugin/metadata');
-      assertEqual(res.status, 404);
+    await test('GET /api/plugins/:id/metadata with invalid ID returns 400', async () => {
+      const res = await request('GET', '/api/plugins/../../../etc/passwd/metadata');
+      assert(res.status === 400 || res.status === 404);
     });
 
-    await test('GET /api/plugins/:id/actions returns list', async () => {
-      const res = await request('GET', '/api/plugins/non-existent-plugin/actions');
-      // Should return 404 or empty list
-      assert(res.status === 404 || Array.isArray(res.data), 
-        'Should return 404 or action list');
+    await test('GET /api/plugins/:id/metadata for non-existent returns 404', async () => {
+      const res = await request('GET', '/api/plugins/nonexistent-plugin-xyz/metadata');
+      assertStatus(res, 404);
+    });
+
+    await test('GET /api/plugins/:id/actions returns actions list', async () => {
+      const res = await request('GET', '/api/plugins/nonexistent/actions');
+      assert(
+        res.status === 404 || Array.isArray(res.data) || res.data.actions,
+        'Should return 404 or empty actions list'
+      );
     });
   });
 }
 
 async function testPluginInstallation() {
   let pluginDir;
-  
-  await describe('Plugin Installation', async () => {
-    await test('Create test plugin files', async () => {
+
+  await describe('3. Plugin Installation', async () => {
+    await test('Create test plugin structure', async () => {
       pluginDir = createTestPlugin();
-      assert(fs.existsSync(path.join(pluginDir, 'manifest.json')), 
-        'Manifest should exist');
+      assert(fs.existsSync(path.join(pluginDir, 'manifest.json')));
+      assert(fs.existsSync(path.join(pluginDir, 'actions', 'hello.js')));
     });
 
     await test('POST /api/plugins/install/folder installs plugin', async () => {
@@ -303,284 +442,580 @@ async function testPluginInstallation() {
         sourceDir: pluginDir
       });
       
-      assertEqual(res.status, 200, 
-        `Install failed with status ${res.status}. Response: ${JSON.stringify(res.data)}`);
-      assert(res.data.ok === true || res.data.success === true || res.data.installed, 
-        'Install response should indicate success');
+      assertStatus(res, 200, 
+        `Install failed: ${JSON.stringify(res.data)}`);
+      assertOk(res.data);
     });
 
-    // FIX: Add delay for loader to reload plugins
-    await test('Wait for plugin registration', async () => {
-      await new Promise(r => setTimeout(r, CONFIG.installDelay));
+    await test('Wait for plugin loader to reload', async () => {
+      await delay(CONFIG.installDelay);
     });
 
     await test('Installed plugin appears in list', async () => {
       const res = await request('GET', '/api/plugins');
-      assertEqual(res.status, 200);
+      assertStatus(res, 200);
       
-      // Handle different response formats
       let plugins = [];
-      if (Array.isArray(res.data)) {
-        plugins = res.data;
-      } else if (res.data.plugins) {
-        plugins = res.data.plugins;
-      } else if (typeof res.data === 'object') {
-        plugins = Object.values(res.data);
-      }
+      if (Array.isArray(res.data)) plugins = res.data;
+      else if (res.data.plugins) plugins = res.data.plugins;
+      else if (typeof res.data === 'object') plugins = Object.values(res.data);
       
-      const found = plugins.some(p => p && p.id === CONFIG.testPluginId);
+      const found = plugins.some(p => p?.id === CONFIG.testPluginId);
       assert(found, 
-        `Plugin ${CONFIG.testPluginId} should be in list. Found: ${
-          plugins.map(p => p?.id || p).join(', ')
-        }`);
+        `Plugin ${CONFIG.testPluginId} not found in list`);
     });
 
-    await test('GET plugin metadata works', async () => {
-      const res = await request('GET', `/api/plugins/${CONFIG.testPluginId}/metadata`);
-      assertEqual(res.status, 200, 
-        `Metadata failed with ${res.status}. Response: ${JSON.stringify(res.data)}`);
-      assert(res.data.id || res.data.ok, 'Should return plugin metadata');
+    await test('Cannot install duplicate plugin', async () => {
+      const res = await request('POST', '/api/plugins/install/folder', {
+        pluginId: CONFIG.testPluginId,
+        sourceDir: pluginDir
+      });
+      
+      assertStatus(res, 409);
     });
 
-    await test('GET plugin actions returns registered actions', async () => {
-      const res = await request('GET', `/api/plugins/${CONFIG.testPluginId}/actions`);
-      assertEqual(res.status, 200);
-      assert(Array.isArray(res.data) || res.data.actions || res.data.ok, 
-        'Should return actions list');
-      const actions = Array.isArray(res.data) ? res.data : (res.data.actions || []);
-      assert(actions.length > 0, 'Should have at least one action');
+    await test('Install with invalid plugin ID returns 400', async () => {
+      const res = await request('POST', '/api/plugins/install/folder', {
+        pluginId: '../../../etc/passwd',
+        sourceDir: pluginDir
+      });
+      
+      assertStatus(res, 400);
+    });
+
+    await test('Install without source directory returns 400', async () => {
+      const res = await request('POST', '/api/plugins/install/folder', {
+        pluginId: 'test-plugin-2'
+      });
+      
+      assertStatus(res, 400);
+    });
+  });
+}
+
+async function testPluginMetadata() {
+  await describe('4. Plugin Metadata', async () => {
+    await test('GET plugin metadata returns full details', async () => {
+      const res = await request('GET', 
+        `/api/plugins/${CONFIG.testPluginId}/metadata`);
+      
+      assertStatus(res, 200);
+      const meta = res.data.metadata || res.data;
+      assert(meta.id === CONFIG.testPluginId);
+      assert(meta.name);
+      assert(meta.version);
+    });
+
+    await test('Metadata includes manifest', async () => {
+      const res = await request('GET', 
+        `/api/plugins/${CONFIG.testPluginId}/metadata`);
+      
+      const meta = res.data.metadata || res.data;
+      assert(meta.manifest);
+      assert(meta.manifest.actions);
+    });
+
+    await test('Metadata shows enabled status', async () => {
+      const res = await request('GET', 
+        `/api/plugins/${CONFIG.testPluginId}/metadata`);
+      
+      const meta = res.data.metadata || res.data;
+      assert(typeof meta.enabled === 'boolean');
+    });
+  });
+}
+
+async function testPluginActions() {
+  await describe('5. Plugin Actions', async () => {
+    await test('GET plugin actions lists all actions', async () => {
+      const res = await request('GET', 
+        `/api/plugins/${CONFIG.testPluginId}/actions`);
+      
+      assertStatus(res, 200);
+      const actions = res.data.actions || res.data;
+      assert(Array.isArray(actions));
+      assert(actions.length >= 3);
+    });
+
+    await test('Actions include metadata', async () => {
+      const res = await request('GET', 
+        `/api/plugins/${CONFIG.testPluginId}/actions`);
+      
+      const actions = res.data.actions || res.data;
+      const helloAction = actions.find(a => a.name === 'hello');
+      assert(helloAction);
+      assert(helloAction.file);
+      assert(helloAction.description);
     });
   });
 }
 
 async function testPluginExecution() {
-  await describe('Plugin Execution', async () => {
-    await test('Execute hello action', async () => {
-      const res = await request(
-        'POST',
+  await describe('6. Plugin Execution', async () => {
+    await test('Execute hello action succeeds', async () => {
+      const res = await request('POST',
         `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
-        {}
-      );
+        {});
       
-      assertEqual(res.status, 200, 
-        `Execute failed with ${res.status}. Response: ${JSON.stringify(res.data)}`);
-      assert(res.data.success === true || res.data.ok === true, 
-        'Action should succeed');
+      assertStatus(res, 200);
+      const result = res.data.result || res.data;
+      assert(result.success);
+      assert(result.message);
     });
 
     await test('Execute echo action with data', async () => {
-      const res = await request(
-        'POST',
+      const testData = { test: 'data', number: 42 };
+      const res = await request('POST',
         `/api/plugins/${CONFIG.testPluginId}/actions/echo`,
-        { test: 'data' }
-      );
+        testData);
       
-      assertEqual(res.status, 200);
-      assert(res.data.success === true || res.data.ok === true, 'Action should succeed');
+      assertStatus(res, 200);
+      const result = res.data.result || res.data;
+      assert(result.success);
+      assert(result.echo);
     });
 
     await test('Execute math action - addition', async () => {
-      const res = await request(
-        'POST',
+      const res = await request('POST',
         `/api/plugins/${CONFIG.testPluginId}/actions/math`,
-        { a: 5, b: 3, operation: 'add' }
-      );
+        { a: 10, b: 5, operation: 'add' });
       
-      assertEqual(res.status, 200);
-      assert(res.data.result === 8, 'Result should be 8');
+      assertStatus(res, 200);
+      const result = res.data.result || res.data;
+      assertEqual(result.result, 15);
+    });
+
+    await test('Execute math action - subtraction', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/math`,
+        { a: 10, b: 5, operation: 'subtract' });
+      
+      assertStatus(res, 200);
+      const result = res.data.result || res.data;
+      assertEqual(result.result, 5);
     });
 
     await test('Execute math action - multiplication', async () => {
-      const res = await request(
-        'POST',
+      const res = await request('POST',
         `/api/plugins/${CONFIG.testPluginId}/actions/math`,
-        { a: 4, b: 3, operation: 'multiply' }
-      );
+        { a: 6, b: 7, operation: 'multiply' });
       
-      assertEqual(res.status, 200);
-      assert(res.data.result === 12, 'Result should be 12');
+      assertStatus(res, 200);
+      const result = res.data.result || res.data;
+      assertEqual(result.result, 42);
+    });
+
+    await test('Execute math action - division', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/math`,
+        { a: 20, b: 4, operation: 'divide' });
+      
+      assertStatus(res, 200);
+      const result = res.data.result || res.data;
+      assertEqual(result.result, 5);
+    });
+
+    await test('Execute async action', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/async_action`,
+        { delay: 200 });
+      
+      assertStatus(res, 200);
+      const result = res.data.result || res.data;
+      assert(result.success);
+    });
+
+    await test('Execute error action returns 500', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/error_action`,
+        {});
+      
+      assertStatus(res, 500);
     });
 
     await test('Execute non-existent action returns 500', async () => {
-      const res = await request(
-        'POST',
+      const res = await request('POST',
         `/api/plugins/${CONFIG.testPluginId}/actions/nonexistent`,
-        {}
-      );
+        {});
       
-      // Should return 404 or 500
-      assert(res.status === 404 || res.status === 500, 
-        `Should return 404 or 500, got ${res.status}`);
-    });
-
-    await test('Execute action on disabled plugin returns 403', async () => {
-      // First disable the plugin
-      await request('POST', `/api/plugins/${CONFIG.testPluginId}/config`, {
-        enabled: false
-      });
-
-      const res = await request(
-        'POST',
-        `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
-        {}
-      );
-      
-      assertEqual(res.status, 403);
-
-      // Re-enable for other tests
-      await request('POST', `/api/plugins/${CONFIG.testPluginId}/config`, {
-        enabled: true
-      });
+      assert(res.status === 404 || res.status === 500);
     });
   });
 }
 
 async function testPluginConfiguration() {
-  await describe('Plugin Configuration', async () => {
-    await test('GET plugin config', async () => {
-      const res = await request('GET', `/api/plugins/${CONFIG.testPluginId}/config`);
-      assertEqual(res.status, 200, 
-        `Config GET failed with ${res.status}`);
-      assert(res.data.ok === true || res.data.config || res.data.pluginId, 
-        'Should return config');
+  await describe('7. Plugin Configuration', async () => {
+    await test('GET plugin config returns settings', async () => {
+      const res = await request('GET',
+        `/api/plugins/${CONFIG.testPluginId}/config`);
+      
+      assertStatus(res, 200);
+      assert(res.data.ok || res.data.config || res.data.settings);
     });
 
     await test('POST update plugin config', async () => {
-      const res = await request('POST', `/api/plugins/${CONFIG.testPluginId}/config`, {
-        testSetting: 'value',
-        enabled: true
-      });
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/config`,
+        {
+          enabled: true,
+          apiKey: 'test-key-123',
+          timeout: 5000
+        });
       
-      assertEqual(res.status, 200);
-      assert(res.data.ok === true || res.data.config || res.data.upserted, 
-        'Should return success');
+      assertStatus(res, 200);
+      assertOk(res.data);
     });
 
-    await test('Config persists after update', async () => {
-      const res = await request('GET', `/api/plugins/${CONFIG.testPluginId}/config`);
-      assertEqual(res.status, 200);
-      // Check settings exist
-      assert(res.data.settings || res.data.config || res.data.ok, 
-        'Settings should be returned');
+    await test('Updated config persists', async () => {
+      const res = await request('GET',
+        `/api/plugins/${CONFIG.testPluginId}/config`);
+      
+      assertStatus(res, 200);
+      const settings = res.data.settings || res.data.config || {};
+      assert(res.data.ok || typeof settings === 'object');
+    });
+
+    await test('Invalid config data returns 400', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/config`,
+        {
+          enabled: 'not-a-boolean',
+          timeout: 'not-a-number'
+        });
+      
+      assert(res.status === 200 || res.status === 400);
     });
   });
 }
 
-async function testPluginTrash() {
-  await describe('Plugin Trash & Restore', async () => {
-    await test('DELETE plugin moves to trash', async () => {
-      const res = await request('DELETE', `/api/plugins/${CONFIG.testPluginId}`);
-      assertEqual(res.status, 200, 
-        `Delete failed with ${res.status}: ${JSON.stringify(res.data)}`);
-      assert(res.data.ok === true || res.data.success === true || res.data.removed, 
-        'Delete should succeed');
+async function testPluginDisable() {
+  await describe('8. Plugin Disable/Enable', async () => {
+    await test('Disable plugin via config', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/config`,
+        { enabled: false });
+      
+      assertStatus(res, 200);
     });
 
-    // Add delay for trash operation
+    await test('Wait for config update', async () => {
+      await delay(100);
+    });
+
+    await test('Disabled plugin action returns 403', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
+        {});
+      
+      assertStatus(res, 403);
+    });
+
+    await test('Re-enable plugin', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/config`,
+        { enabled: true });
+      
+      assertStatus(res, 200);
+    });
+
+    await test('Wait for config update', async () => {
+      await delay(100);
+    });
+
+    await test('Enabled plugin action works again', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
+        {});
+      
+      assertStatus(res, 200);
+    });
+  });
+}
+
+async function testMenuContributions() {
+  await describe('9. Menu Contributions', async () => {
+    await test('GET menu returns plugin menu items', async () => {
+      const res = await request('GET', '/api/plugins/menu');
+      
+      assertStatus(res, 200);
+      assert(res.data.ok || res.data.menu);
+    });
+
+    await test('Test plugin appears in menu', async () => {
+      const res = await request('GET', '/api/plugins/menu');
+      
+      const menu = res.data.menu || [];
+      const found = menu.some(m => m.id === CONFIG.testPluginId);
+      assert(found, 'Plugin menu item should be present');
+    });
+  });
+}
+
+async function testTrashOperations() {
+  await describe('10. Trash Operations', async () => {
+    await test('DELETE plugin moves to trash', async () => {
+      const res = await request('DELETE',
+        `/api/plugins/${CONFIG.testPluginId}`,
+        { actor: 'test-suite' });
+      
+      assertStatus(res, 200);
+      assertOk(res.data);
+      assert(res.data.trashed);
+    });
+
     await test('Wait for trash operation', async () => {
-      await new Promise(r => setTimeout(r, 100));
+      await delay(CONFIG.installDelay);
     });
 
     await test('Plugin appears in trash list', async () => {
       const res = await request('GET', '/api/plugins/trash/list');
-      assertEqual(res.status, 200);
-      assert(res.data.ok === true || Array.isArray(res.data.trash), 
-        'Should return trash list');
       
-      const trash = Array.isArray(res.data.trash) ? res.data.trash : (res.data.trash || []);
-      const found = trash.some(p => p && p.id === CONFIG.testPluginId);
-      assert(found, 
-        `Plugin should be in trash. Found: ${trash.map(p => p?.id).join(', ')}`);
+      assertStatus(res, 200);
+      const trash = res.data.trash || [];
+      const found = trash.some(p => p.id === CONFIG.testPluginId);
+      assert(found, 'Plugin should be in trash');
     });
 
-    await test('Plugin no longer in active list', async () => {
+    await test('Trashed plugin not in active list', async () => {
       const res = await request('GET', '/api/plugins');
-      assertEqual(res.status, 200);
       
+      assertStatus(res, 200);
       let plugins = [];
-      if (Array.isArray(res.data)) {
-        plugins = res.data;
-      } else if (res.data.plugins) {
-        plugins = res.data.plugins;
-      } else if (typeof res.data === 'object') {
-        plugins = Object.values(res.data);
-      }
+      if (Array.isArray(res.data)) plugins = res.data;
+      else if (res.data.plugins) plugins = res.data.plugins;
       
-      const found = plugins.some(p => p && p.id === CONFIG.testPluginId);
+      const found = plugins.some(p => p?.id === CONFIG.testPluginId);
       assert(!found, 'Plugin should not be in active list');
     });
 
-    await test('Restore plugin from trash', async () => {
-      const res = await request('POST', `/api/plugins/${CONFIG.testPluginId}/restore`);
-      assertEqual(res.status, 200, 
-        `Restore failed with ${res.status}: ${JSON.stringify(res.data)}`);
-      assert(res.data.ok === true || res.data.success === true || res.data.restored, 
-        'Restore should succeed');
-    });
-
-    await test('Restored plugin works', async () => {
-      const res = await request(
-        'POST',
+    await test('Cannot execute trashed plugin action', async () => {
+      const res = await request('POST',
         `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
-        {}
-      );
+        {});
       
-      assertEqual(res.status, 200);
-      assert(res.data.success === true || res.data.ok === true, 'Action should work');
+      assert(res.status !== 200);
+    });
+
+    await test('Restore plugin from trash', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/restore`,
+        { actor: 'test-suite' });
+      
+      assertStatus(res, 200);
+      assertOk(res.data);
+    });
+
+    await test('Wait for restore operation', async () => {
+      await delay(CONFIG.installDelay);
+    });
+
+    await test('Restored plugin appears in active list', async () => {
+      const res = await request('GET', '/api/plugins');
+      
+      assertStatus(res, 200);
+      let plugins = [];
+      if (Array.isArray(res.data)) plugins = res.data;
+      else if (res.data.plugins) plugins = res.data.plugins;
+      
+      const found = plugins.some(p => p?.id === CONFIG.testPluginId);
+      assert(found, 'Plugin should be in active list');
+    });
+
+    await test('Restored plugin action works', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
+        {});
+      
+      assertStatus(res, 200);
     });
   });
 }
 
-async function testPluginValidation() {
-  await describe('Input Validation', async () => {
-    await test('Invalid plugin ID returns 400', async () => {
-      const res = await request('GET', '/api/plugins/../etc/passwd/metadata');
-      assert(res.status === 400 || res.status === 404, 
-        `Should return 400 or 404, got ${res.status}`);
+async function testPermanentDeletion() {
+  await describe('11. Permanent Deletion', async () => {
+    await test('Move plugin to trash again', async () => {
+      const res = await request('DELETE',
+        `/api/plugins/${CONFIG.testPluginId}`);
+      
+      assertStatus(res, 200);
     });
 
-    await test('Plugin ID with special chars returns 400', async () => {
-      const res = await request('GET', '/api/plugins/test<script>/metadata');
-      assertEqual(res.status, 400);
-    });
-
-    await test('Empty plugin ID returns 400', async () => {
-      const res = await request('POST', '/api/plugins/install/folder', {
-        pluginId: '',
-        sourceDir: '/tmp'
-      });
-      assertEqual(res.status, 400);
-    });
-  });
-}
-
-async function testPluginSecurity() {
-  await describe('Security Tests', async () => {
-    await test('Cannot access files outside plugin directory', async () => {
-      const res = await request('GET', '/plugins/ui/../../../etc/passwd');
-      assert(res.status !== 200, 'Should not allow path traversal');
-    });
-
-    skip('Plugin actions timeout properly', 'Requires special test plugin with slow action');
-  });
-}
-
-async function testCleanup() {
-  await describe('Cleanup', async () => {
-    await test('Remove test plugin', async () => {
-      const res = await request('DELETE', `/api/plugins/${CONFIG.testPluginId}`);
-      assert(res.status === 200 || res.status === 404, 'Cleanup should succeed');
+    await test('Wait for trash operation', async () => {
+      await delay(100);
     });
 
     await test('Permanently delete from trash', async () => {
-      const res = await request('DELETE', `/api/plugins/trash/${CONFIG.testPluginId}`);
-      assert(res.status === 200 || res.status === 404, 'Permanent delete should succeed');
+      const res = await request('DELETE',
+        `/api/plugins/trash/${CONFIG.testPluginId}`,
+        { actor: 'test-suite' });
+      
+      assertStatus(res, 200);
+      assertOk(res.data);
     });
 
-    await test('Remove test plugin files', async () => {
-      cleanupTestPlugin();
-      const pluginDir = path.join(process.cwd(), 'test-plugin-temp');
-      assert(!fs.existsSync(pluginDir), 'Test plugin directory should be removed');
+    await test('Plugin no longer in trash', async () => {
+      const res = await request('GET', '/api/plugins/trash/list');
+      
+      assertStatus(res, 200);
+      const trash = res.data.trash || [];
+      const found = trash.some(p => p.id === CONFIG.testPluginId);
+      assert(!found, 'Plugin should not be in trash');
+    });
+
+    await test('Cannot restore permanently deleted plugin', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/restore`);
+      
+      assertStatus(res, 404);
+    });
+  });
+}
+
+async function testSecurityValidation() {
+  await describe('12. Security & Validation', async () => {
+    await test('Path traversal in plugin ID rejected', async () => {
+      const res = await request('GET',
+        '/api/plugins/../../../etc/passwd/metadata');
+      
+      assert(res.status === 400 || res.status === 404);
+    });
+
+    await test('Special characters in plugin ID rejected', async () => {
+      const res = await request('POST',
+        '/api/plugins/install/folder',
+        {
+          pluginId: 'plugin<script>alert(1)</script>',
+          sourceDir: '/tmp'
+        });
+      
+      assertStatus(res, 400);
+    });
+
+    await test('Empty plugin ID rejected', async () => {
+      const res = await request('POST',
+        '/api/plugins/install/folder',
+        {
+          pluginId: '',
+          sourceDir: '/tmp'
+        });
+      
+      assertStatus(res, 400);
+    });
+
+    await test('Invalid action name rejected', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/../../../etc/passwd`,
+        {});
+      
+      assert(res.status === 400 || res.status === 404 || res.status === 500);
+    });
+  });
+}
+
+async function testErrorHandling() {
+  await describe('13. Error Handling', async () => {
+    await test('Non-existent plugin returns 404', async () => {
+      const res = await request('GET',
+        '/api/plugins/absolutely-does-not-exist-xyz/metadata');
+      
+      assertStatus(res, 404);
+    });
+
+    await test('Malformed JSON in request handled gracefully', async () => {
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
+        null,
+        { 'Content-Type': 'application/json' });
+      
+      assert(res.status >= 200 && res.status < 600, 'Should handle gracefully');
+    });
+
+    await test('Missing required fields handled', async () => {
+      const res = await request('POST',
+        '/api/plugins/install/folder',
+        { pluginId: CONFIG.testPluginId });
+      
+      assertStatus(res, 400);
+    });
+
+    await test('Server timeout handling', async () => {
+      // Request to non-existent endpoint shouldn't crash
+      const res = await request('GET', '/api/plugins/test/nonexistent-endpoint');
+      assert(res.status > 0, 'Should return a status code');
+    });
+  });
+}
+
+async function testConcurrency() {
+  await describe('14. Concurrency & Load', async () => {
+    await test('Multiple concurrent action executions', async () => {
+      const promises = [];
+      for (let i = 0; i < 5; i++) {
+        promises.push(
+          request('POST',
+            `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
+            {})
+        );
+      }
+      
+      const results = await Promise.all(promises);
+      assert(results.every(r => r.status === 200), 'All requests should succeed');
+    });
+
+    await test('Concurrent config updates handled', async () => {
+      const promises = [];
+      for (let i = 0; i < 3; i++) {
+        promises.push(
+          request('POST',
+            `/api/plugins/${CONFIG.testPluginId}/config`,
+            { enabled: i % 2 === 0 })
+        );
+      }
+      
+      const results = await Promise.all(promises);
+      assert(results.every(r => r.status === 200), 'All config updates should succeed');
+    });
+  });
+}
+
+async function testPerformance() {
+  await describe('15. Performance', async () => {
+    await test('Plugin action executes within timeout', async () => {
+      const start = Date.now();
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/hello`,
+        {});
+      const duration = Date.now() - start;
+      
+      assertStatus(res, 200);
+      assert(duration < CONFIG.timeout, `Request took ${duration}ms`);
+    });
+
+    await test('Async action respects delay parameter', async () => {
+      const delayMs = 100;
+      const start = Date.now();
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/async_action`,
+        { delay: delayMs });
+      const duration = Date.now() - start;
+      
+      assertStatus(res, 200);
+      assert(duration >= delayMs, `Expected at least ${delayMs}ms, got ${duration}ms`);
+    });
+
+    await test('Large payload handling', async () => {
+      const largeData = {
+        data: 'x'.repeat(10000),
+        nested: {
+          array: Array(100).fill({ value: 'test' })
+        }
+      };
+      
+      const res = await request('POST',
+        `/api/plugins/${CONFIG.testPluginId}/actions/echo`,
+        largeData);
+      
+      assertStatus(res, 200);
     });
   });
 }
@@ -588,109 +1023,58 @@ async function testCleanup() {
 // ============================================
 // Main Test Runner
 // ============================================
-async function runTests() {
-  console.log('\n');
-  console.log('╔═══════════════════════════════════════════════════════════╗');
-  console.log('║          Plugin System Test Suite (Fixed)                 ║');
-  console.log('╚═══════════════════════════════════════════════════════════╝');
-  console.log('');
-
-  const startTime = Date.now();
+async function runAllTests() {
+  console.log(`\n${c.bright}${c.magenta}╔════════════════════════════════════════════════════════╗${c.reset}`);
+  console.log(`${c.bright}${c.magenta}║   Plugin System Integration Test Suite                  ║${c.reset}`);
+  console.log(`${c.bright}${c.magenta}╚════════════════════════════════════════════════════════╝${c.reset}`);
+  console.log(`\n  Server: ${c.cyan}${CONFIG.baseUrl}${c.reset}`);
+  console.log(`  Plugin: ${c.cyan}${CONFIG.testPluginId}${c.reset}`);
+  console.log(`  Verbose: ${CONFIG.verbose ? c.green + 'ON' : c.dim + 'OFF'}${c.reset}\n`);
 
   try {
+    // Run test suites in order
     await testServerConnection();
-    await testPluginAPI();
+    await testPluginListingAPI();
     await testPluginInstallation();
+    await testPluginMetadata();
+    await testPluginActions();
     await testPluginExecution();
     await testPluginConfiguration();
-    await testPluginTrash();
-    await testPluginValidation();
-    await testPluginSecurity();
-    await testCleanup();
-  } catch (error) {
-    console.error(`\n${colors.red}Fatal error during test execution:${colors.reset}`);
-    console.error(error);
+    await testPluginDisable();
+    await testMenuContributions();
+    await testTrashOperations();
+    await testPermanentDeletion();
+    await testSecurityValidation();
+    await testErrorHandling();
+    await testConcurrency();
+    await testPerformance();
+
+  } finally {
+    // Cleanup
+    cleanupTestPlugin();
   }
 
-  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+  // Print summary
+  const duration = Date.now() - results.startTime;
+  const total = results.passed + results.failed + results.skipped;
+  const percentage = total > 0 
+    ? Math.round((results.passed / (total - results.skipped)) * 100) 
+    : 0;
 
-  // Print results
-  console.log('\n');
-  console.log('╔═══════════════════════════════════════════════════════════╗');
-  console.log('║                    Test Results                          ║');
-  console.log('╚═══════════════════════════════════════════════════════════╝');
-  console.log('');
-  console.log(`  ${colors.green}✓ Passed:${colors.reset}  ${results.passed}`);
-  console.log(`  ${colors.red}✗ Failed:${colors.reset}  ${results.failed}`);
-  console.log(`  ${colors.yellow}⊘ Skipped:${colors.reset} ${results.skipped}`);
-  console.log(`  ━━━━━━━━━━━━━━━━━━━━━━━`);
-  console.log(`  Total:    ${results.passed + results.failed + results.skipped}`);
-  console.log(`  Duration: ${duration}s`);
-  console.log('');
+  console.log(`\n${c.bright}${c.blue}━━━ Test Summary ━━━${c.reset}`);
+  console.log(`  ${c.green}✓ Passed:  ${results.passed}${c.reset}`);
+  console.log(`  ${c.red}✗ Failed:  ${results.failed}${c.reset}`);
+  console.log(`  ${c.yellow}⊘ Skipped: ${results.skipped}${c.reset}`);
+  console.log(`  ${c.cyan}Total:   ${total}${c.reset}`);
+  console.log(`  ${c.magenta}Duration: ${duration}ms${c.reset}`);
+  console.log(`  ${c.bright}${percentage}% pass rate${c.reset}\n`);
 
-  if (results.failed > 0) {
-    console.log(`${colors.red}❌ ${results.failed} tests failed!${colors.reset}\n`);
-    process.exit(1);
-  } else {
-    console.log(`${colors.green}✅ All tests passed!${colors.reset}\n`);
-    process.exit(0);
-  }
+  // Exit with appropriate code
+  process.exit(results.failed > 0 ? 1 : 0);
 }
 
-// ============================================
-// CLI
-// ============================================
-if (require.main === module) {
-  const args = process.argv.slice(2);
-  
-  if (args.includes('--help') || args.includes('-h')) {
-    console.log(`
-Plugin System Test Suite (Fixed Version)
-
-Usage: node test.js [options]
-
-Options:
-  --help, -h          Show this help message
-  --url <url>         Set base URL (default: http://localhost:3000)
-  --timeout <ms>      Set request timeout (default: 5000)
-  --plugin-id <id>    Set test plugin ID (default: test-plugin)
-  --delay <ms>        Set install delay (default: 300ms)
-
-Examples:
-  node test.js
-  node test.js --url http://localhost:8080
-  node test.js --delay 500
-    `);
-    process.exit(0);
-  }
-
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '--url':
-        CONFIG.baseUrl = args[++i];
-        break;
-      case '--timeout':
-        CONFIG.timeout = parseInt(args[++i], 10);
-        break;
-      case '--plugin-id':
-        CONFIG.testPluginId = args[++i];
-        break;
-      case '--delay':
-        CONFIG.installDelay = parseInt(args[++i], 10);
-        break;
-    }
-  }
-
-  console.log(`Testing against: ${colors.cyan}${CONFIG.baseUrl}${colors.reset}`);
-  console.log(`Timeout: ${CONFIG.timeout}ms`);
-  console.log(`Install delay: ${CONFIG.installDelay}ms`);
-  console.log(`Test Plugin ID: ${CONFIG.testPluginId}`);
-
-  runTests().catch(error => {
-    console.error(`\n${colors.red}Unhandled error:${colors.reset}`);
-    console.error(error);
-    process.exit(1);
-  });
-}
-
-module.exports = { runTests, test, describe, assert, assertEqual };
+// Run tests
+runAllTests().catch(err => {
+  console.error(`${c.red}${c.bright}Fatal error:${c.reset}`, err);
+  process.exit(1);
+});

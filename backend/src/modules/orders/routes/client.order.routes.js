@@ -6,23 +6,23 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/order.controller");
-
+const authGuard = require("../../auth/middlewares/auth.guard");
 // Create new order
-router.post("/", controller.createOrder);
+router.post("/",authGuard, controller.createOrder);
 
 // List client's orders
-router.get("/", controller.listClientOrders);
+router.get("/",authGuard, controller.listClientOrders);
 
 // Get client's total spend (STATIC FIRST)
-router.get("/spend", controller.getClientSpend);
+router.get("/spend",authGuard, controller.getClientSpend);
 
 // Get specific order
-router.get("/:id", controller.getOrder);
+router.get("/:id",authGuard, controller.getOrder);
 
 // Cancel pending order
-router.post("/:id/cancel", controller.cancelOrder);
+router.post("/:id/cancel",authGuard, controller.cancelOrder);
 
 // Renew active order
-router.post("/:id/renew", controller.renewOrder);
+router.post("/:id/renew",authGuard, controller.renewOrder);
 
 module.exports = router;

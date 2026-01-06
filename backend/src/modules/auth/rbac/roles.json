@@ -39,7 +39,13 @@
     "permissions": [
       "client.area.access",
       "billing.invoices.view",
-      "billing.invoices.pay"
+      "billing.invoices.pay",
+       "orders.create",
+    "orders.read",
+    "orders.cancel",
+    "orders.renew"
+
+
     ]
   },
   {

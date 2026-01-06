@@ -11,9 +11,6 @@ const prisma = new PrismaClient();
 
 /**
  * GET /api/admin/domains/stats
- * NOTE:
- * - Enum values are lowercase (schema-defined)
- * - "expiringSoon" is derived from expiryDate (NOT a status)
  */
 router.get("/stats", async (req, res, next) => {
   try {
@@ -23,15 +20,8 @@ router.get("/stats", async (req, res, next) => {
 
     const [total, active, expired, expiringSoon] = await Promise.all([
       prisma.domain.count(),
-
-      prisma.domain.count({
-        where: { status: "active" },
-      }),
-
-      prisma.domain.count({
-        where: { status: "expired" },
-      }),
-
+      prisma.domain.count({ where: { status: "active" } }),
+      prisma.domain.count({ where: { status: "expired" } }),
       prisma.domain.count({
         where: {
           status: "active",
@@ -45,15 +35,9 @@ router.get("/stats", async (req, res, next) => {
 
     res.json({
       success: true,
-      data: {
-        total,
-        active,
-        expiringSoon,
-        expired,
-      },
+      data: { total, active, expiringSoon, expired },
     });
   } catch (err) {
-    console.error("DOMAIN STATS ERROR:", err);
     next(err);
   }
 });
@@ -103,8 +87,10 @@ router.get("/", async (req, res, next) => {
  */
 router.get("/:id", async (req, res, next) => {
   try {
+    const domainId = Number(req.params.id);
+
     const domain = await prisma.domain.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id: domainId },
       include: {
         dnsRecords: true,
         logs: {
@@ -132,10 +118,11 @@ router.get("/:id", async (req, res, next) => {
  */
 router.get("/:id/logs", async (req, res, next) => {
   try {
+    const domainId = Number(req.params.id);
     const { limit = 50 } = req.query;
 
     const logs = await prisma.domainLog.findMany({
-      where: { domainId: Number(req.params.id) },
+      where: { domainId },
       orderBy: { createdAt: "desc" },
       take: Number(limit),
     });
@@ -151,10 +138,11 @@ router.get("/:id/logs", async (req, res, next) => {
  */
 router.post("/:id/renew", async (req, res, next) => {
   try {
+    const domainId = Number(req.params.id);
     const { years = 1 } = req.body;
 
     const domain = await prisma.domain.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id: domainId },
     });
 
     if (!domain || !domain.expiryDate) {
@@ -168,7 +156,7 @@ router.post("/:id/renew", async (req, res, next) => {
     newExpiryDate.setFullYear(newExpiryDate.getFullYear() + Number(years));
 
     const updated = await prisma.domain.update({
-      where: { id: Number(req.params.id) },
+      where: { id: domainId },
       data: {
         expiryDate: newExpiryDate,
         status: "active",
@@ -177,7 +165,7 @@ router.post("/:id/renew", async (req, res, next) => {
 
     await prisma.domainLog.create({
       data: {
-        domainId: Number(req.params.id),
+        domainId,
         action: "admin_renew",
         meta: { years },
       },
@@ -194,16 +182,17 @@ router.post("/:id/renew", async (req, res, next) => {
  */
 router.patch("/:id/override", async (req, res, next) => {
   try {
+    const domainId = Number(req.params.id);
     const { changes } = req.body;
 
     const updated = await prisma.domain.update({
-      where: { id: Number(req.params.id) },
+      where: { id: domainId },
       data: changes,
     });
 
     await prisma.domainLog.create({
       data: {
-        domainId: Number(req.params.id),
+        domainId,
         action: "admin_override",
         meta: changes,
       },
@@ -220,8 +209,10 @@ router.patch("/:id/override", async (req, res, next) => {
  */
 router.post("/:id/sync", async (req, res, next) => {
   try {
+    const domainId = Number(req.params.id);
+
     const domain = await prisma.domain.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id: domainId },
     });
 
     if (!domain) {
@@ -232,10 +223,10 @@ router.post("/:id/sync", async (req, res, next) => {
     }
 
     const updated = await prisma.domain.update({
-      where: { id: Number(req.params.id) },
+      where: { id: domainId },
       data: {
         metadata: {
-          ...domain.metadata,
+          ...(domain.metadata || {}),
           lastSyncedAt: new Date().toISOString(),
         },
       },
@@ -243,7 +234,7 @@ router.post("/:id/sync", async (req, res, next) => {
 
     await prisma.domainLog.create({
       data: {
-        domainId: Number(req.params.id),
+        domainId,
         action: "sync",
         meta: { registrar: domain.registrar },
       },
@@ -257,18 +248,23 @@ router.post("/:id/sync", async (req, res, next) => {
 
 /**
  * DELETE /api/admin/domains/:id
+ * Soft delete via status enum (schema-correct)
  */
 router.delete("/:id", async (req, res, next) => {
   try {
+    const domainId = Number(req.params.id);
+
     const updated = await prisma.domain.update({
-      where: { id: Number(req.params.id) },
-      data: { cancelled: true },
+      where: { id: domainId },
+      data: {
+        status: "cancelled",
+      },
     });
 
     await prisma.domainLog.create({
       data: {
-        domainId: Number(req.params.id),
-        action: "admin_delete",
+        domainId,
+        action: "admin_domain_cancelled",
         meta: { timestamp: new Date().toISOString() },
       },
     });

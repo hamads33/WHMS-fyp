@@ -1,3 +1,5 @@
+// src/modules/auth/routes/session.routes.js
+// UPDATED: All session routes properly implemented
 
 const { Router } = require("express");
 const authGuard = require("../middlewares/auth.guard");
@@ -7,8 +9,13 @@ const SessionController = require("../controllers/session.controller");
 const router = Router();
 
 /**
- * 🔐 CURRENT AUTH SESSION (FRONTEND USE)
- * GET /api/auth/session
+ * 🔐 SESSION MANAGEMENT ROUTES
+ * All routes require authentication
+ */
+
+/**
+ * GET /api/auth/session/current
+ * Get current authenticated session context (portal, roles, permissions)
  */
 router.get(
   "/current",
@@ -18,19 +25,44 @@ router.get(
 );
 
 /**
- * 📱 SESSION MANAGEMENT (DEVICES)
+ * GET /api/auth/session
+ * List all active sessions for current user
  */
-router.get("/", authGuard, SessionController.listSessions);
+router.get(
+  "/",
+  authGuard,
+  SessionController.listSessions
+);
 
 /**
- * ⚠️ ORDER MATTERS — specific routes FIRST
+ * GET /api/auth/session/security/logs
+ * Get login attempt logs (success & failed attempts)
  */
-router.delete("/others/all", authGuard, SessionController.revokeOtherSessions);
-router.delete("/:sessionId", authGuard, SessionController.revokeSession);
+router.get(
+  "/security/logs",
+  authGuard,
+  SessionController.securityLogs
+);
 
 /**
- * 🔍 SECURITY LOGS
+ * ⚠️  ORDER MATTERS — specific routes BEFORE /:sessionId
+ * DELETE /api/auth/session/others/all
+ * Revoke all sessions except current
  */
-router.get("/security/logs", authGuard, SessionController.securityLogs);
+router.delete(
+  "/others/all",
+  authGuard,
+  SessionController.revokeOtherSessions
+);
+
+/**
+ * DELETE /api/auth/session/:sessionId
+ * Revoke a specific session by ID
+ */
+router.delete(
+  "/:sessionId",
+  authGuard,
+  SessionController.revokeSession
+);
 
 module.exports = router;

@@ -92,20 +92,7 @@ class InstallerController {
       try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
       try { fs.unlinkSync(zipPath); } catch (_) {}
 
-      // Register lightweight metadata (non-destructive)
-      try {
-        if (registry && typeof registry.register === "function") {
-          registry.register(manifest.id, {
-            id: manifest.id,
-            name: manifest.name || manifest.id,
-            version: manifest.version || "1.0.0",
-            manifest
-          });
-        }
-      } catch (e) {
-        this.logger && this.logger.warn && this.logger.warn("InstallerController: registry.register failed", e.message || e);
-      }
-
+      
       // IMPORTANT: reload the shared engine (do NOT create a new PluginLoader)
       try {
         const engine = req.app && req.app.locals && req.app.locals.pluginEngine;

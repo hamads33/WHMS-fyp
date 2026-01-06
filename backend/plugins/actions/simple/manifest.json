@@ -1,0 +1,37 @@
+{
+  "id": "demo-test-plugin",
+  "name": "Demo Test Plugin",
+  "version": "1.0.0",
+  "description": "Simple demo plugin for viva demonstration",
+  "author": "FYP Demo",
+
+  "actions": {
+    "hello": {
+      "file": "actions/hello.js",
+      "description": "Simple hello action"
+    },
+    "math.add": {
+      "file": "actions/math.js",
+      "fnName": "add",
+      "description": "Add two numbers"
+    },
+    "async.wait": {
+      "file": "actions/async.js",
+      "fnName": "wait",
+      "description": "Async wait demo"
+    }
+  },
+
+  "hooks": {
+    "system.demo": {
+      "action": "hello"
+    }
+  },
+
+  "ui": {
+    "menu": {
+      "title": "Demo Plugin",
+      "path": "/plugins/demo-test-plugin"
+    }
+  }
+}

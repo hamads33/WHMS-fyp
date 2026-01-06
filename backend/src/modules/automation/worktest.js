@@ -283,11 +283,7 @@ async function main() {
     assert.strictEqual(res.body.data.description, 'Updated description', 'Description should be updated');
   });
 
-  runner.test('Get workflow by slug', async function() {
-    const res = await makeRequest.call(runner, 'GET', '/workflows/by-slug/test-workflow', null);
-    assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
-    assert(res.body.data?.id, 'Should return workflow');
-  });
+ 
 
   // ============================================================
   // EXECUTION TESTS

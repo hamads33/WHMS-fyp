@@ -1,0 +1,70 @@
+{
+  "id": "test-plugin-complete",
+  "name": "Complete Test Plugin",
+  "version": "1.0.0",
+  "description": "Comprehensive test plugin for all features",
+  "author": "Test Suite",
+  "type": "action",
+  "actions": {
+    "hello": {
+      "file": "actions/hello.js",
+      "fnName": "handler",
+      "description": "Simple hello world"
+    },
+    "echo": {
+      "file": "actions/echo.js",
+      "description": "Echo input back"
+    },
+    "math": {
+      "file": "actions/math.js",
+      "description": "Math operations"
+    },
+    "async_action": {
+      "file": "actions/async.js",
+      "description": "Async operation"
+    },
+    "error_action": {
+      "file": "actions/error.js",
+      "description": "Intentionally throws error"
+    }
+  },
+  "hooks": {
+    "test.event": {
+      "action": "actions/testHook.js",
+      "description": "Test hook handler"
+    }
+  },
+  "ui": {
+    "pages": {
+      "settings": "ui/settings.html"
+    },
+    "menu": {
+      "title": "Test Plugin",
+      "icon": "test-icon",
+      "path": "/plugins/ui/test-plugin-complete"
+    },
+    "configSchema": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "apiKey": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "number"
+        }
+      }
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}

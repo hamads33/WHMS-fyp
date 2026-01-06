@@ -663,22 +663,7 @@ let pluginId =
 
       await fs.rename(trashPath, dest);
 
-      // Update registry
-      try {
-        if (registry.restorePlugin) {
-          registry.restorePlugin(pluginId);
-        } else if (registry.registerPlugin) {
-          registry.registerPlugin(pluginId, { 
-            id: pluginId, 
-            folder: dest, 
-            restoredAt: new Date(),
-            enabled: true 
-          });
-        }
-      } catch (e) {
-        logger.warn("Registry restore failed:", e.message);
-      }
-
+  
       await reloadEngine();
 
       logEvent({ 

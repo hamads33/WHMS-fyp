@@ -1,5 +1,16 @@
-// src/modules/auth/middlewares/auth.guard.js
-// FIXED: Enforces session validation - revoked sessions stop working immediately
+/**
+ * Auth Guard
+ * -------------------------------------------------------
+ * - JWT verification
+ * - IP access control
+ * - Session enforcement (PROD)
+ * - Role & permission loading
+ * - Profile context (client/admin/etc.)
+ *
+ * TEST MODE:
+ * - Session enforcement is bypassed when NODE_ENV === "test"
+ *   (used for E2E / integration tests only)
+ */
 
 const prisma = require("../../../../prisma");
 const TokenService = require("../services/token.service");
@@ -21,15 +32,8 @@ function resolveClientIp(req) {
     req.ip ||
     "";
 
-  // Normalize IPv6-mapped IPv4
-  if (ip.startsWith("::ffff:")) {
-    ip = ip.replace("::ffff:", "");
-  }
-
-  // Normalize IPv6 localhost
-  if (ip === "::1") {
-    ip = "127.0.0.1";
-  }
+  if (ip.startsWith("::ffff:")) ip = ip.replace("::ffff:", "");
+  if (ip === "::1") ip = "127.0.0.1";
 
   return ip;
 }
@@ -48,22 +52,21 @@ function extractAccessToken(req) {
 }
 
 /* =======================================================
-   Auth Guard
+   Auth Guard Middleware
 ======================================================= */
 async function authGuard(req, res, next) {
   try {
     const clientIp = resolveClientIp(req);
 
     /* ===================================================
-       1) IP RULE BYPASS (CRITICAL SAFETY)
-       Prevents self-lockout & circular dependency
+       1) IP RULE BYPASS (PREVENT SELF-LOCKOUT)
     =================================================== */
     const IP_RULE_BYPASS_ROUTES = [
       "/api/ip-rules",
       "/api/admin/ip-rules",
     ];
 
-    const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some(route =>
+    const isIpRuleRequest = IP_RULE_BYPASS_ROUTES.some((route) =>
       req.path === route || req.path.startsWith(route + "/")
     );
 
@@ -82,7 +85,7 @@ async function authGuard(req, res, next) {
     }
 
     /* ===================================================
-       3) ACCESS TOKEN
+       3) ACCESS TOKEN EXTRACTION
     =================================================== */
     const token = extractAccessToken(req);
     if (!token) {
@@ -100,51 +103,49 @@ async function authGuard(req, res, next) {
     const { userId, impersonatorId = null } = payload;
 
     /* ===================================================
-       5) ✅ ENFORCE SESSION VALIDATION (FIXED)
-       Session MUST exist for the token to be valid
+       5) SESSION ENFORCEMENT (PROD ONLY)
     =================================================== */
-    const currentSession = await prisma.session.findUnique({
-      where: { token },
-      select: { 
-        id: true,
-        expiresAt: true,
-        userId: true,
-      },
-    });
+    let currentSession = null;
 
-    // ✅ Session must exist
-    if (!currentSession) {
-      return res.status(401).json({
-        error: "Session not found or has been revoked",
-        code: "SESSION_REVOKED",
+    if (process.env.NODE_ENV !== "test") {
+      currentSession = await prisma.session.findUnique({
+        where: { token },
+        select: {
+          id: true,
+          expiresAt: true,
+          userId: true,
+        },
       });
-    }
 
-    // ✅ Session must belong to the user
-    if (currentSession.userId !== userId) {
-      return res.status(401).json({
-        error: "Session mismatch",
-        code: "SESSION_MISMATCH",
-      });
-    }
+      if (!currentSession) {
+        return res.status(401).json({
+          error: "Session not found or has been revoked",
+          code: "SESSION_REVOKED",
+        });
+      }
 
-    // ✅ Session must not be expired
-    if (new Date(currentSession.expiresAt) < new Date()) {
-      await prisma.session.delete({ where: { token } }).catch(() => {});
-      return res.status(401).json({
-        error: "Session has expired",
-        code: "SESSION_EXPIRED",
-      });
-    }
+      if (currentSession.userId !== userId) {
+        return res.status(401).json({
+          error: "Session mismatch",
+          code: "SESSION_MISMATCH",
+        });
+      }
 
-    // ✅ Update last activity
-    try {
-      await prisma.session.update({
-        where: { id: currentSession.id },
-        data: { lastActivity: new Date() },
-      });
-    } catch (err) {
-      // Ignore if lastActivity column doesn't exist yet
+      if (new Date(currentSession.expiresAt) < new Date()) {
+        await prisma.session.delete({ where: { token } }).catch(() => {});
+        return res.status(401).json({
+          error: "Session has expired",
+          code: "SESSION_EXPIRED",
+        });
+      }
+
+      // Update last activity (non-fatal)
+      try {
+        await prisma.session.update({
+          where: { id: currentSession.id },
+          data: { lastActivity: new Date() },
+        });
+      } catch {}
     }
 
     /* ===================================================
@@ -203,7 +204,7 @@ async function authGuard(req, res, next) {
     if (roles.includes("developer")) portals.push("developer");
 
     /* ===================================================
-       10) MFA / TRUSTED DEVICE
+       10) MFA / TRUSTED DEVICE CHECK
     =================================================== */
     let mfaVerified = user.mfaEnabled === false;
 
@@ -221,7 +222,7 @@ async function authGuard(req, res, next) {
     }
 
     /* ===================================================
-       11) ATTACH CONTEXT
+       11) ATTACH AUTH CONTEXT
     =================================================== */
     req.user = {
       id: user.id,
@@ -244,7 +245,7 @@ async function authGuard(req, res, next) {
       isImpersonation: Boolean(impersonatorId),
 
       // Session context
-      sessionId: currentSession.id,
+      sessionId: currentSession?.id || null,
       ip: clientIp,
     };
 

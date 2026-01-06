@@ -38,5 +38,23 @@
   {
     "key": "plugins.update",
     "description": "Update existing plugin versions"
-  }
+  },
+  {
+  "key": "orders.create",
+  "description": "Create a new order"
+},
+{
+  "key": "orders.read",
+  "description": "View own orders"
+},
+{
+  "key": "orders.cancel",
+  "description": "Cancel pending orders"
+},
+{
+  "key": "orders.renew",
+  "description": "Renew active orders"
+}
+
+
 ]
