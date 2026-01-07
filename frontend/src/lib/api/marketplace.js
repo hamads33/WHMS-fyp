@@ -7,118 +7,76 @@
  * ✓ Plugin details
  * ✓ Ratings & reviews
  * ✓ Install/manage
+ * ✓ Developer submissions
+ * ✓ Admin operations
  */
 
 import { apiFetch } from "./client";
 
 export const MarketplaceAPI = {
   // ===================================
-  // BROWSE & SEARCH
+  // PUBLIC: BROWSE & SEARCH
   // ===================================
 
   /**
    * Get all plugins with pagination and filters
+   * GET /api/marketplace/plugins
    * @param {Object} params - Query parameters
    * @param {number} params.page - Page number (default: 1)
    * @param {number} params.limit - Items per page (default: 20)
    * @param {string} params.search - Search query
    * @param {string} params.category - Filter by category
-   * @param {string} params.sortBy - Sort by: popular, rating, newest, price
-   * @param {string} params.priceMin - Minimum price
-   * @param {string} params.priceMax - Maximum price
-   * @param {string} params.rating - Minimum rating (0-5)
-   * @param {string} params.status - Filter by status: verified, featured, new
+   * @param {string} params.sort - Sort by: downloads, rating, newest
+   * @param {number} params.minRating - Minimum rating filter
    */
-  async getPlugins(params = {}) {
+  async browsePlugins(params = {}) {
     const query = new URLSearchParams(params).toString();
     return await apiFetch(`/marketplace/plugins${query ? `?${query}` : ""}`);
   },
 
   /**
-   * Search plugins with query
-   * @param {string} query - Search term
+   * Search plugins
+   * GET /api/marketplace/search
+   * @param {string} q - Search query
    * @param {Object} params - Additional filter parameters
    */
-  async searchPlugins(query, params = {}) {
-    return await this.getPlugins({
-      search: query,
-      ...params,
-    });
-  },
-
-  /**
-   * Get featured plugins
-   * @param {number} limit - Number of plugins to return (default: 10)
-   */
-  async getFeaturedPlugins(limit = 10) {
-    return await apiFetch(`/marketplace/plugins/featured?limit=${limit}`);
-  },
-
-  /**
-   * Get trending plugins
-   * @param {number} limit - Number of plugins to return (default: 10)
-   */
-  async getTrendingPlugins(limit = 10) {
-    return await apiFetch(`/marketplace/plugins/trending?limit=${limit}`);
+  async searchPlugins(q, params = {}) {
+    return await apiFetch(`/marketplace/search?q=${encodeURIComponent(q)}&${new URLSearchParams(params).toString()}`);
   },
 
   // ===================================
-  // PLUGIN DETAILS
+  // PUBLIC: PLUGIN DETAILS
   // ===================================
 
   /**
    * Get complete plugin details
+   * GET /api/marketplace/plugins/:id
    * @param {string} pluginId - Plugin ID
    */
-  async getPlugin(pluginId) {
+  async getPluginDetails(pluginId) {
     return await apiFetch(`/marketplace/plugins/${pluginId}`);
   },
 
   /**
-   * Get plugin by slug
-   * @param {string} slug - Plugin slug
-   */
-  async getPluginBySlug(slug) {
-    return await apiFetch(`/marketplace/plugins/slug/${slug}`);
-  },
-
-  /**
-   * Get plugin metadata
+   * Get plugin dependencies
+   * GET /api/marketplace/plugins/:id/dependencies
    * @param {string} pluginId - Plugin ID
    */
-  async getPluginMetadata(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/metadata`);
-  },
-
-  /**
-   * Get plugin changelog
-   * @param {string} pluginId - Plugin ID
-   */
-  async getPluginChangelog(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/changelog`);
-  },
-
-  /**
-   * Get similar/related plugins
-   * @param {string} pluginId - Plugin ID
-   * @param {number} limit - Number of related plugins
-   */
-  async getRelatedPlugins(pluginId, limit = 5) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/related?limit=${limit}`);
+  async getPluginDependencies(pluginId) {
+    return await apiFetch(`/marketplace/plugins/${pluginId}/dependencies`);
   },
 
   // ===================================
-  // RATINGS & REVIEWS
+  // PUBLIC: RATINGS & REVIEWS
   // ===================================
 
   /**
-   * Get plugin reviews
+   * Get plugin reviews with pagination
+   * GET /api/marketplace/plugins/:id/reviews
    * @param {string} pluginId - Plugin ID
-   * @param {Object} params - Pagination and filter params
-   * @param {number} params.page - Page number
-   * @param {number} params.limit - Items per page
-   * @param {string} params.sortBy - Sort: newest, helpful, rating
-   * @param {number} params.rating - Filter by rating
+   * @param {Object} params - Pagination params
+   * @param {number} params.page - Page number (default: 1)
+   * @param {number} params.limit - Items per page (default: 10)
    */
   async getPluginReviews(pluginId, params = {}) {
     const query = new URLSearchParams(params).toString();
@@ -128,20 +86,12 @@ export const MarketplaceAPI = {
   },
 
   /**
-   * Get user's review for a plugin
-   * @param {string} pluginId - Plugin ID
-   */
-  async getUserReview(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/reviews/me`);
-  },
-
-  /**
-   * Submit or update a review
+   * Submit a review
+   * POST /api/marketplace/plugins/:id/reviews
    * @param {string} pluginId - Plugin ID
    * @param {Object} reviewData - Review data
    * @param {number} reviewData.rating - Rating (1-5)
-   * @param {string} reviewData.title - Review title
-   * @param {string} reviewData.content - Review content
+   * @param {string} reviewData.text - Review text
    */
   async submitReview(pluginId, reviewData) {
     return await apiFetch(`/marketplace/plugins/${pluginId}/reviews`, {
@@ -151,297 +101,41 @@ export const MarketplaceAPI = {
   },
 
   /**
-   * Update an existing review
-   * @param {string} pluginId - Plugin ID
-   * @param {string} reviewId - Review ID
-   * @param {Object} reviewData - Updated review data
-   */
-  async updateReview(pluginId, reviewId, reviewData) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/reviews/${reviewId}`, {
-      method: "PUT",
-      body: JSON.stringify(reviewData),
-    });
-  },
-
-  /**
-   * Delete a review
-   * @param {string} pluginId - Plugin ID
-   * @param {string} reviewId - Review ID
-   */
-  async deleteReview(pluginId, reviewId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/reviews/${reviewId}`, {
-      method: "DELETE",
-    });
-  },
-
-  /**
-   * Mark review as helpful
+   * Mark a review as helpful
+   * POST /api/marketplace/plugins/:id/reviews/:reviewId/helpful
    * @param {string} pluginId - Plugin ID
    * @param {string} reviewId - Review ID
    */
   async markReviewHelpful(pluginId, reviewId) {
-    return await apiFetch(
-      `/marketplace/plugins/${pluginId}/reviews/${reviewId}/helpful`,
-      {
-        method: "POST",
-      }
-    );
-  },
-
-  /**
-   * Get plugin ratings summary
-   * @param {string} pluginId - Plugin ID
-   */
-  async getPluginRatings(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/ratings`);
-  },
-
-  // ===================================
-  // INSTALLATION & MANAGEMENT
-  // ===================================
-
-  /**
-   * Install a plugin
-   * @param {string} pluginId - Plugin ID
-   * @param {Object} config - Installation configuration
-   */
-  async installPlugin(pluginId, config = {}) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/install`, {
-      method: "POST",
-      body: JSON.stringify(config),
-    });
-  },
-
-  /**
-   * Uninstall a plugin
-   * @param {string} pluginId - Plugin ID
-   */
-  async uninstallPlugin(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/uninstall`, {
-      method: "DELETE",
-    });
-  },
-
-  /**
-   * Get installed plugins
-   * @param {Object} params - Filter params
-   * @param {string} params.status - Filter by status
-   * @param {string} params.sortBy - Sort by
-   */
-  async getInstalledPlugins(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return await apiFetch(`/marketplace/installed${query ? `?${query}` : ""}`);
-  },
-
-  /**
-   * Get installation status of a plugin
-   * @param {string} pluginId - Plugin ID
-   */
-  async getInstallationStatus(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/installation-status`);
-  },
-
-  /**
-   * Update plugin configuration
-   * @param {string} pluginId - Plugin ID
-   * @param {Object} config - New configuration
-   */
-  async updatePluginConfig(pluginId, config) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/config`, {
-      method: "PUT",
-      body: JSON.stringify(config),
-    });
-  },
-
-  /**
-   * Enable/disable a plugin
-   * @param {string} pluginId - Plugin ID
-   * @param {boolean} enabled - Enable or disable
-   */
-  async togglePlugin(pluginId, enabled) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/toggle`, {
-      method: "POST",
-      body: JSON.stringify({ enabled }),
-    });
-  },
-
-  /**
-   * Get plugin update availability
-   * @param {string} pluginId - Plugin ID
-   */
-  async checkPluginUpdate(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/update-check`);
-  },
-
-  /**
-   * Update a plugin to latest version
-   * @param {string} pluginId - Plugin ID
-   */
-  async updatePlugin(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/update`, {
+    return await apiFetch(`/marketplace/plugins/${pluginId}/reviews/${reviewId}/helpful`, {
       method: "POST",
     });
   },
 
   // ===================================
-  // FAVORITES & COLLECTIONS
-  // ===================================
-
-  /**
-   * Add plugin to favorites
-   * @param {string} pluginId - Plugin ID
-   */
-  async addToFavorites(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/favorite`, {
-      method: "POST",
-    });
-  },
-
-  /**
-   * Remove plugin from favorites
-   * @param {string} pluginId - Plugin ID
-   */
-  async removeFromFavorites(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/favorite`, {
-      method: "DELETE",
-    });
-  },
-
-  /**
-   * Get user's favorite plugins
-   * @param {Object} params - Pagination params
-   */
-  async getFavorites(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return await apiFetch(`/marketplace/favorites${query ? `?${query}` : ""}`);
-  },
-
-  /**
-   * Create a collection
-   * @param {Object} collectionData - Collection data
-   * @param {string} collectionData.name - Collection name
-   * @param {string} collectionData.description - Collection description
-   * @param {string[]} collectionData.pluginIds - Array of plugin IDs
-   */
-  async createCollection(collectionData) {
-    return await apiFetch("/marketplace/collections", {
-      method: "POST",
-      body: JSON.stringify(collectionData),
-    });
-  },
-
-  /**
-   * Get user's collections
-   */
-  async getCollections() {
-    return await apiFetch("/marketplace/collections");
-  },
-
-  /**
-   * Get collection details
-   * @param {string} collectionId - Collection ID
-   */
-  async getCollection(collectionId) {
-    return await apiFetch(`/marketplace/collections/${collectionId}`);
-  },
-
-  /**
-   * Update collection
-   * @param {string} collectionId - Collection ID
-   * @param {Object} collectionData - Updated collection data
-   */
-  async updateCollection(collectionId, collectionData) {
-    return await apiFetch(`/marketplace/collections/${collectionId}`, {
-      method: "PUT",
-      body: JSON.stringify(collectionData),
-    });
-  },
-
-  /**
-   * Delete collection
-   * @param {string} collectionId - Collection ID
-   */
-  async deleteCollection(collectionId) {
-    return await apiFetch(`/marketplace/collections/${collectionId}`, {
-      method: "DELETE",
-    });
-  },
-
-  /**
-   * Add plugin to collection
-   * @param {string} collectionId - Collection ID
-   * @param {string} pluginId - Plugin ID
-   */
-  async addToCollection(collectionId, pluginId) {
-    return await apiFetch(`/marketplace/collections/${collectionId}/plugins/${pluginId}`, {
-      method: "POST",
-    });
-  },
-
-  /**
-   * Remove plugin from collection
-   * @param {string} collectionId - Collection ID
-   * @param {string} pluginId - Plugin ID
-   */
-  async removeFromCollection(collectionId, pluginId) {
-    return await apiFetch(`/marketplace/collections/${collectionId}/plugins/${pluginId}`, {
-      method: "DELETE",
-    });
-  },
-
-  // ===================================
-  // CATEGORIES & TAGS
+  // PUBLIC: CATEGORIES & LICENSING
   // ===================================
 
   /**
    * Get all plugin categories
+   * GET /api/marketplace/categories
    */
   async getCategories() {
     return await apiFetch("/marketplace/categories");
   },
 
   /**
-   * Get category with plugins
-   * @param {string} categoryId - Category ID
-   * @param {Object} params - Pagination params
+   * Get plugin licensing requirements
+   * GET /api/marketplace/plugins/:id/license
+   * @param {string} pluginId - Plugin ID
    */
-  async getCategory(categoryId, params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return await apiFetch(
-      `/marketplace/categories/${categoryId}${query ? `?${query}` : ""}`
-    );
+  async getPluginLicense(pluginId) {
+    return await apiFetch(`/marketplace/plugins/${pluginId}/license`);
   },
 
   /**
-   * Get all plugin tags
-   */
-  async getTags() {
-    return await apiFetch("/marketplace/tags");
-  },
-
-  /**
-   * Get plugins by tag
-   * @param {string} tagId - Tag ID
-   * @param {Object} params - Pagination params
-   */
-  async getPluginsByTag(tagId, params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return await apiFetch(`/marketplace/tags/${tagId}${query ? `?${query}` : ""}`);
-  },
-
-  // ===================================
-  // STATISTICS & ANALYTICS
-  // ===================================
-
-  /**
-   * Get marketplace statistics
-   */
-  async getMarketplaceStats() {
-    return await apiFetch("/marketplace/stats");
-  },
-
-  /**
-   * Get plugin statistics
+   * Get plugin statistics (public)
+   * GET /api/marketplace/plugins/:id/stats
    * @param {string} pluginId - Plugin ID
    */
   async getPluginStats(pluginId) {
@@ -449,46 +143,270 @@ export const MarketplaceAPI = {
   },
 
   /**
-   * Track plugin view
+   * Get related plugins
+   * GET /api/marketplace/plugins/:id/related
    * @param {string} pluginId - Plugin ID
+   * @param {number} limit - Number of related plugins to return
    */
-  async trackPluginView(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/track-view`, {
+  async getRelatedPlugins(pluginId, limit = 3) {
+    return await apiFetch(`/marketplace/plugins/${pluginId}/related?limit=${limit}`);
+  },
+
+  // ===================================
+  // DEVELOPER: SUBMISSION & MANAGEMENT
+  // ===================================
+
+  /**
+   * Submit new plugin
+   * POST /api/marketplace/developer/submit
+   * @param {FormData} formData - Multipart form data with archive, manifest, metadata
+   * @param {File} formData.archive - Plugin ZIP archive
+   * @param {string} formData.name - Plugin name
+   * @param {string} formData.slug - Plugin slug
+   * @param {string} formData.description - Plugin description
+   * @param {string} formData.category - Category ID
+   * @param {string} formData.icon - Icon URL
+   * @param {string} formData.tags - Comma-separated tags
+   * @param {string} formData.version - Version number
+   * @param {string} formData.changelog - Changelog text
+   * @param {string} formData.manifest - Manifest JSON string
+   * @param {string} formData.licenseType - License type
+   */
+  async submitPlugin(formData) {
+    return await apiFetch("/marketplace/developer/submit", {
       method: "POST",
+      body: formData, // Don't stringify FormData
     });
   },
 
   /**
-   * Track plugin install
-   * @param {string} pluginId - Plugin ID
+   * List developer's products
+   * GET /api/marketplace/developer/products
    */
-  async trackPluginInstall(pluginId) {
-    return await apiFetch(`/marketplace/plugins/${pluginId}/track-install`, {
-      method: "POST",
+  async getDeveloperProducts() {
+    return await apiFetch("/marketplace/developer/products");
+  },
+
+  /**
+   * Get specific product details
+   * GET /api/marketplace/developer/products/:id
+   * @param {string} productId - Product ID
+   */
+  async getDeveloperProduct(productId) {
+    return await apiFetch(`/marketplace/developer/products/${productId}`);
+  },
+
+  /**
+   * Update product metadata
+   * PATCH /api/marketplace/developer/products/:id
+   * @param {string} productId - Product ID
+   * @param {Object} updateData - Update data
+   * @param {string} updateData.description - Updated description
+   * @param {string} updateData.category - Updated category
+   * @param {string} updateData.icon - Updated icon URL
+   * @param {string[]} updateData.tags - Updated tags
+   */
+  async updateDeveloperProduct(productId, updateData) {
+    return await apiFetch(`/marketplace/developer/products/${productId}`, {
+      method: "PATCH",
+      body: JSON.stringify(updateData),
     });
   },
 
-  // ===================================
-  // RECOMMENDATIONS
-  // ===================================
+  /**
+   * Get developer submissions history
+   * GET /api/marketplace/developer/submissions
+   */
+  async getDeveloperSubmissions() {
+    return await apiFetch("/marketplace/developer/submissions");
+  },
 
   /**
-   * Get recommended plugins for user
-   * @param {Object} params - Filter params
+   * Get submission details with verification results
+   * GET /api/marketplace/developer/submissions/:id
+   * @param {string} submissionId - Submission ID
    */
-  async getRecommendedPlugins(params = {}) {
+  async getDeveloperSubmission(submissionId) {
+    return await apiFetch(`/marketplace/developer/submissions/${submissionId}`);
+  },
+
+  /**
+   * Get developer analytics for all products
+   * GET /api/marketplace/developer/analytics
+   * @param {Object} params - Query params
+   * @param {number} params.days - Time period in days (default: 30)
+   */
+  async getDeveloperAnalytics(params = {}) {
     const query = new URLSearchParams(params).toString();
     return await apiFetch(
-      `/marketplace/plugins/recommendations${query ? `?${query}` : ""}`
+      `/marketplace/developer/analytics${query ? `?${query}` : ""}`
     );
   },
 
   /**
-   * Get plugins recommended by category
-   * @param {string} category - Category name
+   * Get analytics for specific product
+   * GET /api/marketplace/developer/analytics/:productId
+   * @param {string} productId - Product ID
+   * @param {Object} params - Query params
+   * @param {number} params.days - Time period in days (default: 30)
    */
-  async getRecommendationsByCategory(category) {
-    return await apiFetch(`/marketplace/plugins/recommendations/category/${category}`);
+  async getProductAnalytics(productId, params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return await apiFetch(
+      `/marketplace/developer/analytics/${productId}${query ? `?${query}` : ""}`
+    );
+  },
+
+  // ===================================
+  // ADMIN: DASHBOARD & STATS
+  // ===================================
+
+  /**
+   * Get admin dashboard statistics
+   * GET /api/marketplace/admin/dashboard
+   */
+  async getAdminDashboard() {
+    return await apiFetch("/marketplace/admin/dashboard");
+  },
+
+  // ===================================
+  // ADMIN: SUBMISSIONS REVIEW
+  // ===================================
+
+  /**
+   * Get pending submissions for review
+   * GET /api/marketplace/admin/submissions
+   * @param {Object} params - Query params
+   * @param {number} params.page - Page number
+   * @param {number} params.limit - Items per page
+   * @param {string} params.status - Filter by status
+   */
+  async getAdminSubmissions(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return await apiFetch(
+      `/marketplace/admin/submissions${query ? `?${query}` : ""}`
+    );
+  },
+
+  /**
+   * Get submission details for admin review
+   * GET /api/marketplace/admin/submissions/:id
+   * @param {string} submissionId - Submission ID
+   */
+  async getAdminSubmission(submissionId) {
+    return await apiFetch(`/marketplace/admin/submissions/${submissionId}`);
+  },
+
+  /**
+   * Review and approve/reject submission
+   * POST /api/marketplace/admin/submissions/:id/review
+   * @param {string} submissionId - Submission ID
+   * @param {Object} reviewData - Review data
+   * @param {string} reviewData.action - "approve" or "reject"
+   * @param {string} reviewData.notes - Optional rejection reason
+   */
+  async reviewSubmission(submissionId, reviewData) {
+    return await apiFetch(`/marketplace/admin/submissions/${submissionId}/review`, {
+      method: "POST",
+      body: JSON.stringify(reviewData),
+    });
+  },
+
+  // ===================================
+  // ADMIN: PRODUCT MANAGEMENT
+  // ===================================
+
+  /**
+   * Get all marketplace products (admin)
+   * GET /api/marketplace/admin/products
+   * @param {Object} params - Query params
+   * @param {number} params.page - Page number
+   * @param {number} params.limit - Items per page
+   * @param {string} params.status - Filter by status
+   * @param {string} params.categoryId - Filter by category
+   */
+  async getAdminProducts(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return await apiFetch(
+      `/marketplace/admin/products${query ? `?${query}` : ""}`
+    );
+  },
+
+  /**
+   * Get product details (admin)
+   * GET /api/marketplace/admin/products/:id
+   * @param {string} productId - Product ID
+   */
+  async getAdminProduct(productId) {
+    return await apiFetch(`/marketplace/admin/products/${productId}`);
+  },
+
+  /**
+   * Update product (admin)
+   * PATCH /api/marketplace/admin/products/:id
+   * @param {string} productId - Product ID
+   * @param {Object} updateData - Update data
+   * @param {string} updateData.status - Status: approved, draft, rejected
+   * @param {string} updateData.categoryId - Category ID
+   * @param {string[]} updateData.tags - Tags
+   * @param {string} updateData.rejectReason - Rejection reason
+   */
+  async updateAdminProduct(productId, updateData) {
+    return await apiFetch(`/marketplace/admin/products/${productId}`, {
+      method: "PATCH",
+      body: JSON.stringify(updateData),
+    });
+  },
+
+  // ===================================
+  // INSTALLATION (Authenticated)
+  // ===================================
+
+  /**
+   * Install plugin
+   * POST /api/marketplace/install/:productId
+   * @param {string} productId - Product ID
+   * @param {Object} config - Installation config
+   * @param {string} config.versionId - Optional: specific version ID
+   */
+  async installPlugin(productId, config = {}) {
+    return await apiFetch(`/marketplace/install/${productId}`, {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  },
+
+  /**
+   * Update plugin to newer version
+   * POST /api/marketplace/install/update/:productId
+   * @param {string} productId - Product ID
+   * @param {Object} config - Update config
+   * @param {string} config.versionId - Optional: specific version ID
+   */
+  async updatePlugin(productId, config = {}) {
+    return await apiFetch(`/marketplace/install/update/${productId}`, {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  },
+
+  /**
+   * Get list of installed plugins
+   * GET /api/marketplace/install/installed
+   */
+  async getInstalledPlugins() {
+    return await apiFetch("/marketplace/install/installed");
+  },
+
+  /**
+   * Uninstall plugin
+   * DELETE /api/marketplace/install/installed/:productId
+   * @param {string} productId - Product ID
+   */
+  async uninstallPlugin(productId) {
+    return await apiFetch(`/marketplace/install/installed/${productId}`, {
+      method: "DELETE",
+    });
   },
 };
 

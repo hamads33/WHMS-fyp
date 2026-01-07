@@ -55,35 +55,32 @@ export function ActionPalette({ onSelectAction }) {
   /**
    * Render a single action button
    */
-  const renderAction = (action) => {
-    // 🔒 HARD DEFENSE
-    if (!action?.name) {
-      console.error("Invalid action object received:", action)
-      return null
-    }
-
-    const actionType = action.name
-    const displayName = action.description || action.name
-
-    return (
-      <button
-        key={`${action.type}:${action.name}`}   //  stable key
-        onClick={() =>
-          onSelectAction({
-            actionType,                         //  REQUIRED
-            displayName,
-            actionSchema: action.schema || null //  consistent naming
-          })
-        }
-        className="w-full flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 text-left group"
-      >
-        <GripHorizontal className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
-        <span className="text-sm font-medium flex-1">
-          {displayName}
-        </span>
-      </button>
-    )
+ const renderAction = (action) => {
+  if (!action?.key) {
+    console.error("Invalid action object:", action)
+    return null
   }
+
+  return (
+    <button
+      key={`${action.type}:${action.key}`}
+      onClick={() =>
+        onSelectAction({
+          actionType: action.key,      // ✅ registry key
+          displayName: action.name,    // UI label
+          actionSchema: action.schema || null
+        })
+      }
+      className="w-full flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 text-left group"
+    >
+      <GripHorizontal className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
+      <span className="text-sm font-medium flex-1">
+        {action.name}
+      </span>
+    </button>
+  )
+}
+
 
   return (
     <Card className="h-full">

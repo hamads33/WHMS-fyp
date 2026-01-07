@@ -118,7 +118,8 @@ export default function ProfileDetailPage() {
 
   const handleRemoveTask = async (taskId) => {
     try {
-      await AutomationAPI.deleteTask(taskId)
+      // ✅ FIXED: Now passes profileId as first parameter
+      await AutomationAPI.deleteTask(profileId, taskId)
 
       const remainingTasks = tasks.filter((t) => t.id !== taskId)
       const reorderedTasks = remainingTasks.map((t, idx) => ({
@@ -128,7 +129,8 @@ export default function ProfileDetailPage() {
       setTasks(reorderedTasks)
 
       for (let i = 0; i < reorderedTasks.length; i++) {
-        await AutomationAPI.updateTask(reorderedTasks[i].id, {
+        // ✅ FIXED: Now passes profileId as first parameter
+        await AutomationAPI.updateTask(profileId, reorderedTasks[i].id, {
           actionType: reorderedTasks[i].actionType,
           order: i,
           actionMeta: reorderedTasks[i].actionMeta,
@@ -150,7 +152,8 @@ export default function ProfileDetailPage() {
       const task = tasks.find((t) => t.id === taskId)
       if (!task) return
 
-      await AutomationAPI.updateTask(taskId, {
+      // ✅ FIXED: Now passes profileId as first parameter
+      await AutomationAPI.updateTask(profileId, taskId, {
         actionType: task.actionType,
         order: task.order,
         actionMeta: meta,

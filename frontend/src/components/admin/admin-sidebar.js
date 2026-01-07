@@ -24,6 +24,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Server,
+  Workflow, 
+  Layers,
+   Receipt
 } from "lucide-react";
 
 /**
@@ -32,19 +35,21 @@ import {
  */
 const navigation = [
   { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-  { name: "Clients", href: "/admin/clients", icon: Users, badge: "2.8k" },
-  { name: "Domains", href: "/admin/domains", icon: Globe, badge: "4.2k" },
+  { name: "Clients", href: "/admin/clients", icon: Users, badge: "" },
+  { name: "Services", href: "/admin/services", icon: Layers },
+  { name: "Orders", href: "/admin/orders", icon: Receipt },
+  { name: "Domains", href: "/admin/domains", icon: Globe, badge: "" },
   { name: "Backups", href: "/admin/backups", icon: HardDrive },
   { name: "Automation", href: "/admin/automation", icon: Zap },
-  { name: "Plugins", href: "/admin/plugins", icon: Puzzle, badge: "5" },
+  { name: "Plugins", href: "/admin/plugins", icon: Puzzle,  },
   { name: "Sessions", href: "/admin/sessions", icon: MonitorSmartphone },
   { name: "Impersonation", href: "/admin/impersonation", icon: UserCheck },
-  { name: "Security", href: "/admin/workflows", icon: Shield },
+  { name: "Workflows", href: "/admin/workflows", icon: Workflow },
   { name: "IP Rules", href: "/admin/iprules", icon: Settings },
-  { name: "API Keys", href: "/admin/api-keys", icon: Key },
   { name: "RBAC", href: "/admin/rbac", icon: Lock },
-  { name: "Webhooks", href: "/admin/webhooks", icon: Webhook },
-  { name: "Settings", href: "/admin/settings", icon: Settings },
+   { name: "Logs", href: "/admin/logs", icon: Lock },
+  // { name: "Webhooks", href: "/admin/webhooks", icon: Webhook },
+  // { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
 export function AdminSidebar() {

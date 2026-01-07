@@ -1,3 +1,9 @@
+/**
+ * Workflow List Component - FIXED
+ * ==================================================
+ * Displays list of workflows with CRUD actions
+ */
+
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,25 +23,17 @@ export function WorkflowList({
   onDelete,
   onRun,
 }) {
-  const getTypeColor = (type) => {
-    const colors = {
-      sequential: "bg-blue-100 text-blue-800",
-      parallel: "bg-purple-100 text-purple-800",
-      conditional: "bg-amber-100 text-amber-800",
-    }
-    return colors[type] || "bg-gray-100 text-gray-800"
+  const getStatusColor = (enabled) => {
+    return enabled
+      ? "bg-green-100 text-green-800"
+      : "bg-gray-100 text-gray-800"
   }
 
-  const getTriggerColor = (trigger) => {
-    const colors = {
-      manual: "bg-green-100 text-green-800",
-      scheduled: "bg-orange-100 text-orange-800",
-      webhook: "bg-pink-100 text-pink-800",
-    }
-    return colors[trigger] || "bg-gray-100 text-gray-800"
+  const getStatusBadge = (enabled) => {
+    return enabled ? "Active" : "Inactive"
   }
 
-  if (workflows.length === 0) {
+  if (!workflows || workflows.length === 0) {
     return null
   }
 
@@ -46,17 +44,21 @@ export function WorkflowList({
           <CardHeader>
             <div className="flex justify-between items-start">
               <div className="flex-1">
+                {/* Workflow Name */}
                 <div className="flex items-center gap-3 mb-2">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Zap className="w-5 h-5 text-yellow-500" />
                     {workflow.name}
                   </CardTitle>
                 </div>
+
+                {/* Description */}
                 {workflow.description && (
                   <CardDescription>{workflow.description}</CardDescription>
                 )}
               </div>
 
+              {/* Action Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm">
@@ -92,13 +94,12 @@ export function WorkflowList({
 
           <CardContent>
             <div className="flex flex-wrap gap-3 items-center">
-              <Badge className={getTypeColor(workflow.type)}>
-                {workflow.type}
-              </Badge>
-              <Badge className={getTriggerColor(workflow.trigger)}>
-                {workflow.trigger}
+              {/* Status Badge */}
+              <Badge className={getStatusColor(workflow.enabled)}>
+                {getStatusBadge(workflow.enabled)}
               </Badge>
 
+              {/* Task Count */}
               {workflow.definition?.tasks && (
                 <Badge variant="outline">
                   {workflow.definition.tasks.length} task
@@ -106,28 +107,32 @@ export function WorkflowList({
                 </Badge>
               )}
 
-              {workflow.enabled && (
-                <Badge variant="secondary" className="bg-green-100 text-green-800">
-                  Active
+              {/* Version */}
+              {workflow.version && (
+                <Badge variant="outline">
+                  v{workflow.version}
                 </Badge>
               )}
 
-              {workflow.stats && (
-                <div className="ml-auto text-xs text-muted-foreground space-x-3">
-                  {workflow.stats.totalRuns > 0 && (
-                    <span>
-                      Runs: {workflow.stats.totalRuns} (
-                      {workflow.stats.successCount} success,{" "}
-                      {workflow.stats.failureCount} failed)
-                    </span>
-                  )}
-                </div>
+              {/* Execution Count - Uses _count.runs from API */}
+              {workflow._count?.runs > 0 && (
+                <Badge variant="outline" className="ml-auto">
+                  Runs: {workflow._count.runs}
+                </Badge>
               )}
             </div>
 
-            {workflow.lastRunAt && (
+            {/* Last Run Info - Uses runs array from API */}
+            {workflow.runs?.length > 0 && (
               <p className="text-xs text-muted-foreground mt-3">
-                Last run: {new Date(workflow.lastRunAt).toLocaleString()}
+                Last run: {new Date(workflow.runs[0].createdAt).toLocaleString()}
+              </p>
+            )}
+
+            {/* Created Info */}
+            {workflow.createdAt && (
+              <p className="text-xs text-muted-foreground">
+                Created: {new Date(workflow.createdAt).toLocaleDateString()}
               </p>
             )}
           </CardContent>
@@ -136,3 +141,5 @@ export function WorkflowList({
     </div>
   )
 }
+
+export default WorkflowList

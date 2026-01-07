@@ -1,6 +1,6 @@
 // ============================================================================
 // FILE: app/admin/backups/page.jsx
-// PURPOSE: Modern black & white backup dashboard
+// PURPOSE: Modern black & white backup dashboard (FIXED - Unique Keys)
 // ============================================================================
 
 "use client";
@@ -84,14 +84,17 @@ export default function BackupDashboard() {
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <ModernStatsDashboard key={refreshKey} />
+        {/* Stats Cards - FIX: Unique key */}
+        <ModernStatsDashboard key={`stats-${refreshKey}`} />
 
-        {/* Analytics Section */}
-        <ModernAnalyticsSection key={refreshKey} />
+        {/* Analytics Section - FIX: Unique key */}
+        <ModernAnalyticsSection key={`analytics-${refreshKey}`} />
 
-        {/* Backup List */}
-        <ModernBackupList key={refreshKey} onUpdate={() => setRefreshKey(prev => prev + 1)} />
+        {/* Backup List - FIX: Unique key */}
+        <ModernBackupList 
+          key={`list-${refreshKey}`} 
+          onUpdate={() => setRefreshKey(prev => prev + 1)} 
+        />
 
         {/* Create Modal */}
         <CreateBackupModal

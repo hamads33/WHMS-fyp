@@ -13,10 +13,10 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { PluginCard } from "@/components/marketplace/PluginCard"
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
-import { useMarketplace } from "@/hooks/useMarketplace"
+import { useMarketplace } from "@/hooks/Usemarketplace"
 import { MarketplaceAPI } from "@/lib/api/marketplace"
-import { debounce } from "@/lib/utils"
-import { useToast } from "@/hooks/useToast"
+import { debounce } from "../../lib/utils"
+import { useToast } from "@/hooks/Usetoast"
 
 const categories = ["All", "Development", "Design", "Productivity", "Utilities", "Analytics", "Appearance"]
 const statusOptions = [

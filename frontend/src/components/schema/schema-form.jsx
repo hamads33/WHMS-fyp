@@ -13,8 +13,8 @@
  * Usage:
  *  <SchemaForm 
  *    schema={jsonSchema}
- *    onSubmit={handleSubmit}
- *    defaultValues={existingData}
+ *    value={formData}
+ *    onChange={handleChange}
  *  />
  */
 
@@ -34,19 +34,22 @@ import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, ChevronDown, ChevronUp, Plus, X } from "lucide-react";
 
-const SchemaForm = ({
+export function SchemaForm({
   schema = {},
-  onSubmit,
-  onCancel,
-  defaultValues = {},
+  value = {},
+  onChange,
   readOnly = false,
   title,
   description,
-}) => {
-  const [formData, setFormData] = useState(defaultValues);
+}) {
+  const [formData, setFormData] = useState(value);
   const [errors, setErrors] = useState({});
   const [expandedSections, setExpandedSections] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync formData with value prop
+  React.useEffect(() => {
+    setFormData(value);
+  }, [value]);
 
   // Toggle section expansion
   const toggleSection = useCallback((section) => {
@@ -57,11 +60,11 @@ const SchemaForm = ({
   }, []);
 
   // Handle input change
-  const handleChange = useCallback((path, value) => {
+  const handleChange = useCallback((path, newValue) => {
     setFormData((prev) => {
-      const newData = { ...prev };
+      const updated = { ...prev };
       const keys = path.split(".");
-      let current = newData;
+      let current = updated;
 
       for (let i = 0; i < keys.length - 1; i++) {
         const key = keys[i];
@@ -69,9 +72,17 @@ const SchemaForm = ({
         current = current[key];
       }
 
-      current[keys[keys.length - 1]] = value;
-      return newData;
+      current[keys[keys.length - 1]] = newValue;
+      return updated;
     });
+
+    // Call onChange prop if provided
+    if (onChange) {
+      setFormData((prev) => {
+        onChange(prev);
+        return prev;
+      });
+    }
 
     // Clear error for this field
     if (errors[path]) {
@@ -81,37 +92,37 @@ const SchemaForm = ({
         return newErrors;
       });
     }
-  }, [errors]);
+  }, [errors, onChange]);
 
   // Validate field
-  const validateField = useCallback((path, value, fieldSchema) => {
+  const validateField = useCallback((path, fieldValue, fieldSchema) => {
     const errors_ = [];
 
-    if (fieldSchema.required && !value) {
+    if (fieldSchema.required && !fieldValue) {
       errors_.push(`${fieldSchema.label || path} is required`);
     }
 
-    if (fieldSchema.minLength && value?.length < fieldSchema.minLength) {
+    if (fieldSchema.minLength && fieldValue?.length < fieldSchema.minLength) {
       errors_.push(
         `${fieldSchema.label || path} must be at least ${fieldSchema.minLength} characters`
       );
     }
 
-    if (fieldSchema.maxLength && value?.length > fieldSchema.maxLength) {
+    if (fieldSchema.maxLength && fieldValue?.length > fieldSchema.maxLength) {
       errors_.push(
         `${fieldSchema.label || path} cannot exceed ${fieldSchema.maxLength} characters`
       );
     }
 
-    if (fieldSchema.pattern && !new RegExp(fieldSchema.pattern).test(value)) {
+    if (fieldSchema.pattern && !new RegExp(fieldSchema.pattern).test(fieldValue)) {
       errors_.push(`${fieldSchema.label || path} format is invalid`);
     }
 
     if (fieldSchema.type === "number") {
-      if (fieldSchema.minimum && value < fieldSchema.minimum) {
+      if (fieldSchema.minimum && fieldValue < fieldSchema.minimum) {
         errors_.push(`${fieldSchema.label || path} must be at least ${fieldSchema.minimum}`);
       }
-      if (fieldSchema.maximum && value > fieldSchema.maximum) {
+      if (fieldSchema.maximum && fieldValue > fieldSchema.maximum) {
         errors_.push(`${fieldSchema.label || path} cannot exceed ${fieldSchema.maximum}`);
       }
     }
@@ -119,40 +130,8 @@ const SchemaForm = ({
     return errors_;
   }, []);
 
-  // Handle form submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    try {
-      const newErrors = {};
-      const properties = schema.properties || {};
-
-      // Validate all required fields
-      Object.entries(properties).forEach(([key, fieldSchema]) => {
-        const value = formData[key];
-        const fieldErrors = validateField(key, value, fieldSchema);
-        if (fieldErrors.length > 0) {
-          newErrors[key] = fieldErrors;
-        }
-      });
-
-      if (Object.keys(newErrors).length > 0) {
-        setErrors(newErrors);
-        return;
-      }
-
-      // Submit form
-      if (onSubmit) {
-        await onSubmit(formData);
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   // Render field based on type
-  const renderField = (path, fieldSchema, value) => {
+  const renderField = (path, fieldSchema, fieldValue) => {
     const fieldId = `field-${path}`;
     const hasError = errors[path];
     const label = fieldSchema.label || fieldSchema.title || path;
@@ -169,7 +148,7 @@ const SchemaForm = ({
             <Textarea
               id={fieldId}
               placeholder={fieldSchema.description || ""}
-              value={value || ""}
+              value={fieldValue || ""}
               onChange={(e) => handleChange(path, e.target.value)}
               disabled={readOnly}
               rows={fieldSchema.rows || 3}
@@ -198,7 +177,7 @@ const SchemaForm = ({
             id={fieldId}
             type={fieldSchema.format || "text"}
             placeholder={fieldSchema.placeholder || ""}
-            value={value || ""}
+            value={fieldValue || ""}
             onChange={(e) => handleChange(path, e.target.value)}
             disabled={readOnly}
             className={hasError ? "border-red-500" : ""}
@@ -230,7 +209,7 @@ const SchemaForm = ({
             min={fieldSchema.minimum}
             max={fieldSchema.maximum}
             step={fieldSchema.type === "integer" ? "1" : "0.01"}
-            value={value || ""}
+            value={fieldValue || ""}
             onChange={(e) => handleChange(path, Number(e.target.value))}
             disabled={readOnly}
             className={hasError ? "border-red-500" : ""}
@@ -253,7 +232,7 @@ const SchemaForm = ({
             {label}
             {fieldSchema.required && <span className="text-red-500 ml-1">*</span>}
           </Label>
-          <Select value={value || ""} onValueChange={(val) => handleChange(path, val)}>
+          <Select value={fieldValue || ""} onValueChange={(val) => handleChange(path, val)}>
             <SelectTrigger disabled={readOnly} className={hasError ? "border-red-500" : ""}>
               <SelectValue placeholder={`Select ${label}`} />
             </SelectTrigger>
@@ -282,7 +261,7 @@ const SchemaForm = ({
           <input
             id={fieldId}
             type="checkbox"
-            checked={value || false}
+            checked={fieldValue || false}
             onChange={(e) => handleChange(path, e.target.checked)}
             disabled={readOnly}
             className="rounded"
@@ -317,7 +296,7 @@ const SchemaForm = ({
             <div className="space-y-4 pl-4">
               {Object.entries(fieldSchema.properties).map(([key, nestedSchema]) => {
                 const nestedPath = `${path}.${key}`;
-                const nestedValue = value?.[key];
+                const nestedValue = fieldValue?.[key];
                 return renderField(nestedPath, nestedSchema, nestedValue);
               })}
             </div>
@@ -328,7 +307,7 @@ const SchemaForm = ({
 
     // Array (simple)
     if (fieldSchema.type === "array") {
-      const arrayValue = value || [];
+      const arrayValue = fieldValue || [];
 
       return (
         <div key={fieldId} className="border rounded-lg p-4 space-y-3">
@@ -384,40 +363,14 @@ const SchemaForm = ({
   const properties = schema.properties || {};
 
   return (
-    <Card className="p-6 w-full max-w-2xl">
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Header */}
-        {(title || description) && (
-          <div className="space-y-2">
-            {title && <h2 className="text-2xl font-bold">{title}</h2>}
-            {description && <p className="text-gray-600">{description}</p>}
-          </div>
-        )}
-
-        {/* Fields */}
-        <div className="space-y-4">
-          {Object.entries(properties).map(([key, fieldSchema]) => {
-            const value = formData[key];
-            return renderField(key, fieldSchema, value);
-          })}
-        </div>
-
-        {/* Actions */}
-        {!readOnly && (
-          <div className="flex gap-3 justify-end pt-4">
-            {onCancel && (
-              <Button type="button" variant="outline" onClick={onCancel}>
-                Cancel
-              </Button>
-            )}
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Submit"}
-            </Button>
-          </div>
-        )}
-      </form>
-    </Card>
+    <>
+      {/* Fields only - no Card wrapper */}
+      <div className="space-y-4">
+        {Object.entries(properties).map(([key, fieldSchema]) => {
+          const fieldValue = formData[key];
+          return renderField(key, fieldSchema, fieldValue);
+        })}
+      </div>
+    </>
   );
-};
-
-export default SchemaForm;
+}

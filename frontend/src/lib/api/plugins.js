@@ -1,82 +1,131 @@
 // lib/api/plugins.js
 /**
- * Plugins API Client
- * Handles all plugin operations and management
- * ✓ Create/upload plugins
- * ✓ Manage versions
- * ✓ Configure permissions
- * ✓ Monitor execution
+ * Plugins API Client - Compatible with Runtime Plugin Engine Backend
+ * 
+ * This client is designed to work with the filesystem-based plugin engine
+ * that loads, verifies, and executes plugins in real-time.
+ * 
+ * NOT a marketplace client - use for plugin management and execution.
  */
 
 import { apiFetch } from "./client";
 
 export const PluginsAPI = {
   // ===================================
-  // PLUGIN UPLOAD & CREATION
+  // PLUGIN LISTING & DISCOVERY
   // ===================================
 
   /**
-   * Create a new plugin (metadata)
-   * @param {Object} pluginData - Plugin metadata
-   * @param {string} pluginData.name - Plugin name
-   * @param {string} pluginData.description - Plugin description
-   * @param {string} pluginData.category - Plugin category
-   * @param {string} pluginData.version - Initial version
-   * @param {Object} pluginData.manifest - Plugin manifest
+   * List all installed and loaded plugins
+   * @param {Object} params - Filter options
+   * @param {boolean} params.enabled - Filter by enabled status
+   * @returns {Promise<Array>} Array of plugin metadata
    */
-  async createPlugin(pluginData) {
-    return await apiFetch("/plugins", {
+  async listPlugins(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    const res = await apiFetch(`/plugins${query ? `?${query}` : ""}`);
+    
+    // Backend returns { ok: true, plugins: [...] } or direct array
+    if (res.plugins) return res.plugins;
+    if (Array.isArray(res)) return res;
+    return [];
+  },
+
+  /**
+   * Get detailed plugin metadata
+   * @param {string} pluginId - Plugin ID
+   * @returns {Promise<Object>} Plugin metadata with manifest
+   */
+  async getPluginDetails(pluginId) {
+    const res = await apiFetch(`/plugins/${pluginId}/metadata`);
+    
+    // Extract metadata from response
+    return res.metadata || res;
+  },
+
+  /**
+   * Search plugins by name or description
+   * @param {string} query - Search query
+   * @returns {Promise<Array>} Matching plugins
+   */
+  async searchPlugins(query) {
+    const plugins = await this.listPlugins();
+    const q = query.toLowerCase();
+    
+    return plugins.filter(p => 
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.description && p.description.toLowerCase().includes(q)) ||
+      (p.id && p.id.toLowerCase().includes(q))
+    );
+  },
+
+  /**
+   * Check if plugin is enabled
+   * @param {string} pluginId - Plugin ID
+   * @returns {Promise<boolean>} Whether plugin is enabled
+   */
+  async isPluginEnabled(pluginId) {
+    try {
+      const plugin = await this.getPluginDetails(pluginId);
+      return plugin.enabled !== false;
+    } catch (err) {
+      return false;
+    }
+  },
+
+  // ===================================
+  // PLUGIN INSTALLATION
+  // ===================================
+
+  /**
+   * Install plugin from folder (development)
+   * @param {string} pluginId - Plugin ID
+   * @param {string} sourceDir - Path to plugin folder
+   * @returns {Promise<Object>} Installation result
+   */
+  async installFromFolder(pluginId, sourceDir) {
+    return await apiFetch("/plugins/install/folder", {
       method: "POST",
-      body: JSON.stringify(pluginData),
+      body: JSON.stringify({ pluginId, sourceDir }),
     });
   },
 
   /**
-   * Upload plugin code/files
-   * @param {string} pluginId - Plugin ID
-   * @param {FormData} formData - Form data with file(s)
+   * Install plugin from ZIP file
+   * @param {File|Blob} file - ZIP file containing plugin
+   * @param {string} pluginId - Optional plugin ID (auto-detect if not provided)
+   * @returns {Promise<Object>} Installation result
    */
-  async uploadPluginFiles(pluginId, formData) {
-    return await apiFetch(`/plugins/${pluginId}/upload`, {
+  async installFromZip(file, pluginId = null) {
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    if (pluginId) {
+      formData.append("pluginId", pluginId);
+    }
+
+    return await apiFetch("/plugins/install/zip", {
       method: "POST",
       body: formData,
+      // Don't set Content-Type header - let browser handle it
       headers: {
-        // Let browser set Content-Type for multipart/form-data
         "Content-Type": undefined,
       },
     });
   },
 
   /**
-   * Submit plugin for review/publication
-   * @param {string} pluginId - Plugin ID
+   * Upload and install plugin from FormData
+   * @param {FormData} formData - Form with 'file' field
+   * @returns {Promise<Object>} Installation result
    */
-  async submitPluginForReview(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/submit-review`, {
+  async uploadPlugin(formData) {
+    return await apiFetch("/plugins/install/zip", {
       method: "POST",
-    });
-  },
-
-  /**
-   * Publish plugin to marketplace
-   * @param {string} pluginId - Plugin ID
-   */
-  async publishPlugin(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/publish`, {
-      method: "POST",
-    });
-  },
-
-  /**
-   * Unpublish plugin from marketplace
-   * @param {string} pluginId - Plugin ID
-   * @param {Object} data - Unpublish data
-   * @param {string} data.reason - Reason for unpublishing
-   */
-  async unpublishPlugin(pluginId, data = {}) {
-    return await apiFetch(`/plugins/${pluginId}/unpublish`, {
-      method: "POST",
-      body: JSON.stringify(data),
+      body: formData,
+      headers: {
+        "Content-Type": undefined,
+      },
     });
   },
 
@@ -85,129 +134,168 @@ export const PluginsAPI = {
   // ===================================
 
   /**
-   * Get all plugins by current user
-   * @param {Object} params - Filter params
-   */
-  async getMyPlugins(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return await apiFetch(`/plugins${query ? `?${query}` : ""}`);
-  },
-
-  /**
-   * Get plugin details (for developer)
+   * Uninstall plugin (move to trash)
    * @param {string} pluginId - Plugin ID
+   * @param {Object} options - Options
+   * @param {string} options.actor - User performing action (default: 'system')
+   * @returns {Promise<Object>} Uninstall result with trash path
    */
-  async getPluginDetails(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}`);
-  },
-
-  /**
-   * Update plugin information
-   * @param {string} pluginId - Plugin ID
-   * @param {Object} pluginData - Updated plugin data
-   */
-  async updatePlugin(pluginId, pluginData) {
-    return await apiFetch(`/plugins/${pluginId}`, {
-      method: "PUT",
-      body: JSON.stringify(pluginData),
-    });
-  },
-
-  /**
-   * Delete a plugin
-   * @param {string} pluginId - Plugin ID
-   * @param {Object} data - Delete options
-   * @param {boolean} data.force - Force delete (including published)
-   */
-  async deletePlugin(pluginId, data = {}) {
+  async uninstallPlugin(pluginId, options = {}) {
     return await apiFetch(`/plugins/${pluginId}`, {
       method: "DELETE",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ actor: options.actor || "system" }),
     });
   },
 
-  // ===================================
-  // VERSIONS & RELEASES
-  // ===================================
-
   /**
-   * Get all versions of a plugin
+   * Restore plugin from trash
    * @param {string} pluginId - Plugin ID
+   * @param {Object} options - Options
+   * @param {string} options.actor - User performing action
+   * @returns {Promise<Object>} Restore result
    */
-  async getVersions(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/versions`);
-  },
-
-  /**
-   * Get specific version
-   * @param {string} pluginId - Plugin ID
-   * @param {string} versionId - Version ID
-   */
-  async getVersion(pluginId, versionId) {
-    return await apiFetch(`/plugins/${pluginId}/versions/${versionId}`);
-  },
-
-  /**
-   * Create new version
-   * @param {string} pluginId - Plugin ID
-   * @param {Object} versionData - Version data
-   * @param {string} versionData.version - Version number
-   * @param {string} versionData.changelog - What changed
-   * @param {Object} versionData.manifest - Updated manifest
-   */
-  async createVersion(pluginId, versionData) {
-    return await apiFetch(`/plugins/${pluginId}/versions`, {
+  async restorePlugin(pluginId, options = {}) {
+    return await apiFetch(`/plugins/${pluginId}/restore`, {
       method: "POST",
-      body: JSON.stringify(versionData),
+      body: JSON.stringify({ actor: options.actor || "system" }),
     });
   },
 
   /**
-   * Publish a version
+   * Permanently delete plugin from trash
    * @param {string} pluginId - Plugin ID
-   * @param {string} versionId - Version ID
+   * @param {Object} options - Options
+   * @param {string} options.actor - User performing action
+   * @returns {Promise<Object>} Delete result
    */
-  async publishVersion(pluginId, versionId) {
-    return await apiFetch(`/plugins/${pluginId}/versions/${versionId}/publish`, {
-      method: "POST",
+  async deleteFromTrash(pluginId, options = {}) {
+    return await apiFetch(`/plugins/trash/${pluginId}`, {
+      method: "DELETE",
+      body: JSON.stringify({ actor: options.actor || "system" }),
     });
   },
 
   /**
-   * Deprecate a version
-   * @param {string} pluginId - Plugin ID
-   * @param {string} versionId - Version ID
+   * List trashed plugins
+   * @returns {Promise<Array>} Array of trashed plugins
    */
-  async deprecateVersion(pluginId, versionId) {
-    return await apiFetch(`/plugins/${pluginId}/versions/${versionId}/deprecate`, {
-      method: "POST",
-    });
+  async listTrash() {
+    const res = await apiFetch("/plugins/trash/list");
+    return res.trash || [];
   },
 
   /**
-   * Get current/active version
+   * Check if plugin is trashed
    * @param {string} pluginId - Plugin ID
+   * @returns {Promise<boolean>} Whether plugin is in trash
    */
-  async getCurrentVersion(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/versions/current`);
+  async isTrashed(pluginId) {
+    const trash = await this.listTrash();
+    return trash.some(t => t.id === pluginId);
   },
 
   // ===================================
-  // CONFIGURATION & SETTINGS
+  // PLUGIN ACTIONS
   // ===================================
+
+  /**
+   * List all actions available in a plugin
+   * @param {string} pluginId - Plugin ID
+   * @returns {Promise<Array>} Array of action metadata
+   */
+  async getActions(pluginId) {
+    const res = await apiFetch(`/plugins/${pluginId}/actions`);
+    
+    // Handle different response formats
+    if (res.actions) return res.actions;
+    if (Array.isArray(res)) return res;
+    return [];
+  },
+
+  /**
+   * Execute a plugin action
+   * @param {string} pluginId - Plugin ID
+   * @param {string} actionName - Action name
+   * @param {Object} meta - Action metadata/input
+   * @param {number} timeout - Request timeout in ms
+   * @returns {Promise<Object>} Action result
+   */
+  async executeAction(pluginId, actionName, meta = {}, timeout = 30000) {
+    return await apiFetch(
+      `/plugins/${pluginId}/actions/${actionName}`,
+      {
+        method: "POST",
+        body: JSON.stringify(meta),
+        signal: AbortSignal.timeout(timeout),
+      }
+    );
+  },
+
+  /**
+   * Test a plugin action (with timeout)
+   * @param {string} pluginId - Plugin ID
+   * @param {Object} options - Test options
+   * @param {string} options.actionName - Action to test
+   * @param {Object} options.meta - Test data
+   * @returns {Promise<Object>} Test result
+   */
+  async testAction(pluginId, options = {}) {
+    const { actionName, meta = {} } = options;
+    
+    if (!actionName) {
+      throw new Error("testAction requires actionName");
+    }
+
+    return await apiFetch(
+      `/plugins/${pluginId}/test-action`,
+      {
+        method: "POST",
+        body: JSON.stringify({ actionName, meta }),
+      }
+    );
+  },
+
+  /**
+   * Get action details
+   * @param {string} pluginId - Plugin ID
+   * @param {string} actionName - Action name
+   * @returns {Promise<Object>} Action metadata
+   */
+  async getActionDetails(pluginId, actionName) {
+    const actions = await this.getActions(pluginId);
+    return actions.find(a => a.name === actionName) || null;
+  },
+
+  // ===================================
+  // PLUGIN CONFIGURATION
+  // ===================================
+
+  /**
+   * Get plugin configuration
+   * @param {string} pluginId - Plugin ID
+   * @returns {Promise<Object>} Plugin configuration and settings
+   */
+  async getConfig(pluginId) {
+    return await apiFetch(`/plugins/${pluginId}/config`);
+  },
 
   /**
    * Get plugin configuration schema
    * @param {string} pluginId - Plugin ID
+   * @returns {Promise<Object>} JSON Schema for plugin config
    */
   async getConfigSchema(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/config-schema`);
+    const res = await apiFetch(`/plugins/${pluginId}/config`);
+    
+    // Extract schema if available
+    return res.configSchema || null;
   },
 
   /**
    * Save plugin configuration
    * @param {string} pluginId - Plugin ID
-   * @param {Object} config - Configuration data
+   * @param {Object} config - Configuration object
+   * @returns {Promise<Object>} Saved configuration
    */
   async saveConfig(pluginId, config) {
     return await apiFetch(`/plugins/${pluginId}/config`, {
@@ -217,272 +305,345 @@ export const PluginsAPI = {
   },
 
   /**
-   * Get plugin configuration
+   * Save a single config setting
    * @param {string} pluginId - Plugin ID
+   * @param {string} key - Setting key
+   * @param {*} value - Setting value
+   * @returns {Promise<Object>} Saved setting
    */
-  async getConfig(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/config`);
+  async setConfigValue(pluginId, key, value) {
+    return await this.saveConfig(pluginId, { [key]: value });
   },
 
   /**
-   * Validate plugin configuration
+   * Get a single config value
    * @param {string} pluginId - Plugin ID
-   * @param {Object} config - Configuration to validate
+   * @param {string} key - Setting key
+   * @returns {Promise<*>} Setting value or null
    */
-  async validateConfig(pluginId, config) {
-    return await apiFetch(`/plugins/${pluginId}/config/validate`, {
-      method: "POST",
-      body: JSON.stringify(config),
-    });
+  async getConfigValue(pluginId, key) {
+    const config = await this.getConfig(pluginId);
+    
+    // Handle different response formats
+    const settings = config.settings || config.config || config;
+    return settings[key] || null;
+  },
+
+  /**
+   * Enable plugin
+   * @param {string} pluginId - Plugin ID
+   * @returns {Promise<Object>} Updated config
+   */
+  async enablePlugin(pluginId) {
+    return await this.saveConfig(pluginId, { enabled: true });
+  },
+
+  /**
+   * Disable plugin
+   * @param {string} pluginId - Plugin ID
+   * @returns {Promise<Object>} Updated config
+   */
+  async disablePlugin(pluginId) {
+    return await this.saveConfig(pluginId, { enabled: false });
   },
 
   // ===================================
-  // PERMISSIONS & ACCESS
+  // PLUGIN UI & PAGES
   // ===================================
 
   /**
-   * Get plugin permissions
+   * Get plugin UI frame/page
    * @param {string} pluginId - Plugin ID
+   * @returns {string} URL to plugin UI frame
    */
-  async getPermissions(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/permissions`);
+  getPluginUIUrl(pluginId) {
+    return `/plugins/ui/${pluginId}/frame`;
   },
 
   /**
-   * Update plugin permissions
+   * Get plugin static asset URL
    * @param {string} pluginId - Plugin ID
-   * @param {Object} permissions - Permissions object
+   * @param {string} filePath - Path to file (relative to plugin root)
+   * @returns {string} URL to asset
    */
-  async updatePermissions(pluginId, permissions) {
-    return await apiFetch(`/plugins/${pluginId}/permissions`, {
-      method: "PUT",
-      body: JSON.stringify(permissions),
-    });
+  getPluginAssetUrl(pluginId, filePath) {
+    return `/plugins/ui/${pluginId}/${filePath}`;
   },
 
   /**
-   * Get plugin access logs
+   * Load plugin UI in iframe
    * @param {string} pluginId - Plugin ID
-   * @param {Object} params - Filter params
+   * @param {HTMLElement} container - DOM element to mount iframe
+   * @returns {HTMLIFrameElement} Iframe element
    */
-  async getAccessLogs(pluginId, params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return await apiFetch(
-      `/plugins/${pluginId}/access-logs${query ? `?${query}` : ""}`
-    );
+  mountPluginUI(pluginId, container) {
+    if (!container) {
+      throw new Error("Container element required");
+    }
+
+    const iframe = document.createElement("iframe");
+    iframe.src = this.getPluginUIUrl(pluginId);
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.border = "none";
+    iframe.sandbox.add("allow-scripts", "allow-same-origin", "allow-forms");
+
+    container.appendChild(iframe);
+    return iframe;
   },
 
   // ===================================
-  // EXECUTION & MONITORING
+  // PLUGIN MENU INTEGRATION
   // ===================================
 
   /**
-   * Get plugin execution logs
-   * @param {string} pluginId - Plugin ID
-   * @param {Object} params - Filter params
+   * Get menu contributions from all plugins
+   * @returns {Promise<Array>} Menu items from plugins
    */
-  async getExecutionLogs(pluginId, params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return await apiFetch(
-      `/plugins/${pluginId}/execution-logs${query ? `?${query}` : ""}`
-    );
+  async getMenuContributions() {
+    const res = await apiFetch("/plugins/menu");
+    return res.menu || [];
   },
 
   /**
-   * Get plugin resource usage
+   * Get menu items from specific plugin
    * @param {string} pluginId - Plugin ID
-   * @param {string} period - Time period (1h, 24h, 7d, 30d)
+   * @returns {Promise<Object>} Menu configuration
    */
-  async getResourceUsage(pluginId, period = "24h") {
-    return await apiFetch(
-      `/plugins/${pluginId}/resource-usage?period=${period}`
-    );
-  },
-
-  /**
-   * Get plugin error logs
-   * @param {string} pluginId - Plugin ID
-   * @param {Object} params - Filter params
-   */
-  async getErrorLogs(pluginId, params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return await apiFetch(
-      `/plugins/${pluginId}/error-logs${query ? `?${query}` : ""}`
-    );
-  },
-
-  /**
-   * Restart plugin
-   * @param {string} pluginId - Plugin ID
-   */
-  async restartPlugin(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/restart`, {
-      method: "POST",
-    });
-  },
-
-  /**
-   * Stop plugin execution
-   * @param {string} pluginId - Plugin ID
-   */
-  async stopPlugin(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/stop`, {
-      method: "POST",
-    });
+  async getPluginMenu(pluginId) {
+    const plugin = await this.getPluginDetails(pluginId);
+    const manifest = plugin.manifest || {};
+    const ui = manifest.ui || {};
+    
+    return ui.menu || null;
   },
 
   // ===================================
-  // TESTING & VALIDATION
+  // PLUGIN MANIFEST
   // ===================================
 
   /**
-   * Test plugin functionality
+   * Get plugin manifest
    * @param {string} pluginId - Plugin ID
-   * @param {Object} testData - Test data
+   * @returns {Promise<Object>} Plugin manifest
    */
-  async testPlugin(pluginId, testData) {
-    return await apiFetch(`/plugins/${pluginId}/test`, {
-      method: "POST",
-      body: JSON.stringify(testData),
-    });
+  async getManifest(pluginId) {
+    const plugin = await this.getPluginDetails(pluginId);
+    return plugin.manifest || {};
   },
 
   /**
-   * Validate plugin manifest
-   * @param {Object} manifest - Plugin manifest to validate
+   * Get plugin name
+   * @param {string} pluginId - Plugin ID
+   * @returns {Promise<string>} Plugin name
    */
-  async validateManifest(manifest) {
-    return await apiFetch("/plugins/validate-manifest", {
-      method: "POST",
-      body: JSON.stringify(manifest),
-    });
+  async getPluginName(pluginId) {
+    const plugin = await this.getPluginDetails(pluginId);
+    return plugin.name || pluginId;
   },
 
   /**
-   * Validate plugin code
+   * Get plugin version
    * @param {string} pluginId - Plugin ID
-   * @param {string} code - Code to validate
+   * @returns {Promise<string>} Plugin version
    */
-  async validateCode(pluginId, code) {
-    return await apiFetch(`/plugins/${pluginId}/validate-code`, {
-      method: "POST",
-      body: JSON.stringify({ code }),
-    });
+  async getPluginVersion(pluginId) {
+    const plugin = await this.getPluginDetails(pluginId);
+    return plugin.version || "unknown";
   },
 
   /**
-   * Check for security vulnerabilities
+   * Get plugin description
    * @param {string} pluginId - Plugin ID
+   * @returns {Promise<string>} Plugin description
    */
-  async securityScan(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/security-scan`, {
-      method: "POST",
-    });
+  async getPluginDescription(pluginId) {
+    const manifest = await this.getManifest(pluginId);
+    return manifest.description || "";
+  },
+
+  /**
+   * Get plugin author
+   * @param {string} pluginId - Plugin ID
+   * @returns {Promise<string>} Plugin author
+   */
+  async getPluginAuthor(pluginId) {
+    const manifest = await this.getManifest(pluginId);
+    return manifest.author || "Unknown";
   },
 
   // ===================================
-  // DEPENDENCIES & HOOKS
+  // PLUGIN DEPENDENCIES
   // ===================================
 
   /**
    * Get plugin dependencies
    * @param {string} pluginId - Plugin ID
+   * @returns {Promise<Object>} Dependencies from manifest
    */
   async getDependencies(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/dependencies`);
+    const manifest = await this.getManifest(pluginId);
+    return manifest.dependencies || {};
   },
 
   /**
    * Get plugin hooks
    * @param {string} pluginId - Plugin ID
+   * @returns {Promise<Object>} Hooks defined in manifest
    */
   async getHooks(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/hooks`);
-  },
-
-  /**
-   * Get available hooks for plugin to use
-   */
-  async getAvailableHooks() {
-    return await apiFetch("/plugins/available-hooks");
+    const manifest = await this.getManifest(pluginId);
+    return manifest.hooks || {};
   },
 
   // ===================================
-  // STATISTICS
+  // BATCH OPERATIONS
   // ===================================
 
   /**
-   * Get plugin statistics
-   * @param {string} pluginId - Plugin ID
+   * Get details for multiple plugins
+   * @param {string[]} pluginIds - Array of plugin IDs
+   * @returns {Promise<Object>} Map of pluginId -> plugin details
    */
-  async getStats(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/stats`);
+  async getMultiplePlugins(pluginIds) {
+    const results = {};
+    
+    for (const pluginId of pluginIds) {
+      try {
+        results[pluginId] = await this.getPluginDetails(pluginId);
+      } catch (err) {
+        results[pluginId] = { error: err.message };
+      }
+    }
+    
+    return results;
   },
 
   /**
-   * Get plugin installations over time
-   * @param {string} pluginId - Plugin ID
-   * @param {string} period - Time period (7d, 30d, 90d, 1y)
+   * Execute actions across multiple plugins
+   * @param {Array} actions - Array of {pluginId, actionName, meta}
+   * @param {Object} options - Options
+   * @param {boolean} options.parallel - Execute in parallel (default: sequential)
+   * @param {boolean} options.stopOnError - Stop if one fails
+   * @returns {Promise<Array>} Results array
    */
-  async getInstallationTrend(pluginId, period = "30d") {
-    return await apiFetch(
-      `/plugins/${pluginId}/stats/installations?period=${period}`
-    );
-  },
+  async executeMultipleActions(actions, options = {}) {
+    const { parallel = false, stopOnError = false } = options;
+    const results = [];
 
-  /**
-   * Get active user count
-   * @param {string} pluginId - Plugin ID
-   */
-  async getActiveUsers(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/stats/active-users`);
+    if (parallel) {
+      const promises = actions.map(({ pluginId, actionName, meta }) =>
+        this.executeAction(pluginId, actionName, meta).catch(err => ({
+          error: err.message,
+        }))
+      );
+      return await Promise.all(promises);
+    } else {
+      for (const { pluginId, actionName, meta } of actions) {
+        try {
+          const result = await this.executeAction(pluginId, actionName, meta);
+          results.push(result);
+        } catch (err) {
+          results.push({ error: err.message });
+          if (stopOnError) break;
+        }
+      }
+      return results;
+    }
   },
 
   // ===================================
-  // DEVELOPER TOOLS
+  // UTILITY METHODS
   // ===================================
 
   /**
-   * Get developer documentation
+   * Check plugin health (executes a test action if available)
    * @param {string} pluginId - Plugin ID
+   * @returns {Promise<boolean>} Whether plugin is healthy
    */
-  async getDocs(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/docs`);
+  async checkPluginHealth(pluginId) {
+    try {
+      const actions = await this.getActions(pluginId);
+      
+      // Try to find and execute a test/health action
+      const testAction = actions.find(a => 
+        a.name === "test" || 
+        a.name === "health" || 
+        a.name === "selftest"
+      );
+
+      if (testAction) {
+        await this.executeAction(pluginId, testAction.name);
+      }
+      
+      return true;
+    } catch (err) {
+      return false;
+    }
   },
 
   /**
-   * Get code examples
-   * @param {string} pluginId - Plugin ID
+   * Get summary of all plugins with status
+   * @returns {Promise<Object>} Summary stats
    */
-  async getExamples(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/examples`);
+  async getPluginsSummary() {
+    const plugins = await this.listPlugins();
+    const trash = await this.listTrash();
+
+    const summary = {
+      total: plugins.length,
+      enabled: plugins.filter(p => p.enabled !== false).length,
+      disabled: plugins.filter(p => p.enabled === false).length,
+      trashed: trash.length,
+      plugins: plugins.map(p => ({
+        id: p.id,
+        name: p.name,
+        version: p.version,
+        enabled: p.enabled !== false,
+      })),
+    };
+
+    return summary;
   },
 
   /**
-   * Get API reference
-   * @param {string} pluginId - Plugin ID
+   * Format plugin for display
+   * @param {Object} plugin - Plugin object
+   * @returns {Object} Formatted plugin
    */
-  async getAPIReference(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/api-reference`);
+  formatPluginForDisplay(plugin) {
+    return {
+      id: plugin.id,
+      name: plugin.name || plugin.id,
+      version: plugin.version || "unknown",
+      description: plugin.manifest?.description || "",
+      author: plugin.manifest?.author || "Unknown",
+      enabled: plugin.enabled !== false,
+      loadedAt: plugin.loadedAt,
+      manifest: plugin.manifest,
+    };
   },
 
   /**
-   * Build plugin for distribution
+   * Create plugin info card (HTML)
    * @param {string} pluginId - Plugin ID
+   * @returns {Promise<string>} HTML card markup
    */
-  async buildPlugin(pluginId) {
-    return await apiFetch(`/plugins/${pluginId}/build`, {
-      method: "POST",
-    });
-  },
+  async createPluginCard(pluginId) {
+    const plugin = await this.getPluginDetails(pluginId);
+    const formatted = this.formatPluginForDisplay(plugin);
 
-  /**
-   * Get build status
-   * @param {string} pluginId - Plugin ID
-   * @param {string} buildId - Build ID
-   */
-  async getBuildStatus(pluginId, buildId) {
-    return await apiFetch(`/plugins/${pluginId}/builds/${buildId}`);
+    return `
+      <div class="plugin-card">
+        <h3>${formatted.name}</h3>
+        <p class="version">v${formatted.version}</p>
+        <p class="author">by ${formatted.author}</p>
+        <p class="description">${formatted.description}</p>
+        <div class="status">
+          ${formatted.enabled ? '✓ Enabled' : '✗ Disabled'}
+        </div>
+      </div>
+    `;
   },
 };
 

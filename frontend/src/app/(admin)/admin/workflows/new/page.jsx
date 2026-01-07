@@ -1,58 +1,78 @@
+/**
+ * Workflow Creation Page - STRICT API COMPLIANCE
+ * ==================================================
+ * Creates new workflows
+ * 
+ * Route: /admin/workflows/new
+ * Copy to: app/(admin)/admin/workflows/new/page.jsx
+ */
+
 "use client"
 
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-
-import { Button } from "@/components/ui/button"
-
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle, ArrowLeft } from "lucide-react"
 import WorkflowBuilder from "@/components/automation/workflow-builder"
-import { ArrowLeft } from "lucide-react"
 
-/* Route: app/(admin)/admin/workflows/new/page.jsx */
-
-export default function CreateWorkflowPage() {
+export default function WorkflowNewPage() {
   const router = useRouter()
+  const [error, setError] = useState(null)
 
-  /* Save Workflow */
-  const handleSaveWorkflow = async (workflowData) => {
-    try {
-      const response = await fetch(`/api/workflows`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(workflowData),
-      })
+  const handleBack = () => {
+    router.push("/admin/workflows")
+  }
 
-      if (!response.ok) throw new Error("Failed to create workflow")
+  const handleWorkflowCreated = (workflowId) => {
+    console.log('✅ Workflow created:', workflowId)
+    // Navigate back to list
+    router.push("/admin/workflows")
+  }
 
-      const created = await response.json()
-      alert("Workflow created successfully")
-      router.push(`/admin/workflows/${created.data.id}`)
-    } catch (err) {
-      console.error("Error creating workflow:", err)
-      alert(err?.message || "Failed to create workflow")
-    }
+  const handleError = (err) => {
+    console.error('❌ Error:', err)
+    setError(err?.message || "An error occurred")
   }
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Header */}
       <div className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
-          <Link
-            href="/admin/workflows"
+          <button
+            onClick={handleBack}
             className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-2"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Workflows
-          </Link>
+          </button>
           <h1 className="text-3xl font-bold">Create New Workflow</h1>
           <p className="text-muted-foreground mt-2">
-            Build a new workflow with tasks and triggers
+            Define automation steps and create your workflow
           </p>
         </div>
       </div>
 
+      {/* Content */}
       <div className="container mx-auto px-4 py-8">
-        <WorkflowBuilder onSave={handleSaveWorkflow} />
+        {/* Error State */}
+        {error && (
+          <Alert className="bg-red-50 border-red-300 mb-6">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              {error}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Workflow Builder */}
+        <div>
+          <WorkflowBuilder
+            onWorkflowCreated={handleWorkflowCreated}
+            onError={handleError}
+          />
+        </div>
       </div>
     </div>
   )
