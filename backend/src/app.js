@@ -29,7 +29,9 @@ app.use((req, res, next) => {
   console.log("🌐 Incoming Origin:", req.headers.origin);
   next();
 });
+const adminPortalGuard = require("./modules/auth/guards/adminPortal.guard");
 
+const authGuard = require("./modules/auth/middlewares/auth.guard");
 /* ================================================================
    RESPONSE HELPER MIDDLEWARE (CRITICAL - ADD EARLY)
    – Provides res.success(), res.fail(), res.error()
@@ -190,8 +192,11 @@ app.use("/api/client", require("./modules/services").clientRoutes);
 const ordersModule = require("./modules/orders");
 
 app.use("/api/client/orders", ordersModule.clientRoutes);
-app.use("/api/admin/orders", ordersModule.adminRoutes);
-
+app.use("/api/admin/orders", authGuard, adminPortalGuard, ordersModule.adminRoutes);
+/////billing////
+const billing = require('./modules/billing');
+  app.use("/api/admin/billing", authGuard, adminPortalGuard, billing.adminRoutes);
+    app.use('/api/client/billing', billing.clientRoutes);
 /* ================================================================
    BACKUP MODULE (AUTO-LOADS PROVIDERS + ROUTES)
 ================================================================ */

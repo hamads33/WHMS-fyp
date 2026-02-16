@@ -20,8 +20,8 @@ model User {
   email        String @unique
   passwordHash String
 
-  emailVerified Boolean @default(false)
-disabled      Boolean  @default(false)
+  emailVerified  Boolean  @default(false)
+  disabled       Boolean  @default(false)
   mfaEnabled     Boolean  @default(false)
   mfaSecret      String?
   mfaBackupCodes String[] @default([])
@@ -55,6 +55,9 @@ disabled      Boolean  @default(false)
   marketplaceReviews     MarketplaceReview[]
   marketplaceSubmissions MarketplaceSubmission[]
   marketplacePurchases   MarketplacePurchase[]
+  billingProfile         BillingProfile?
+  invoices               Invoice[]
+  payments               Payment[]
 
   // Tickets
   tickets Ticket[]
@@ -112,17 +115,17 @@ model Session {
   user   User   @relation(fields: [userId], references: [id])
   userId String
 
-  token     String   @unique
-  userAgent String?
-  ip        String?
-  deviceHash     String?      // 🔐 hashed device fingerprint
-  country        String?      // 🌍 geo-IP (country only)
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
-  expiresAt DateTime
+  token      String   @unique
+  userAgent  String?
+  ip         String?
+  deviceHash String? // 🔐 hashed device fingerprint
+  country    String? // 🌍 geo-IP (country only)
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
 
- lastActivity DateTime @default(now())
-  isImpersonation     Boolean @default(false)
+  lastActivity        DateTime @default(now())
+  isImpersonation     Boolean  @default(false)
   impersonatorId      String?
   impersonationReason String?
 }
@@ -281,11 +284,11 @@ model EmailToken {
 ////////////////////////////////////////////////////////////
 
 model AuditLog {
-  id        Int      @id @default(autoincrement())
+  id        Int                @id @default(autoincrement())
   source    String
   action    String
   actor     String
-  level     String   @default("INFO")
+  level     String             @default("INFO")
   meta      Json?
   userId    String?
   ip        String?
@@ -294,11 +297,12 @@ model AuditLog {
   entityId  String?
   data      Json?
   profileId Int?
-profile   AutomationProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
-@@index([profileId])
-  createdAt DateTime @default(now())
+  profile   AutomationProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  createdAt DateTime           @default(now())
 
   user User? @relation(fields: [userId], references: [id])
+
+  @@index([profileId])
 }
 
 ////////////////////////////////////////////////////////////
@@ -643,7 +647,6 @@ model Backup {
   @@index([status])
 }
 
-
 model BackupVersion {
   id        String   @id @default(uuid())
   backupId  String
@@ -658,6 +661,7 @@ model BackupVersion {
   @@index([backupId])
   @@index([createdAt])
 }
+
 model BackupStepLog {
   id        String   @id @default(uuid())
   backupId  String
@@ -693,12 +697,9 @@ model Tld {
   updatedAt     DateTime  @updatedAt
 }
 
-
-
 ////////////////////////////////////////////////////////////
 // AUTOMATION SYSTEM
 ///////////////////////////////////////////////////////////
-
 
 // ============================================================
 // ENUMS - Define all enums first
@@ -710,9 +711,6 @@ enum AutomationRunStatus {
   success
   failed
 }
-
-
-
 
 // ============================================================
 // AUTOMATION SYSTEM (Core)
@@ -729,10 +727,9 @@ model AutomationProfile {
   updatedAt DateTime @updatedAt
 
   // Relations
-  tasks       AutomationTask[]
-  runs        AutomationRun[]
-  auditLogs   AuditLog[]
-  
+  tasks     AutomationTask[]
+  runs      AutomationRun[]
+  auditLogs AuditLog[]
 
   // Indexes
   @@unique([name])
@@ -741,11 +738,11 @@ model AutomationProfile {
 }
 
 model AutomationTask {
-  id         Int     @id @default(autoincrement())
+  id         Int    @id @default(autoincrement())
   profileId  Int
-  actionType String  @db.VarChar(100)
+  actionType String @db.VarChar(100)
   actionMeta Json?
-  order      Int     @default(0)
+  order      Int    @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -760,16 +757,16 @@ model AutomationTask {
 }
 
 model AutomationRun {
-  id           Int                   @id @default(autoincrement())
+  id           Int                 @id @default(autoincrement())
   profileId    Int
   taskId       Int?
   status       AutomationRunStatus
   result       Json?
-  errorMessage String?               @db.Text
+  errorMessage String?             @db.Text
 
   startedAt  DateTime?
   finishedAt DateTime?
-  createdAt  DateTime               @default(now())
+  createdAt  DateTime  @default(now())
 
   // Relations
   profile AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
@@ -786,255 +783,272 @@ model AutomationRun {
 model AutomationWorkflow {
   id          Int     @id @default(autoincrement())
   name        String  @db.VarChar(255)
-  slug        String  @unique @db.VarChar(255)  // ← ADD
+  slug        String  @unique @db.VarChar(255) // ← ADD
   description String? @db.Text
-  definition Json
-  enabled    Boolean @default(true)
-  version    Int     @default(1)
-  isDraft    Boolean @default(false)
-  
-  trigger    String  @default("manual")  // ← ADD
-  type       String  @default("sequential")  // ← ADD
-  eventType  String?  // ← ADD
-  eventFilter Json?   // ← ADD
-  
-  webhookUrl String?  @unique  // ← ADD
-  webhookSecret String? @db.Text  // ← ADD
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deletedAt DateTime?  // ← ADD (soft delete)
-  
-  runs    WorkflowRun[]
-  webhooks    IncomingWebhook[]  // ← ADD
-  triggers    WorkflowTriggerRule[]  // ← ADD
-  schedules   WorkflowSchedule[]  // ← ADD
-  alerts      WorkflowAlert[]  // ← ADD
-  
+  definition  Json
+  enabled     Boolean @default(true)
+  version     Int     @default(1)
+  isDraft     Boolean @default(false)
+
+  trigger     String  @default("manual") // ← ADD
+  type        String  @default("sequential") // ← ADD
+  eventType   String? // ← ADD
+  eventFilter Json? // ← ADD
+
+  webhookUrl    String? @unique // ← ADD
+  webhookSecret String? @db.Text // ← ADD
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // ← ADD (soft delete)
+
+  runs      WorkflowRun[]
+  webhooks  IncomingWebhook[] // ← ADD
+  triggers  WorkflowTriggerRule[] // ← ADD
+  schedules WorkflowSchedule[] // ← ADD
+  alerts    WorkflowAlert[] // ← ADD
+
   @@index([enabled])
-  @@index([trigger])  // ← ADD
-  @@index([eventType])  // ← ADD
+  @@index([trigger]) // ← ADD
+  @@index([eventType]) // ← ADD
   @@index([createdAt])
 }
+
 model WorkflowRun {
-  id            Int               @id @default(autoincrement())
+  id            Int                @id @default(autoincrement())
   workflowId    Int
-  status        WorkflowRunStatus @default(pending)
-  startedAt    DateTime?
-  finishedAt   DateTime?
+  status        WorkflowRunStatus  @default(pending)
+  startedAt     DateTime?
+  finishedAt    DateTime?
   totalDuration Int?
-  taskCount    Int @default(0)
-  successCount Int @default(0)
-  failureCount Int @default(0)
-  skippedCount Int @default(0)
-  failedTaskId String?
-  errorMessage String? @db.Text
-  errorStack   String? @db.Text
-  triggeredBy String @default("manual")  // ← UPDATE: add "event", "api"
-  triggerId   String?  // ← ADD: ID of trigger source
-  input  Json?
-  output Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  workflow AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  taskRuns WorkflowTaskRun[]
+  taskCount     Int                @default(0)
+  successCount  Int                @default(0)
+  failureCount  Int                @default(0)
+  skippedCount  Int                @default(0)
+  failedTaskId  String?
+  errorMessage  String?            @db.Text
+  errorStack    String?            @db.Text
+  triggeredBy   String             @default("manual") // ← UPDATE: add "event", "api"
+  triggerId     String? // ← ADD: ID of trigger source
+  input         Json?
+  output        Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  workflow      AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  taskRuns      WorkflowTaskRun[]
+
   @@index([workflowId])
   @@index([status])
-  @@index([triggeredBy])  // ← ADD
+  @@index([triggeredBy]) // ← ADD
   @@index([createdAt])
 }
+
 // KEEP EXACTLY AS IS - NO CHANGES NEEDED
 model WorkflowTaskRun {
-  id       Int                 @id @default(autoincrement())
-  runId    Int
-  taskId   String
-  status   WorkflowTaskStatus  @default(pending)
-  startedAt  DateTime?
-  finishedAt DateTime?
-  duration   Int?
-  output        Json?
-  errorMessage  String? @db.Text
-  errorStack    String? @db.Text
-  retryCount  Int       @default(0)
-  maxRetries  Int       @default(0)
-  nextRetryAt DateTime?
+  id              Int                @id @default(autoincrement())
+  runId           Int
+  taskId          String
+  status          WorkflowTaskStatus @default(pending)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  duration        Int?
+  output          Json?
+  errorMessage    String?            @db.Text
+  errorStack      String?            @db.Text
+  retryCount      Int                @default(0)
+  maxRetries      Int                @default(0)
+  nextRetryAt     DateTime?
   conditionResult Boolean?
   selectedPath    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  run             WorkflowRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+
   @@index([runId])
   @@index([taskId])
   @@index([status])
 }
+
 // KEEP EXACTLY AS IS - NO CHANGES NEEDED
 model RateLimitRule {
-  id     Int     @id @default(autoincrement())
-  type   String  @db.VarChar(50)
-  target String  @db.VarChar(255)
-  limit   Int
-  window  Int
+  id        Int      @id @default(autoincrement())
+  type      String   @db.VarChar(50)
+  target    String   @db.VarChar(255)
+  limit     Int
+  window    Int
   enabled   Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@unique([type, target])
   @@index([enabled])
 }
+
 // KEEP EXACTLY AS IS - NO CHANGES NEEDED
 model NotificationRule {
-  id     Int     @id @default(autoincrement())
-  trigger String @db.VarChar(100)
-  actionType String? @db.VarChar(100)
-  method      String @db.VarChar(50)
-  destination String @db.VarChar(500)
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  trigger     String   @db.VarChar(100)
+  actionType  String?  @db.VarChar(100)
+  method      String   @db.VarChar(50)
+  destination String   @db.VarChar(500)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
   @@index([trigger])
   @@index([enabled])
 }
+
 // KEEP EXACTLY AS IS - NO CHANGES NEEDED
 model ActionMetric {
-  id     Int    @id @default(autoincrement())
-  actionType String @unique @db.VarChar(100)
-  executionCount Int @default(0)
-  successCount   Int @default(0)
-  failureCount   Int @default(0)
-  avgDuration Float @default(0)
-  maxDuration Int?
-  minDuration Int?
-  p95Duration Int?
-  p99Duration Int?
+  id             Int       @id @default(autoincrement())
+  actionType     String    @unique @db.VarChar(100)
+  executionCount Int       @default(0)
+  successCount   Int       @default(0)
+  failureCount   Int       @default(0)
+  avgDuration    Float     @default(0)
+  maxDuration    Int?
+  minDuration    Int?
+  p95Duration    Int?
+  p99Duration    Int?
   lastExecutedAt DateTime?
-  lastError      String? @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  lastError      String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
+
 // KEEP EXACTLY AS IS - NO CHANGES NEEDED
 model ActionTemplate {
-  id     Int     @id @default(autoincrement())
-  actionType String @unique @db.VarChar(100)
-  name   String  @db.VarChar(255)
-  description String? @db.Text
-  inputSchema  Json
-  outputSchema Json
-  category  String  @db.VarChar(100)
-  isBuiltin Boolean @default(true)
-  isActive  Boolean @default(true)
-  documentation String? @db.Text
-  examples       Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  actionType    String   @unique @db.VarChar(100)
+  name          String   @db.VarChar(255)
+  description   String?  @db.Text
+  inputSchema   Json
+  outputSchema  Json
+  category      String   @db.VarChar(100)
+  isBuiltin     Boolean  @default(true)
+  isActive      Boolean  @default(true)
+  documentation String?  @db.Text
+  examples      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
   @@index([category])
   @@index([isActive])
 }
+
 model IncomingWebhook {
-  id              String    @id @default(uuid())
-  workflowId      Int
-  workflow        AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  
-  url             String    @unique
-  secret          String    @db.Text
-  
-  enabled         Boolean   @default(true)
-  
-  totalReceived   Int       @default(0)
-  lastReceivedAt  DateTime?
-  failureCount    Int       @default(0)
-  lastError       String?   @db.Text
-  
-  events          String[]
-  retryPolicy     Json?
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
+  id         String             @id @default(uuid())
+  workflowId Int
+  workflow   AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  url    String @unique
+  secret String @db.Text
+
+  enabled Boolean @default(true)
+
+  totalReceived  Int       @default(0)
+  lastReceivedAt DateTime?
+  failureCount   Int       @default(0)
+  lastError      String?   @db.Text
+
+  events      String[]
+  retryPolicy Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([workflowId])
   @@index([enabled])
 }
+
 model WorkflowTriggerRule {
-  id              String    @id @default(uuid())
-  workflowId      Int
-  workflow        AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  
-  eventType       String
-  
-  conditions      Json?
-  
+  id         String             @id @default(uuid())
+  workflowId Int
+  workflow   AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  eventType String
+
+  conditions Json?
+
   passEventAsInput Boolean @default(true)
-  inputMapping    Json?
-  
-  enabled         Boolean   @default(true)
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
+  inputMapping     Json?
+
+  enabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([workflowId, eventType])
   @@index([eventType])
 }
+
 model WorkflowEvent {
-  id              String    @id @default(uuid())
-  
-  type            String
-  source          String
-  
-  data            Json
-  metadata        Json?
-  
-  processed       Boolean   @default(false)
-  processedAt     DateTime?
-  error           String?   @db.Text
-  
-  createdAt       DateTime  @default(now())
-  
+  id String @id @default(uuid())
+
+  type   String
+  source String
+
+  data     Json
+  metadata Json?
+
+  processed   Boolean   @default(false)
+  processedAt DateTime?
+  error       String?   @db.Text
+
+  createdAt DateTime @default(now())
+
   @@index([type])
   @@index([source])
   @@index([processed])
   @@index([createdAt])
 }
+
 model WorkflowSchedule {
-  id              String    @id @default(uuid())
-  workflowId      Int
-  workflow        AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  
-  cronExpression  String
-  
-  enabled         Boolean   @default(true)
-  timezone        String    @default("UTC")
-  
-  input           Json?
-  
-  lastRunAt       DateTime?
-  nextRunAt       DateTime?
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id         String             @id @default(uuid())
+  workflowId Int
+  workflow   AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  cronExpression String
+
+  enabled  Boolean @default(true)
+  timezone String  @default("UTC")
+
+  input Json?
+
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([workflowId])
   @@index([enabled])
 }
+
 model WorkflowAlert {
-  id              String    @id @default(uuid())
-  workflowId      Int
-  workflow        AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  
-  condition       String
-  threshold       Float
-  
-  notifyTo        String[]
-  notifyMethod    String
-  notifyWebhook   String?
-  
-  enabled         Boolean   @default(true)
-  
-  lastAlertAt     DateTime?
-  alertCount      Int       @default(0)
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
+  id         String             @id @default(uuid())
+  workflowId Int
+  workflow   AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  condition String
+  threshold Float
+
+  notifyTo      String[]
+  notifyMethod  String
+  notifyWebhook String?
+
+  enabled Boolean @default(true)
+
+  lastAlertAt DateTime?
+  alertCount  Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([workflowId])
   @@index([condition])
 }
+
 enum WorkflowRunStatus {
   pending
   running
@@ -1052,6 +1066,7 @@ enum WorkflowTaskStatus {
   skipped
   timeout
 }
+
 ////////////////////////////////////////////////////////////
 // MARKETPLACE SYSTEM (FR-M1 → FR-M11)
 ////////////////////////////////////////////////////////////
@@ -1522,25 +1537,26 @@ enum OrderStatus {
   active
   suspended
   terminated
-   cancelled 
+  cancelled
 }
 
 model Order {
-  id        String   @id @default(uuid())
-  clientId  String
-  client    User     @relation(fields: [clientId], references: [id])
+  id       String @id @default(uuid())
+  clientId String
+  client   User   @relation(fields: [clientId], references: [id])
 
   snapshotId Int
   snapshot   ServiceSnapshot @relation(fields: [snapshotId], references: [id])
 
-  status     OrderStatus @default(pending)
+  status   OrderStatus @default(pending)
+  invoices Invoice[]
 
   // NEW
-  startedAt       DateTime?
-  nextRenewalAt   DateTime?
-  suspendedAt     DateTime?
-  terminatedAt    DateTime?
-  cancelledAt     DateTime? 
+  startedAt     DateTime?
+  nextRenewalAt DateTime?
+  suspendedAt   DateTime?
+  terminatedAt  DateTime?
+  cancelledAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1548,4 +1564,262 @@ model Order {
   @@index([clientId])
   @@index([status])
   @@index([nextRenewalAt])
+}
+
+// ============================================================
+// BILLING MODULE — SCHEMA ADDITIONS
+// Append these models to your existing schema.prisma
+// ============================================================
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum InvoiceStatus {
+  draft
+  unpaid
+  paid
+  overdue
+  cancelled
+  refunded
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+  refunded
+}
+
+enum TransactionType {
+  payment
+  refund
+  adjustment
+  credit
+}
+
+// ============================================================
+// CLIENT BILLING PROFILE (FR-11)
+// ============================================================
+
+model BillingProfile {
+  id       String @id @default(uuid())
+  clientId String @unique
+  client   User   @relation(fields: [clientId], references: [id])
+
+  currency         String  @default("USD") // FR-12
+  billingAddress   String?
+  city             String?
+  country          String?
+  postalCode       String?
+  taxId            String? // FR-07
+  paymentMethodRef String? // FR-05 (gateway token ref)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices Invoice[]
+}
+
+// ============================================================
+// TAX RULES (FR-07)
+// ============================================================
+
+model TaxRule {
+  id          Int     @id @default(autoincrement())
+  name        String
+  rate        Decimal @db.Decimal(5, 4) // e.g. 0.1700 = 17%
+  country     String?
+  region      String?
+  serviceType String? // null = applies to all
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([country])
+  @@index([active])
+}
+
+// ============================================================
+// INVOICE (FR-01, FR-02, FR-06)
+// ============================================================
+
+model Invoice {
+  id               String  @id @default(uuid())
+  invoiceNumber    String  @unique // e.g. INV-2024-00001
+  clientId         String
+  billingProfileId String?
+
+  orderId String? // linked order (nullable for manual)
+  order   Order?  @relation(fields: [orderId], references: [id])
+
+  billingProfile BillingProfile? @relation(fields: [billingProfileId], references: [id])
+  client         User            @relation(fields: [clientId], references: [id])
+
+  status InvoiceStatus @default(draft)
+
+  currency       String  @default("USD") // FR-12
+  subtotal       Decimal @db.Decimal(10, 2)
+  taxAmount      Decimal @default(0) @db.Decimal(10, 2)
+  discountAmount Decimal @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal @db.Decimal(10, 2)
+  amountPaid     Decimal @default(0) @db.Decimal(10, 2)
+  amountDue      Decimal @db.Decimal(10, 2)
+
+  dueDate     DateTime? // FR-14
+  issuedAt    DateTime?
+  paidAt      DateTime?
+  cancelledAt DateTime?
+
+  notes    String?
+  metadata Json? // FR-10 extra context
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lineItems    InvoiceLineItem[]
+  payments     Payment[]
+  transactions BillingTransaction[]
+  discounts    InvoiceDiscount[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([orderId])
+  @@index([invoiceNumber])
+}
+
+// ============================================================
+// INVOICE LINE ITEMS (FR-02)
+// ============================================================
+
+model InvoiceLineItem {
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
+
+  taxRate   Decimal? @db.Decimal(5, 4)
+  taxAmount Decimal? @db.Decimal(10, 2)
+
+  serviceCode String? // snapshot reference
+  planName    String?
+  cycle       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+// ============================================================
+// INVOICE DISCOUNTS / CREDITS (FR-08)
+// ============================================================
+
+model InvoiceDiscount {
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  type        String // promo | credit | manual
+  code        String? // promo code if applicable
+  description String?
+  amount      Decimal @db.Decimal(10, 2)
+  isPercent   Boolean @default(false) // true = %, false = flat
+
+  appliedAt DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+// ============================================================
+// PAYMENT (FR-04, FR-05)
+// ============================================================
+
+model Payment {
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  clientId String
+  client   User   @relation(fields: [clientId], references: [id])
+
+  amount   Decimal       @db.Decimal(10, 2)
+  currency String        @default("USD")
+  status   PaymentStatus @default(pending)
+
+  // Gateway integration (FR-05)
+  gateway         String? // stripe | paypal | manual
+  gatewayRef      String? // external tx id
+  gatewayResponse Json? // raw callback payload
+  gatewayStatus   String?
+
+  paidAt     DateTime?
+  failedAt   DateTime?
+  failReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refunds Refund[]
+
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([status])
+  @@index([gatewayRef])
+}
+
+// ============================================================
+// REFUND (FR-09)
+// ============================================================
+
+model Refund {
+  id        String  @id @default(uuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id])
+
+  invoiceId String
+
+  amount Decimal @db.Decimal(10, 2)
+  reason String?
+  notes  String?
+
+  gateway         String?
+  gatewayRef      String?
+  gatewayResponse Json?
+
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
+// ============================================================
+// BILLING TRANSACTION LOG (FR-10)
+// ============================================================
+
+model BillingTransaction {
+  id        String   @id @default(uuid())
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+  clientId  String
+
+  type        TransactionType
+  amount      Decimal         @db.Decimal(10, 2)
+  currency    String          @default("USD")
+  description String?
+  meta        Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([type])
+  @@index([createdAt])
 }

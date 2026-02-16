@@ -1,7 +1,7 @@
 /**
  * Order Service - Clean & Lightweight
  * Path: src/modules/orders/services/order.service.js
- * 
+ *
  * Features:
  * - Order CRUD operations
  * - State machine (pending → active → suspended/terminated)
@@ -11,6 +11,7 @@
 
 const prisma = require("../../../../prisma");
 const { createOrderSnapshot } = require("../utils/order.snapshot.util");
+const { cycleToDays } = require("../../billing/utils/billing.util"); // ✅ FIXED: import cycleToDays
 
 /**
  * Create new order with immutable snapshot
@@ -40,9 +41,9 @@ async function createOrder(clientId, dto) {
       snapshotId: snapshot.id,
       status: "pending",
     },
-    include: { 
-      snapshot: true, 
-      client: { select: { id: true, email: true } } 
+    include: {
+      snapshot: true,
+      client: { select: { id: true, email: true } },
     },
   });
 
@@ -75,9 +76,9 @@ async function getClientOrders(clientId, options = {}) {
 async function getOrderById(orderId, requester) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { 
-      snapshot: true, 
-      client: { select: { id: true, email: true } } 
+    include: {
+      snapshot: true,
+      client: { select: { id: true, email: true } },
     },
   });
 
@@ -102,9 +103,9 @@ async function getOrderById(orderId, requester) {
  * pending → cancelled (terminal)
  */
 async function cancel(orderId, clientId) {
-  const order = await prisma.order.findUnique({ 
+  const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { snapshot: true }
+    include: { snapshot: true },
   });
 
   if (!order) {
@@ -142,11 +143,15 @@ async function cancel(orderId, clientId) {
 /**
  * Activate pending order (admin action)
  * pending → active
+ *
+ * ✅ FIXED: nextRenewalAt now uses the actual billing cycle from the snapshot
+ * instead of a hardcoded 30 days, so quarterly/annual plans get the correct
+ * renewal date and billing's recurring job stays in sync.
  */
 async function activate(orderId) {
-  const order = await prisma.order.findUnique({ 
+  const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { snapshot: true }
+    include: { snapshot: true },
   });
 
   if (!order) {
@@ -161,10 +166,13 @@ async function activate(orderId) {
     throw err;
   }
 
-  // Set start date and renewal date (30 days from now)
+  // ✅ FIXED: read cycle from snapshot, fall back to monthly
+  const cycle = order.snapshot?.snapshot?.pricing?.cycle || "monthly";
+  const days = cycleToDays(cycle);
+
   const now = new Date();
   const nextRenewal = new Date(now);
-  nextRenewal.setDate(nextRenewal.getDate() + 30);
+  nextRenewal.setDate(nextRenewal.getDate() + days);
 
   const updated = await prisma.order.update({
     where: { id: orderId },
@@ -182,11 +190,13 @@ async function activate(orderId) {
 /**
  * Renew order (extend renewal date)
  * active → active (extends renewal)
+ *
+ * ✅ FIXED: also uses cycleToDays instead of hardcoded 30 days
  */
 async function renew(orderId) {
-  const order = await prisma.order.findUnique({ 
+  const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { snapshot: true }
+    include: { snapshot: true },
   });
 
   if (!order) {
@@ -201,10 +211,13 @@ async function renew(orderId) {
     throw err;
   }
 
-  // Extend renewal date by 30 days
+  // ✅ FIXED: use actual billing cycle
+  const cycle = order.snapshot?.snapshot?.pricing?.cycle || "monthly";
+  const days = cycleToDays(cycle);
+
   const base = order.nextRenewalAt || new Date();
   const next = new Date(base);
-  next.setDate(next.getDate() + 30);
+  next.setDate(next.getDate() + days);
 
   const updated = await prisma.order.update({
     where: { id: orderId },
@@ -220,9 +233,9 @@ async function renew(orderId) {
  * active → suspended
  */
 async function suspend(orderId) {
-  const order = await prisma.order.findUnique({ 
+  const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { snapshot: true }
+    include: { snapshot: true },
   });
 
   if (!order) {
@@ -254,9 +267,9 @@ async function suspend(orderId) {
  * suspended → active
  */
 async function resume(orderId) {
-  const order = await prisma.order.findUnique({ 
+  const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { snapshot: true }
+    include: { snapshot: true },
   });
 
   if (!order) {
@@ -288,9 +301,9 @@ async function resume(orderId) {
  * * → terminated
  */
 async function terminate(orderId) {
-  const order = await prisma.order.findUnique({ 
+  const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { snapshot: true }
+    include: { snapshot: true },
   });
 
   if (!order) {
@@ -355,6 +368,8 @@ async function getOrderStats() {
 
 /**
  * Get client's total spend
+ * NOTE: For full billing accuracy (paid invoices only), use
+ * billing module's reportService.getClientSummary(clientId) instead.
  */
 async function getClientTotalSpend(clientId) {
   const orders = await prisma.order.findMany({
@@ -363,7 +378,7 @@ async function getClientTotalSpend(clientId) {
   });
 
   let totalSpend = 0;
-  orders.forEach(order => {
+  orders.forEach((order) => {
     const price = parseFloat(order.snapshot?.snapshot?.pricing?.price || 0);
     totalSpend += price;
   });
@@ -372,14 +387,15 @@ async function getClientTotalSpend(clientId) {
     clientId,
     totalOrders: orders.length,
     totalSpend: totalSpend.toFixed(2),
-    orders: orders.length > 0 
-      ? orders.map(o => ({
-          id: o.id,
-          status: o.status,
-          price: o.snapshot?.snapshot?.pricing?.price,
-          cycle: o.snapshot?.snapshot?.pricing?.cycle,
-        }))
-      : []
+    orders:
+      orders.length > 0
+        ? orders.map((o) => ({
+            id: o.id,
+            status: o.status,
+            price: o.snapshot?.snapshot?.pricing?.price,
+            cycle: o.snapshot?.snapshot?.pricing?.cycle,
+          }))
+        : [],
   };
 }
 
