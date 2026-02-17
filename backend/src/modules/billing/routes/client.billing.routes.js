@@ -1,68 +1,95 @@
 /**
  * Client Billing Routes
  * Path: src/modules/billing/routes/client.billing.routes.js
- * Base mount: /api/client/billing
+ *
+ * Mount point: /api/client/billing
+ *
+ * Clients can:
+ *   - View and update their billing profile
+ *   - View their invoices
+ *   - Pay invoices via gateway
+ *   - View their payment history
+ *   - Get a billing summary
  */
 
 const express = require("express");
 const router = express.Router();
-const ctrl = require("../controllers/billing.controller");
-const validate = require("../../services/middleware/validation.middleware");        // ✅ FIXED: matches ../middleware/ pattern
-const authGuard = require("../../auth/middlewares/auth.guard");        // ✅ CORRECT: matches client.order.routes.js pattern
+const authGuard = require("../../auth/middlewares/auth.guard");
+const validate = require("../../services/middleware/validation.middleware");
+
+const billingCtrl = require("../controllers/billing.controller");
+const invoiceCtrl = require("../controllers/invoice.controller");
+const paymentCtrl = require("../controllers/payment.controller");
+
 const {
-  billingProfileDto,
-  initiateGatewayDto,
-  gatewayCallbackDto,
-} = require("../dtos/billing.dtos");
-
-// ============================================================
-// INVOICES (read-only for clients)
-// ============================================================
-
-// List own invoices          GET  /api/client/billing/invoices
-router.get("/invoices", authGuard, ctrl.listClientInvoices);
-
-// Get specific invoice       GET  /api/client/billing/invoices/:id
-router.get("/invoices/:id", authGuard, ctrl.getInvoice);
-
-// ============================================================
-// PAYMENTS
-// ============================================================
-
-// Initiate gateway payment   POST /api/client/billing/invoices/:invoiceId/pay
-router.post(
-  "/invoices/:invoiceId/pay",
-  authGuard,
-  validate(initiateGatewayDto),
-  ctrl.initiateGatewayPayment
-);
-
-// Gateway callback (public - no auth, verified by gateway secret)
-// POST /api/client/billing/payments/:paymentId/callback
-router.post(
-  "/payments/:paymentId/callback",
-  validate(gatewayCallbackDto),
-  ctrl.gatewayCallback
-);
-
-// List own payments          GET  /api/client/billing/payments
-router.get("/payments", authGuard, ctrl.listClientPayments);
+  upsertBillingProfileDto,
+  initiatePaymentDto,
+} = require("../dtos");
 
 // ============================================================
 // BILLING PROFILE
 // ============================================================
 
-// Get own profile            GET  /api/client/billing/profile
-router.get("/profile", authGuard, ctrl.getMyProfile);
+/**
+ * GET /api/client/billing/profile
+ */
+router.get("/profile", authGuard, billingCtrl.getProfile);
 
-// Update own profile         PUT  /api/client/billing/profile
-router.put("/profile", authGuard, validate(billingProfileDto), ctrl.updateMyProfile);
+/**
+ * PUT /api/client/billing/profile
+ * Body: { currency?, billingAddress?, city?, country?, postalCode?, taxId? }
+ */
+router.put(
+  "/profile",
+  authGuard,
+  validate(upsertBillingProfileDto),
+  billingCtrl.upsertProfile
+);
+
+/**
+ * GET /api/client/billing/summary
+ * Full billing overview: invoices totals, balance due, payment history
+ */
+router.get("/summary", authGuard, billingCtrl.getClientSummary);
 
 // ============================================================
-// REPORTING (self-service)
+// INVOICES
 // ============================================================
 
-// Own billing summary        GET  /api/client/billing/summary
-router.get("/summary", authGuard, ctrl.getClientSummary);
+/**
+ * GET /api/client/billing/invoices
+ * Query: status, limit, offset
+ */
+router.get("/invoices", authGuard, invoiceCtrl.listMine);
+
+/**
+ * GET /api/client/billing/invoices/:id
+ */
+router.get("/invoices/:id", authGuard, invoiceCtrl.get);
+router.get("/invoices/:id/pdf", authGuard, invoiceCtrl.downloadPdf);
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+/**
+ * POST /api/client/billing/invoices/:invoiceId/pay
+ * Initiate a gateway payment session for an invoice.
+ *
+ * Body: { gateway }  — "stripe" | "paypal"
+ */
+router.post(
+  "/invoices/:invoiceId/pay",
+  authGuard,
+  validate(initiatePaymentDto),
+  paymentCtrl.initiatePayment
+);
+
+/**
+ * GET /api/client/billing/payments
+ * Client's own payment history.
+ * Query: status, limit, offset
+ */
+router.get("/payments", authGuard, paymentCtrl.listMine);
 
 module.exports = router;

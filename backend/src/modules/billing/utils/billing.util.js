@@ -1,151 +1,218 @@
 /**
- * Billing Utilities
+ * Billing Utility Functions
  * Path: src/modules/billing/utils/billing.util.js
+ *
+ * Shared helpers for billing cycle calculations, date math,
+ * and invoice helpers used across billing, order, and renewal modules.
  */
 
-const prisma = require("../../../../prisma");
+// ============================================================
+// BILLING CYCLE DEFINITIONS
+// ============================================================
+
+const CYCLE_MONTHS = {
+  monthly: 1,
+  quarterly: 3,
+  semi_annually: 6,
+  annually: 12,
+  biennially: 24,
+  triennially: 36,
+};
+
+const CYCLE_LABELS = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  semi_annually: "Semi-Annually",
+  annually: "Annually",
+  biennially: "Biennially",
+  triennially: "Triennially",
+};
+
+const CYCLE_ORDER = [
+  "monthly",
+  "quarterly",
+  "semi_annually",
+  "annually",
+  "biennially",
+  "triennially",
+];
+
+// ============================================================
+// DATE CALCULATIONS
+// ============================================================
 
 /**
- * Generate sequential invoice number: INV-YYYY-XXXXX
+ * Calculate the next renewal date from a base date and billing cycle.
+ * Uses calendar-accurate month arithmetic (avoids 30-day shortcuts).
+ *
+ * @param {Date|string} from - Base date
+ * @param {string} cycle - Billing cycle key
+ * @returns {Date}
  */
-async function generateInvoiceNumber() {
-  const year = new Date().getFullYear();
-  const prefix = `INV-${year}-`;
+function getNextRenewalDate(from, cycle) {
+  const date = new Date(from);
+  const months = CYCLE_MONTHS[cycle];
 
-  // Count invoices this year to get next sequence
-  const count = await prisma.invoice.count({
-    where: {
-      invoiceNumber: { startsWith: prefix },
-    },
-  });
-
-  const seq = String(count + 1).padStart(5, "0");
-  return `${prefix}${seq}`;
-}
-
-/**
- * ✅ NEW: Calculate next renewal date based on billing cycle
- * Uses calendar-based date arithmetic (proper month/year handling)
- * 
- * IMPORTANT: Handles month boundaries correctly
- * Examples:
- *   Jan 31 + 1 month = Feb 28/29 (NOT Mar 3)
- *   Feb 28 + 1 quarter = May 28
- *   2024-01-31 + 1 year = 2025-01-31 (leap year safe)
- * 
- * @param {Date} currentDate - Base date to add cycle to
- * @param {string} cycle - 'monthly' | 'quarterly' | 'semi_annually' | 'annually'
- * @returns {Date} Next renewal date
- */
-function getNextRenewalDate(currentDate, cycle) {
-  const date = new Date(currentDate);
-  
-  switch(cycle) {
-    case 'monthly':
-      // Add 1 month (handles month boundary overflow)
-      date.setMonth(date.getMonth() + 1);
-      break;
-      
-    case 'quarterly':
-      // Add 3 months
-      date.setMonth(date.getMonth() + 3);
-      break;
-      
-    case 'semi_annually':
-      // Add 6 months
-      date.setMonth(date.getMonth() + 6);
-      break;
-      
-    case 'annually':
-      // Add 1 year
-      date.setFullYear(date.getFullYear() + 1);
-      break;
-      
-    default:
-      // Fallback: add 30 days (backward compatible)
-      date.setDate(date.getDate() + 30);
+  if (!months) {
+    throw new Error(`Unknown billing cycle: "${cycle}"`);
   }
-  
+
+  date.setMonth(date.getMonth() + months);
   return date;
 }
 
 /**
- * @deprecated Use getNextRenewalDate() instead
- * 
- * Calculate billing cycle days
- * Returns approximate days for reference only.
- * For actual date calculations, use getNextRenewalDate() which handles month boundaries.
+ * Calculate invoice due date from issue date.
+ * Defaults to 7 days (NET-7).
+ *
+ * @param {Date|string} issueDate
+ * @param {number} days - Payment term in days
+ * @returns {Date}
  */
-function cycleToDays(cycle) {
-  const map = {
-    monthly: 30,
-    quarterly: 90,
-    semi_annually: 180,
-    annually: 365,
-  };
-  return map[cycle] || 30;
-}
-
-/**
- * Calculate due date (default: 7 days from now)
- */
-function calculateDueDate(daysFromNow = 7) {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromNow);
+function calculateDueDate(issueDate, days = 7) {
+  const date = new Date(issueDate);
+  date.setDate(date.getDate() + days);
   return date;
 }
 
 /**
- * Compute tax amount from subtotal
+ * Check whether an invoice is overdue based on its dueDate and status.
+ *
+ * @param {Object} invoice - Prisma invoice record
+ * @returns {boolean}
  */
-function computeTax(subtotal, taxRate) {
-  if (!taxRate) return 0;
-  return parseFloat((subtotal * parseFloat(taxRate)).toFixed(2));
+function isOverdue(invoice) {
+  if (!invoice.dueDate) return false;
+  if (["paid", "cancelled", "refunded"].includes(invoice.status)) return false;
+  return new Date() > new Date(invoice.dueDate);
 }
 
 /**
- * Compute discount amount
+ * Check whether an order is due for renewal.
+ *
+ * @param {Object} order - Prisma order record
+ * @param {number} daysAhead - Consider due if renewal is within N days
+ * @returns {boolean}
  */
-function computeDiscount(subtotal, discount) {
-  if (!discount) return 0;
-  if (discount.isPercent) {
-    return parseFloat((subtotal * (discount.amount / 100)).toFixed(2));
-  }
-  return parseFloat(discount.amount);
+function isDueForRenewal(order, daysAhead = 3) {
+  if (order.status !== "active" || !order.nextRenewalAt) return false;
+
+  const now = new Date();
+  const renewalWindow = new Date();
+  renewalWindow.setDate(now.getDate() + daysAhead);
+
+  return new Date(order.nextRenewalAt) <= renewalWindow;
+}
+
+// ============================================================
+// CYCLE HELPERS
+// ============================================================
+
+/**
+ * Human-readable label for a billing cycle.
+ * @param {string} cycle
+ * @returns {string}
+ */
+function getCycleLabel(cycle) {
+  return CYCLE_LABELS[cycle] || cycle;
 }
 
 /**
- * Build invoice totals from line items + tax + discounts
+ * Number of calendar months for a billing cycle.
+ * @param {string} cycle
+ * @returns {number}
  */
-function buildTotals(lineItems, taxRate = 0, discounts = []) {
-  const subtotal = lineItems.reduce((sum, item) => {
-    return sum + parseFloat(item.total);
-  }, 0);
+function getCycleMonths(cycle) {
+  return CYCLE_MONTHS[cycle] || 1;
+}
 
-  let discountAmount = 0;
-  for (const d of discounts) {
-    discountAmount += computeDiscount(subtotal, d);
+/**
+ * Sort cycles in ascending duration order.
+ * @param {string[]} cycles
+ * @returns {string[]}
+ */
+function sortCycles(cycles) {
+  return [...cycles].sort(
+    (a, b) => CYCLE_ORDER.indexOf(a) - CYCLE_ORDER.indexOf(b)
+  );
+}
+
+// ============================================================
+// COST CALCULATIONS
+// ============================================================
+
+/**
+ * Apply a discount to a subtotal.
+ * Returns the discount amount (not the final price).
+ *
+ * @param {number} subtotal
+ * @param {string|null} discountType - "percentage" | "fixed" | null
+ * @param {number} discountAmount
+ * @returns {number}
+ */
+function applyDiscount(subtotal, discountType, discountAmount) {
+  if (!discountType || !discountAmount) return 0;
+
+  const amount = parseFloat(discountAmount) || 0;
+
+  if (discountType === "percentage") {
+    return parseFloat(((subtotal * Math.min(amount, 100)) / 100).toFixed(2));
   }
 
-  const taxableAmount = Math.max(subtotal - discountAmount, 0);
-  const taxAmount = computeTax(taxableAmount, taxRate);
-  const totalAmount = parseFloat((taxableAmount + taxAmount).toFixed(2));
+  if (discountType === "fixed") {
+    return parseFloat(Math.min(amount, subtotal).toFixed(2));
+  }
 
-  return {
-    subtotal: parseFloat(subtotal.toFixed(2)),
-    discountAmount: parseFloat(discountAmount.toFixed(2)),
-    taxAmount,
-    totalAmount,
-    amountDue: totalAmount,
-  };
+  return 0;
 }
+
+/**
+ * Round a number to 2 decimal places (safe for currency).
+ * @param {number} value
+ * @returns {number}
+ */
+function toCurrency(value) {
+  return parseFloat(parseFloat(value || 0).toFixed(2));
+}
+
+// ============================================================
+// INVOICE NUMBER GENERATION
+// ============================================================
+
+/**
+ * Build the invoice number prefix for a given year.
+ * @param {number} [year]
+ * @returns {string}
+ */
+function getInvoicePrefix(year) {
+  return `INV-${year || new Date().getFullYear()}-`;
+}
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
-  generateInvoiceNumber,
-  getNextRenewalDate,  // ✅ NEW: Use this for accurate date calculations
-  cycleToDays,         // ⚠️  DEPRECATED: Use getNextRenewalDate instead
+  // Constants
+  CYCLE_MONTHS,
+  CYCLE_LABELS,
+  CYCLE_ORDER,
+
+  // Date math
+  getNextRenewalDate,
   calculateDueDate,
-  computeTax,
-  computeDiscount,
-  buildTotals,
+  isOverdue,
+  isDueForRenewal,
+
+  // Cycle helpers
+  getCycleLabel,
+  getCycleMonths,
+  sortCycles,
+
+  // Cost helpers
+  applyDiscount,
+  toCurrency,
+
+  // Invoice helpers
+  getInvoicePrefix,
 };

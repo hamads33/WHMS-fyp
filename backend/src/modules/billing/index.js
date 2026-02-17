@@ -2,43 +2,45 @@
  * Billing Module
  * Path: src/modules/billing/index.js
  *
- * Mount in your main app:
- *   const billing = require('./modules/billing');
- *   app.use('/api/admin/billing', adminAuth, billing.adminRoutes);
- *   app.use('/api/client/billing', billing.clientRoutes);
- *
- *   // Start cron jobs on boot:
- *   billing.scheduleBillingJobs();
+ * Public interface for the billing module.
+ * Import services directly when integrating with other modules
+ * (e.g. order module calling billingService.generateInvoiceFromOrder).
  */
 
+// Routes
 const adminRoutes = require("./routes/admin.billing.routes");
 const clientRoutes = require("./routes/client.billing.routes");
-const { scheduleBillingJobs } = require("./jobs/billing.cron");
+const { webhookRouter } = require("./routes/client.billing.routes");
 
+// Services
+const billingService = require("./services/billing.service");
 const invoiceService = require("./services/invoice.service");
 const paymentService = require("./services/payment.service");
-const refundService = require("./services/refund.service");
-const profileService = require("./services/billing-profile.service");
 const taxService = require("./services/tax.service");
-const recurringService = require("./services/recurring-billing.service");
-const reportService = require("./services/billing-report.service");
+
+// Utils
+const billingUtil = require("./utils/billing.util");
+
+// DTOs
+const dtos = require("./dtos");
 
 module.exports = {
-  // Routes
+  // ---- Routes ----
   adminRoutes,
   clientRoutes,
+  webhookRouter,
 
-  // Services (for use in other modules)
+  // ---- Services (for cross-module use) ----
   services: {
+    billingService,
     invoiceService,
     paymentService,
-    refundService,
-    profileService,
     taxService,
-    recurringService,
-    reportService,
   },
 
-  // Cron scheduler
-  scheduleBillingJobs,
+  // ---- Utils ----
+  utils: billingUtil,
+
+  // ---- DTOs ----
+  dtos,
 };

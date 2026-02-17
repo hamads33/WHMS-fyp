@@ -1,177 +1,348 @@
 /**
  * Admin Billing Routes
  * Path: src/modules/billing/routes/admin.billing.routes.js
- * Base mount: /api/admin/billing
+ *
+ * Mount point: /api/admin/billing
+ *
+ * Covers:
+ *   - Revenue stats and overviews
+ *   - Invoice lifecycle management
+ *   - Payment recording and refunds
+ *   - Tax rule management
+ *   - Billing profile management per client
+ *   - Invoice generation from orders
+ *   - Batch renewal and overdue processing
  */
 
 const express = require("express");
 const router = express.Router();
-const ctrl = require("../controllers/billing.controller");
-const validate = require("../../services/middleware/validation.middleware"); // ✅ FIXED: actual path
+const validate = require("../../services/middleware/validation.middleware");
+
+const billingCtrl = require("../controllers/billing.controller");
+const invoiceCtrl = require("../controllers/invoice.controller");
+const invoiceSettingsCtrl = require("../controllers/invoice-settings.controller");
+const paymentCtrl = require("../controllers/payment.controller");
+const taxCtrl = require("../controllers/tax.controller");
+
 const {
-  createInvoiceDto,
-  updateInvoiceDto,
-  generateFromOrderDto,
+  upsertBillingProfileDto,
+  generateOrderInvoiceDto,
+  generateRenewalInvoiceDto,
+  generateFeeInvoiceDto,
+  createManualInvoiceDto,
   applyDiscountDto,
   recordPaymentDto,
-  initiateGatewayDto,
-  gatewayCallbackDto,
   processRefundDto,
-  billingProfileDto,
   createTaxRuleDto,
   updateTaxRuleDto,
-} = require("../dtos/billing.dtos");
+  taxPreviewDto,
+  processDueRenewalsDto,
+  processOverdueDto,
+} = require("../dtos");
 
 // ============================================================
-// INVOICES
+// REVENUE OVERVIEW
 // ============================================================
 
-// List all invoices        GET  /api/admin/billing/invoices
-router.get("/invoices", ctrl.adminListInvoices);
+/**
+ * GET /api/admin/billing/revenue
+ * Revenue stats: monthly, yearly, all-time
+ */
+router.get("/revenue", billingCtrl.getRevenueStats);
 
-// Get overdue invoices     GET  /api/admin/billing/invoices/overdue
-router.get("/invoices/overdue", ctrl.getOverdueInvoices);
+/**
+ * GET /api/admin/billing/revenue/trend?months=6
+ * Monthly revenue trend for the past N months
+ */
+router.get("/revenue/trend", billingCtrl.getRevenueTrend);
 
-// Get specific invoice     GET  /api/admin/billing/invoices/:id
-router.get("/invoices/:id", ctrl.getInvoice);
+// ============================================================
+// INVOICE STATISTICS
+// ============================================================
 
-// Create manual invoice    POST /api/admin/billing/invoices
-router.post("/invoices", validate(createInvoiceDto), ctrl.createInvoice);
+/**
+ * GET /api/admin/billing/invoices/stats
+ * Invoice counts and totals by status
+ */
+router.get("/invoices/stats", invoiceCtrl.getStats);
 
-// Generate from order      POST /api/admin/billing/orders/:orderId/invoice
+// ============================================================
+// INVOICE GENERATION FROM ORDERS
+// ============================================================
+
+/**
+ * POST /api/admin/billing/orders/:orderId/invoice
+ * Generate a new-order invoice from snapshot
+ */
 router.post(
   "/orders/:orderId/invoice",
-  validate(generateFromOrderDto),
-  ctrl.generateFromOrder
+  validate(generateOrderInvoiceDto),
+  billingCtrl.generateOrderInvoice
 );
 
-// Update draft invoice     PUT  /api/admin/billing/invoices/:id
-router.put("/invoices/:id", validate(updateInvoiceDto), ctrl.updateInvoice);
+/**
+ * POST /api/admin/billing/orders/:orderId/renewal-invoice
+ * Generate a renewal invoice for an active order
+ */
+router.post(
+  "/orders/:orderId/renewal-invoice",
+  validate(generateRenewalInvoiceDto),
+  billingCtrl.generateRenewalInvoice
+);
 
-// Cancel invoice           POST /api/admin/billing/invoices/:id/cancel
-router.post("/invoices/:id/cancel", ctrl.cancelInvoice);
+/**
+ * POST /api/admin/billing/orders/:orderId/suspension-invoice
+ * Generate a suspension fee invoice (if suspensionFee > 0)
+ */
+router.post(
+  "/orders/:orderId/suspension-invoice",
+  validate(generateFeeInvoiceDto),
+  billingCtrl.generateSuspensionInvoice
+);
 
-// Apply discount/credit    POST /api/admin/billing/invoices/:id/discount
+/**
+ * POST /api/admin/billing/orders/:orderId/termination-invoice
+ * Generate a termination fee invoice (if terminationFee > 0)
+ */
+router.post(
+  "/orders/:orderId/termination-invoice",
+  validate(generateFeeInvoiceDto),
+  billingCtrl.generateTerminationInvoice
+);
+
+/**
+ * GET /api/admin/billing/orders/:orderId/invoices
+ * All invoices linked to a specific order
+ */
+router.get("/orders/:orderId/invoices", invoiceCtrl.listByOrder);
+
+// ============================================================
+// MANUAL INVOICE
+// ============================================================
+
+/**
+ * POST /api/admin/billing/invoices/manual
+ * Create a manual invoice with custom line items
+ */
+router.post(
+  "/invoices/manual",
+  validate(createManualInvoiceDto),
+  billingCtrl.createManualInvoice
+);
+
+// ============================================================
+// INVOICE LIST & GET
+// ============================================================
+
+/**
+ * GET /api/admin/billing/invoices
+ * Query: status, clientId, orderId, limit, offset
+ */
+router.get("/invoices", invoiceCtrl.list);
+
+/**
+ * GET /api/admin/billing/invoices/:id
+ */
+router.get("/invoices/:id", invoiceCtrl.get);
+router.get("/invoices/:id/pdf", invoiceCtrl.downloadPdf);
+
+// ============================================================
+// INVOICE STATUS TRANSITIONS
+// ============================================================
+
+/**
+ * POST /api/admin/billing/invoices/:id/send
+ * Transition draft → unpaid and set issuedAt
+ */
+router.post("/invoices/:id/send", invoiceCtrl.send);
+
+/**
+ * POST /api/admin/billing/invoices/:id/cancel
+ */
+router.post("/invoices/:id/cancel", invoiceCtrl.cancel);
+
+/**
+ * POST /api/admin/billing/invoices/:id/mark-paid
+ * Admin override: mark as paid without recording a payment
+ */
+router.post("/invoices/:id/mark-paid", invoiceCtrl.markPaid);
+
+// ============================================================
+// INVOICE DISCOUNTS
+// ============================================================
+
+/**
+ * POST /api/admin/billing/invoices/:id/discount
+ * Apply an extra discount to a draft or unpaid invoice
+ */
 router.post(
   "/invoices/:id/discount",
   validate(applyDiscountDto),
-  ctrl.applyDiscount
+  invoiceCtrl.applyDiscount
 );
 
 // ============================================================
 // PAYMENTS
 // ============================================================
 
-// Record manual payment    POST /api/admin/billing/invoices/:invoiceId/payments
+/**
+ * GET /api/admin/billing/payments/stats
+ */
+router.get("/payments/stats", paymentCtrl.getStats);
+
+/**
+ * GET /api/admin/billing/payments
+ * Query: status, gateway, clientId, limit, offset
+ */
+router.get("/payments", paymentCtrl.listAll);
+
+/**
+ * GET /api/admin/billing/payments/:id
+ */
+router.get("/payments/:id", paymentCtrl.get);
+
+/**
+ * GET /api/admin/billing/payments/:id/refunds
+ */
+router.get("/payments/:id/refunds", paymentCtrl.listRefunds);
+
+/**
+ * POST /api/admin/billing/invoices/:invoiceId/payments
+ * Record a manual payment against an invoice
+ */
 router.post(
   "/invoices/:invoiceId/payments",
   validate(recordPaymentDto),
-  ctrl.recordPayment
+  paymentCtrl.create
 );
 
-// List payments for invoice GET /api/admin/billing/invoices/:invoiceId/payments
-router.get("/invoices/:invoiceId/payments", ctrl.listInvoicePayments);
+/**
+ * GET /api/admin/billing/invoices/:invoiceId/payments
+ */
+router.get("/invoices/:invoiceId/payments", paymentCtrl.listByInvoice);
 
-// Initiate gateway payment  POST /api/admin/billing/invoices/:invoiceId/pay
+/**
+ * POST /api/admin/billing/payments/:id/refund
+ */
 router.post(
-  "/invoices/:invoiceId/pay",
-  validate(initiateGatewayDto),
-  ctrl.initiateGatewayPayment
-);
-
-// Gateway callback          POST /api/admin/billing/payments/:paymentId/callback
-router.post(
-  "/payments/:paymentId/callback",
-  validate(gatewayCallbackDto),
-  ctrl.gatewayCallback
-);
-
-// Get payment by ID         GET  /api/admin/billing/payments/:id
-router.get("/payments/:id", ctrl.getPayment);
-
-// Full payment history      GET  /api/admin/billing/payments
-router.get("/payments", ctrl.getPaymentHistory);
-
-// ============================================================
-// REFUNDS
-// ============================================================
-
-// Process refund            POST /api/admin/billing/payments/:paymentId/refund
-router.post(
-  "/payments/:paymentId/refund",
+  "/payments/:id/refund",
   validate(processRefundDto),
-  ctrl.processRefund
-);
-
-// List refunds for payment  GET  /api/admin/billing/payments/:paymentId/refunds
-router.get("/payments/:paymentId/refunds", ctrl.listPaymentRefunds);
-
-// Get refund by ID          GET  /api/admin/billing/refunds/:id
-router.get("/refunds/:id", ctrl.getRefund);
-
-// ============================================================
-// BILLING PROFILES
-// ============================================================
-
-// List all profiles         GET  /api/admin/billing/profiles
-router.get("/profiles", ctrl.adminListProfiles);
-
-// Get client profile        GET  /api/admin/billing/profiles/:clientId
-router.get("/profiles/:clientId", ctrl.adminGetProfile);
-
-// Update client profile     PUT  /api/admin/billing/profiles/:clientId
-router.put(
-  "/profiles/:clientId",
-  validate(billingProfileDto),
-  ctrl.adminUpdateProfile
+  paymentCtrl.refund
 );
 
 // ============================================================
 // TAX RULES
 // ============================================================
 
-// List all tax rules        GET  /api/admin/billing/tax-rules
-router.get("/tax-rules", ctrl.listTaxRules);
+/**
+ * GET /api/admin/billing/tax-rules
+ * Query: activeOnly=true
+ */
+router.get("/tax-rules", taxCtrl.list);
 
-// Create tax rule           POST /api/admin/billing/tax-rules
-router.post("/tax-rules", validate(createTaxRuleDto), ctrl.createTaxRule);
+/**
+ * POST /api/admin/billing/tax-rules/preview
+ * Preview tax calculation without creating anything
+ */
+router.post("/tax-rules/preview", validate(taxPreviewDto), taxCtrl.preview);
 
-// Update tax rule           PUT  /api/admin/billing/tax-rules/:id
-router.put("/tax-rules/:id", validate(updateTaxRuleDto), ctrl.updateTaxRule);
+/**
+ * POST /api/admin/billing/tax-rules
+ */
+router.post("/tax-rules", validate(createTaxRuleDto), taxCtrl.create);
 
-// Delete tax rule           DELETE /api/admin/billing/tax-rules/:id
-router.delete("/tax-rules/:id", ctrl.deleteTaxRule);
+/**
+ * GET /api/admin/billing/tax-rules/:id
+ */
+router.get("/tax-rules/:id", taxCtrl.get);
+
+/**
+ * PUT /api/admin/billing/tax-rules/:id
+ */
+router.put("/tax-rules/:id", validate(updateTaxRuleDto), taxCtrl.update);
+
+/**
+ * DELETE /api/admin/billing/tax-rules/:id
+ */
+router.delete("/tax-rules/:id", taxCtrl.delete);
 
 // ============================================================
-// RECURRING BILLING
+// CLIENT BILLING PROFILES (Admin manages all clients)
 // ============================================================
 
-// Preview upcoming renewals  GET  /api/admin/billing/renewals/preview
-router.get("/renewals/preview", ctrl.previewRenewals);
+/**
+ * GET /api/admin/billing/clients/:clientId/profile
+ */
+router.get("/clients/:clientId/profile", billingCtrl.getProfile);
 
-// Trigger renewal processing POST /api/admin/billing/renewals/process
-router.post("/renewals/process", ctrl.processRenewals);
+/**
+ * PUT /api/admin/billing/clients/:clientId/profile
+ */
+router.put(
+  "/clients/:clientId/profile",
+  validate(upsertBillingProfileDto),
+  billingCtrl.upsertProfile
+);
 
-// Manual renewal for order   POST /api/admin/billing/orders/:orderId/renew
-router.post("/orders/:orderId/renew", ctrl.manualRenewal);
+/**
+ * GET /api/admin/billing/clients/:clientId/summary
+ */
+router.get("/clients/:clientId/summary", billingCtrl.getClientSummary);
+
+/**
+ * GET /api/admin/billing/clients/:clientId/invoices
+ * Query: status, limit, offset
+ */
+router.get("/clients/:clientId/invoices", invoiceCtrl.list);
 
 // ============================================================
-// REPORTING
+// BATCH OPERATIONS (Cron-safe endpoints)
 // ============================================================
 
-// Revenue summary            GET /api/admin/billing/reports/revenue
-router.get("/reports/revenue", ctrl.getRevenueSummary);
+/**
+ * POST /api/admin/billing/process-renewals
+ * Trigger renewal invoice generation for orders due within N days
+ *
+ * Body: { daysAhead? }
+ */
+router.post(
+  "/process-renewals",
+  validate(processDueRenewalsDto),
+  billingCtrl.processDueRenewals
+);
 
-// Monthly revenue chart      GET /api/admin/billing/reports/monthly
-router.get("/reports/monthly", ctrl.getMonthlyRevenue);
+/**
+ * POST /api/admin/billing/process-overdue
+ * Mark overdue invoices; optionally suspend affected orders
+ *
+ * Body: { autoSuspend? }
+ */
+router.post(
+  "/process-overdue",
+  validate(processOverdueDto),
+  billingCtrl.processOverdue
+);
 
-// Outstanding balances       GET /api/admin/billing/reports/outstanding
-router.get("/reports/outstanding", ctrl.getOutstandingBalances);
+// POST /api/admin/billing/process-late-fees
+router.post("/process-late-fees", billingCtrl.processLateFees);
 
-// Transaction audit log      GET /api/admin/billing/reports/transactions
-router.get("/reports/transactions", ctrl.getTransactionLog);
+// POST /api/admin/billing/invoices/:id/late-fee
+router.post("/invoices/:id/late-fee", billingCtrl.applyLateFee);
 
-// Client billing summary     GET /api/admin/billing/reports/clients/:clientId
-router.get("/reports/clients/:clientId", ctrl.getClientSummary);
+// ============================================================
+// INVOICE SETTINGS
+// ============================================================
+
+/**
+ * GET /api/admin/billing/settings/invoice
+ * Retrieve global invoice configuration
+ */
+router.get("/settings/invoice", invoiceSettingsCtrl.get);
+
+/**
+ * PUT /api/admin/billing/settings/invoice
+ * Update global invoice configuration
+ */
+router.put("/settings/invoice", invoiceSettingsCtrl.update);
 
 module.exports = router;
