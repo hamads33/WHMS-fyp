@@ -1,210 +1,169 @@
 /**
  * Invoice Service
  * Path: src/modules/billing/services/invoice.service.js
+ *
+ * Manages invoice lifecycle: creation, status transitions, line items,
+ * discounts, and queries. Pure invoice CRUD — billing orchestration
+ * lives in billing.service.js.
  */
 
 const prisma = require("../../../../prisma");
-const {
-  generateInvoiceNumber,
-  calculateDueDate,
-  buildTotals,
-} = require("../utils/billing.util");
-const taxService = require("./tax.service");
-const billingProfileService = require("./billing-profile.service");
+const { toCurrency, calculateDueDate, getInvoicePrefix } = require("../utils/billing.util");
 
 class InvoiceService {
+  // ============================================================
+  // INVOICE NUMBER
+  // ============================================================
+
   /**
-   * Generate invoice from an order snapshot (FR-01)
-   * 
-   * ✅ FIXED: Now validates order status before generating invoice
-   * ✅ FIXED: Uses pricing currency (not profile currency)
-   * ✅ FIXED: Captures more metadata in line items
+   * Generate a unique sequential invoice number: INV-YYYY-NNNNN
+   * Scoped per calendar year.
    */
-  async generateFromOrder(orderId, options = {}) {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        snapshot: true,
-        client: { select: { id: true, email: true } },
-      },
+  async generateInvoiceNumber() {
+    const year = new Date().getFullYear();
+    const prefix = getInvoicePrefix(year);
+
+    const count = await prisma.invoice.count({
+      where: { invoiceNumber: { startsWith: prefix } },
     });
 
-    if (!order) {
-      const err = new Error("Order not found");
-      err.statusCode = 404;
-      throw err;
-    }
+    return `${prefix}${String(count + 1).padStart(5, "0")}`;
+  }
 
-    // ✅ NEW: Validate order status - only active/suspended can be invoiced
-    const INVOICEABLE_STATUSES = ['active', 'suspended'];
-    if (!INVOICEABLE_STATUSES.includes(order.status)) {
-      const err = new Error(
-        `Cannot invoice ${order.status} order. ` +
-        `Only ${INVOICEABLE_STATUSES.join(', ')} orders can be invoiced.`
-      );
-      err.statusCode = 409;
-      throw err;
-    }
+  // ============================================================
+  // CREATE
+  // ============================================================
 
-    if (!options.force) {
-      const existing = await prisma.invoice.findFirst({
-        where: { orderId, status: { not: "cancelled" } },
-      });
-      if (existing) {
-        const err = new Error("An active invoice already exists for this order");
-        err.statusCode = 409;
-        throw err;
+  /**
+   * Create a new invoice with line items.
+   * Calculates subtotal, tax, discounts, and totals automatically.
+   *
+   * @param {Object} data
+   * @param {string} data.clientId
+   * @param {string|null} data.orderId
+   * @param {string|null} data.billingProfileId
+   * @param {string} data.currency
+   * @param {Array} data.lineItems - [{ description, quantity, unitPrice, taxRate?, serviceCode?, planName?, cycle? }]
+   * @param {Array} data.discounts - [{ type, code?, description?, amount, isPercent }]
+   * @param {number} data.dueDays - Payment terms in days (default: 7)
+   * @param {string|null} data.notes
+   * @param {Object|null} data.metadata
+   * @param {string} data.status - "draft" | "unpaid" (default: "draft")
+   */
+  async create(data) {
+    const invoiceNumber = await this.generateInvoiceNumber();
+    const now = new Date();
+    const dueDate = calculateDueDate(now, data.dueDays ?? 7);
+
+    // Build line items with computed totals
+    const lineItems = (data.lineItems || []).map((item) => {
+      const quantity = item.quantity || 1;
+      const unitPrice = toCurrency(item.unitPrice);
+      const total = toCurrency(unitPrice * quantity);
+      const taxAmount = item.taxRate
+        ? toCurrency(total * parseFloat(item.taxRate))
+        : null;
+
+      return {
+        description: item.description,
+        quantity,
+        unitPrice,
+        total,
+        taxRate: item.taxRate || null,
+        taxAmount,
+        serviceCode: item.serviceCode || null,
+        planName: item.planName || null,
+        cycle: item.cycle || null,
+      };
+    });
+
+    // Subtotal = sum of all line item totals
+    const subtotal = toCurrency(lineItems.reduce((s, li) => s + li.total, 0));
+
+    // Tax = sum of line item tax amounts
+    const taxAmount = toCurrency(
+      lineItems.reduce((s, li) => s + (li.taxAmount || 0), 0)
+    );
+
+    // Discount calculation
+    let discountAmount = 0;
+    const discountRows = (data.discounts || []).map((d) => {
+      let amt = toCurrency(d.amount);
+      if (d.isPercent) {
+        amt = toCurrency((subtotal * Math.min(d.amount, 100)) / 100);
       }
-    }
+      discountAmount += amt;
+      return { ...d, amount: amt };
+    });
+    discountAmount = toCurrency(discountAmount);
 
-    const snap = order.snapshot.snapshot;
-    const clientId = order.clientId;
+    const totalAmount = toCurrency(
+      Math.max(0, subtotal + taxAmount - discountAmount)
+    );
+    const amountDue = totalAmount; // no payments yet
 
-    const profile = await billingProfileService.getOrCreate(clientId);
-    
-    // ✅ NEW: Use pricing currency as source of truth (not profile currency)
-    const pricingCurrency = snap.pricing?.currency || "USD";
-    
-    // ✅ NEW: Warn if currency mismatch
-    if (profile.currency && profile.currency !== pricingCurrency) {
-      console.warn(
-        `[INVOICE] Currency mismatch for order ${orderId}: ` +
-        `pricing=${pricingCurrency}, profile=${profile.currency}. ` +
-        `Using pricing currency.`
-      );
-    }
-
-    const currency = pricingCurrency;
-    const unitPrice = parseFloat(snap.pricing?.price || 0);
-    
-    // ✅ NEW: Capture complete metadata
-    const lineItem = {
-      description: `${snap.service?.name} — ${snap.plan?.name} (${snap.pricing?.cycle})`,
-      quantity: 1,
-      unitPrice,
-      total: unitPrice,
-      serviceCode: snap.service?.code,
-      serviceId: snap.service?.id,                    // ← NEW
-      serviceDescription: snap.service?.description,  // ← NEW
-      planName: snap.plan?.name,
-      planId: snap.plan?.id,                          // ← NEW
-      pricingId: snap.pricing?.id,                    // ← NEW
-      pricingCycle: snap.pricing?.cycle,              // ← NEW
-      currency: pricingCurrency,                      // ← NEW
-    };
-
-    const taxRate = await taxService.getApplicableRate(clientId, snap.service?.code);
-    const totals = buildTotals([lineItem], taxRate, []);
-
-    const invoiceNumber = await generateInvoiceNumber();
-    const dueDate = calculateDueDate(options.dueDays || 7);
+    const status = data.status || "draft";
+    const issuedAt = status === "unpaid" ? now : null;
 
     const invoice = await prisma.invoice.create({
       data: {
         invoiceNumber,
-        clientId,
-        orderId,
-        billingProfileId: profile.id,
-        status: "unpaid",
-        currency,
-        subtotal: totals.subtotal,
-        taxAmount: totals.taxAmount,
-        discountAmount: totals.discountAmount,
-        totalAmount: totals.totalAmount,
+        clientId: data.clientId,
+        billingProfileId: data.billingProfileId || null,
+        orderId: data.orderId || null,
+        status,
+        currency: data.currency || "USD",
+        subtotal,
+        taxAmount,
+        discountAmount,
+        totalAmount,
         amountPaid: 0,
-        amountDue: totals.amountDue,
+        amountDue,
         dueDate,
-        issuedAt: new Date(),
-        notes: options.notes || null,
+        issuedAt,
+        notes: data.notes || null,
+        metadata: data.metadata || null,
         lineItems: {
-          create: [
-            {
-              description: lineItem.description,
-              quantity: lineItem.quantity,
-              unitPrice: lineItem.unitPrice,
-              total: lineItem.total,
-              taxRate: taxRate || null,
-              taxAmount: totals.taxAmount,
-              serviceCode: lineItem.serviceCode,
-              planName: lineItem.planName,
-              cycle: lineItem.pricingCycle,
-            },
-          ],
+          create: lineItems,
+        },
+        discounts: {
+          create: discountRows,
         },
       },
-      include: { lineItems: true },
-    });
-
-    await this._logTransaction(invoice.id, clientId, "payment", 0, "Invoice created");
-    return invoice;
-  }
-
-  /**
-   * Create invoice manually (FR-02)
-   */
-  async create(clientId, data) {
-    const profile = await billingProfileService.getOrCreate(clientId);
-    const currency = data.currency || profile.currency || "USD";
-
-    const lineItems = data.lineItems || [];
-    if (!lineItems.length) {
-      const err = new Error("At least one line item is required");
-      err.statusCode = 400;
-      throw err;
-    }
-
-    const itemsWithTotals = lineItems.map((item) => ({
-      ...item,
-      total: parseFloat((item.unitPrice * item.quantity).toFixed(2)),
-    }));
-
-    const totals = buildTotals(itemsWithTotals, data.taxRate || 0, data.discounts || []);
-    const invoiceNumber = await generateInvoiceNumber();
-    const dueDate = data.dueDate ? new Date(data.dueDate) : calculateDueDate(7);
-
-    const invoice = await prisma.invoice.create({
-      data: {
-        invoiceNumber,
-        clientId,
-        billingProfileId: profile.id,
-        orderId: data.orderId || null,
-        status: data.status || "draft",
-        currency,
-        subtotal: totals.subtotal,
-        taxAmount: totals.taxAmount,
-        discountAmount: totals.discountAmount,
-        totalAmount: totals.totalAmount,
-        amountPaid: 0,
-        amountDue: totals.amountDue,
-        dueDate,
-        issuedAt: data.status === "unpaid" ? new Date() : null,
-        notes: data.notes || null,
-        lineItems: { create: itemsWithTotals },
-        discounts: data.discounts?.length ? { create: data.discounts } : undefined,
-      },
-      include: { lineItems: true, discounts: true },
-    });
-
-    await this._logTransaction(invoice.id, clientId, "payment", 0, "Manual invoice created");
-    return invoice;
-  }
-
-  /**
-   * Get invoice by ID
-   * ✅ FIXED:
-   *   - Removed billingProfile include (caused 500 before migration)
-   *   - requester defaults to null (admin calls pass nothing)
-   *   - Role check uses req.user.roles array (authGuard shape)
-   */
-  async getById(invoiceId, requester = null) {
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: invoiceId },
       include: {
         lineItems: true,
         discounts: true,
-        payments: true,
-        client: { select: { id: true, email: true } },
       },
+    });
+
+    return invoice;
+  }
+
+  // ============================================================
+  // READ
+  // ============================================================
+
+  /**
+   * Get invoice by ID with full relations.
+   */
+  async getById(id, includeRelations = true) {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: includeRelations
+        ? {
+            lineItems: true,
+            discounts: true,
+            payments: { orderBy: { createdAt: "desc" } },
+            transactions: { orderBy: { createdAt: "desc" } },
+            order: {
+              include: {
+                snapshot: { select: { service: true, planData: true, pricing: true } },
+              },
+            },
+            client: { select: { id: true, email: true } },
+            billingProfile: true,
+          }
+        : undefined,
     });
 
     if (!invoice) {
@@ -213,15 +172,21 @@ class InvoiceService {
       throw err;
     }
 
-    // Only enforce ownership check for clients
-    // authGuard sets req.user.roles as array e.g. ["client"]
-    const isClient =
-      requester?.roles?.includes("client") ||
-      requester?.role === "client";
+    return invoice;
+  }
 
-    if (isClient && invoice.clientId !== requester.id) {
-      const err = new Error("Unauthorized");
-      err.statusCode = 403;
+  /**
+   * Get invoice by number.
+   */
+  async getByNumber(invoiceNumber) {
+    const invoice = await prisma.invoice.findUnique({
+      where: { invoiceNumber },
+      include: { lineItems: true, discounts: true, payments: true },
+    });
+
+    if (!invoice) {
+      const err = new Error("Invoice not found");
+      err.statusCode = 404;
       throw err;
     }
 
@@ -229,94 +194,245 @@ class InvoiceService {
   }
 
   /**
-   * List invoices for a client
+   * List all invoices (admin).
    */
-  async getClientInvoices(clientId, options = {}) {
-    const { limit = 50, offset = 0, status } = options;
-    const where = { clientId };
-    if (status) where.status = status;
+  async listAll(options = {}) {
+    const { limit = 50, offset = 0, status, clientId, orderId } = options;
 
-    return prisma.invoice.findMany({
-      where,
-      include: { lineItems: true, payments: true },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      skip: offset,
-    });
-  }
-
-  /**
-   * Admin: list all invoices
-   */
-  async adminList(options = {}) {
-    const { limit = 100, offset = 0, status, clientId } = options;
     const where = {};
     if (status) where.status = status;
     if (clientId) where.clientId = clientId;
+    if (orderId) where.orderId = orderId;
 
-    return prisma.invoice.findMany({
-      where,
-      include: {
-        lineItems: true,
-        client: { select: { id: true, email: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      skip: offset,
-    });
+    const [invoices, total] = await Promise.all([
+      prisma.invoice.findMany({
+        where,
+        include: {
+          client: { select: { id: true, email: true } },
+          lineItems: true,
+          payments: { select: { id: true, amount: true, status: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.invoice.count({ where }),
+    ]);
+
+    return { invoices, total };
   }
 
   /**
-   * Update invoice (draft only)
+   * List invoices for a specific client.
    */
-  async update(invoiceId, data) {
-    const invoice = await this.getById(invoiceId);
+  async listByClient(clientId, options = {}) {
+    const { limit = 50, offset = 0, status } = options;
+
+    const where = { clientId };
+    if (status) where.status = status;
+
+    const [invoices, total] = await Promise.all([
+      prisma.invoice.findMany({
+        where,
+        include: {
+          lineItems: true,
+          payments: { select: { id: true, amount: true, status: true, paidAt: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.invoice.count({ where }),
+    ]);
+
+    return { invoices, total };
+  }
+
+  /**
+   * List invoices linked to an order.
+   */
+  async listByOrder(orderId) {
+    return prisma.invoice.findMany({
+      where: { orderId },
+      include: {
+        lineItems: true,
+        payments: { select: { id: true, amount: true, status: true, paidAt: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  // ============================================================
+  // STATUS TRANSITIONS
+  // ============================================================
+
+  /**
+   * Send invoice: draft → unpaid
+   * Sets issuedAt and dueDate (if not already set).
+   */
+  async send(id, actor) {
+    const invoice = await this.getById(id, false);
 
     if (invoice.status !== "draft") {
-      const err = new Error("Only draft invoices can be updated");
+      const err = new Error("Only draft invoices can be sent");
       err.statusCode = 409;
       throw err;
     }
 
-    const updateData = {};
-    const allowed = ["notes", "dueDate", "currency"];
-    for (const field of allowed) {
-      if (data[field] !== undefined) updateData[field] = data[field];
+    const now = new Date();
+
+    return prisma.invoice.update({
+      where: { id },
+      data: {
+        status: "unpaid",
+        issuedAt: now,
+        dueDate: invoice.dueDate || calculateDueDate(now, 7),
+      },
+    });
+  }
+
+  /**
+   * Cancel invoice.
+   * Cannot cancel paid invoices.
+   */
+  async cancel(id, actor) {
+    const invoice = await this.getById(id, false);
+
+    if (invoice.status === "paid") {
+      const err = new Error("Paid invoices cannot be cancelled");
+      err.statusCode = 409;
+      throw err;
+    }
+
+    if (invoice.status === "cancelled") {
+      const err = new Error("Invoice is already cancelled");
+      err.statusCode = 409;
+      throw err;
     }
 
     return prisma.invoice.update({
-      where: { id: invoiceId },
-      data: updateData,
-      include: { lineItems: true },
+      where: { id },
+      data: { status: "cancelled", cancelledAt: new Date() },
     });
   }
 
   /**
-   * Cancel invoice (FR-06)
+   * Mark invoice as overdue (batch-safe).
+   * Used by scheduled jobs.
    */
-  async cancel(invoiceId) {
-    const invoice = await this.getById(invoiceId);
+  async markOverdue(id) {
+    return prisma.invoice.update({
+      where: { id },
+      data: { status: "overdue" },
+    });
+  }
 
-    if (["paid", "cancelled"].includes(invoice.status)) {
-      const err = new Error(`Cannot cancel a ${invoice.status} invoice`);
+  /**
+   * Mark invoice as paid manually (admin override).
+   * Partial payment tracking is handled by payment.service.js.
+   */
+  async markPaid(id, actor) {
+    const invoice = await this.getById(id, false);
+
+    if (invoice.status === "paid") {
+      const err = new Error("Invoice is already marked as paid");
       err.statusCode = 409;
       throw err;
     }
 
-    const updated = await prisma.invoice.update({
-      where: { id: invoiceId },
-      data: { status: "cancelled", cancelledAt: new Date() },
-    });
+    if (invoice.status === "cancelled") {
+      const err = new Error("Cannot mark a cancelled invoice as paid");
+      err.statusCode = 409;
+      throw err;
+    }
 
-    await this._logTransaction(invoiceId, invoice.clientId, "adjustment", 0, "Invoice cancelled");
-    return updated;
+    const now = new Date();
+
+    return prisma.invoice.update({
+      where: { id },
+      data: {
+        status: "paid",
+        amountPaid: invoice.totalAmount,
+        amountDue: 0,
+        paidAt: now,
+      },
+    });
+  }
+
+  // ============================================================
+  // PAYMENT TRACKING (called by payment.service.js)
+  // ============================================================
+
+  /**
+   * Apply a payment amount to the invoice.
+   * Automatically marks as paid when amountDue reaches 0.
+   *
+   * @param {string} id - Invoice ID
+   * @param {number} amount - Payment amount
+   * @param {Date} [paidAt] - Payment timestamp
+   * @returns {Object} Updated invoice
+   */
+  async applyPayment(id, amount, paidAt = new Date()) {
+    const invoice = await this.getById(id, false);
+
+    if (["paid", "cancelled", "refunded"].includes(invoice.status)) {
+      const err = new Error(`Cannot apply payment to a ${invoice.status} invoice`);
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const newAmountPaid = toCurrency(parseFloat(invoice.amountPaid) + parseFloat(amount));
+    const newAmountDue = toCurrency(
+      Math.max(0, parseFloat(invoice.totalAmount) - newAmountPaid)
+    );
+    const isPaid = newAmountDue <= 0;
+
+    return prisma.invoice.update({
+      where: { id },
+      data: {
+        amountPaid: newAmountPaid,
+        amountDue: newAmountDue,
+        status: isPaid ? "paid" : invoice.status,
+        paidAt: isPaid ? paidAt : null,
+      },
+    });
   }
 
   /**
-   * Apply discount/credit to invoice (FR-08)
+   * Reverse a payment (for refunds).
+   *
+   * @param {string} id - Invoice ID
+   * @param {number} amount - Refund amount
    */
-  async applyDiscount(invoiceId, discountData) {
-    const invoice = await this.getById(invoiceId);
+  async reversePayment(id, amount) {
+    const invoice = await this.getById(id, false);
+
+    const newAmountPaid = toCurrency(
+      Math.max(0, parseFloat(invoice.amountPaid) - parseFloat(amount))
+    );
+    const newAmountDue = toCurrency(parseFloat(invoice.totalAmount) - newAmountPaid);
+
+    return prisma.invoice.update({
+      where: { id },
+      data: {
+        amountPaid: newAmountPaid,
+        amountDue: newAmountDue,
+        status: newAmountPaid <= 0 ? "unpaid" : "paid",
+        paidAt: newAmountPaid <= 0 ? null : invoice.paidAt,
+      },
+    });
+  }
+
+  // ============================================================
+  // DISCOUNTS
+  // ============================================================
+
+  /**
+   * Apply an additional discount to an existing invoice.
+   * Only allowed on draft or unpaid invoices.
+   */
+  async applyDiscount(id, discountData, actor) {
+    const invoice = await this.getById(id, false);
 
     if (!["draft", "unpaid"].includes(invoice.status)) {
       const err = new Error("Discounts can only be applied to draft or unpaid invoices");
@@ -324,73 +440,116 @@ class InvoiceService {
       throw err;
     }
 
+    let amount = toCurrency(discountData.amount);
+    if (discountData.isPercent) {
+      // Base the percentage on subtotal + taxAmount (the pre-discount total) so that
+      // 100% actually zeroes the invoice rather than leaving taxAmount unpaid.
+      const baseAmount = toCurrency(
+        parseFloat(invoice.subtotal) + parseFloat(invoice.taxAmount || 0)
+      );
+      amount = toCurrency((baseAmount * Math.min(discountData.amount, 100)) / 100);
+    }
+
+    // Create discount record
     await prisma.invoiceDiscount.create({
       data: {
-        invoiceId,
-        type: discountData.type || "manual",
+        invoiceId: id,
+        type: discountData.type,
         code: discountData.code || null,
         description: discountData.description || null,
-        amount: discountData.amount,
+        amount,
         isPercent: discountData.isPercent || false,
       },
     });
 
-    const lineItems = await prisma.invoiceLineItem.findMany({ where: { invoiceId } });
-    const discounts = await prisma.invoiceDiscount.findMany({ where: { invoiceId } });
+    // Recalculate invoice totals
+    return this._recalculateTotals(id);
+  }
 
-    const taxRate = parseFloat(invoice.subtotal) > 0
-      ? parseFloat(invoice.taxAmount) / parseFloat(invoice.subtotal)
-      : 0;
+  // ============================================================
+  // STATISTICS
+  // ============================================================
 
-    const totals = buildTotals(lineItems, taxRate, discounts);
-    const amountPaid = parseFloat(invoice.amountPaid);
-    const newAmountDue = Math.max(totals.totalAmount - amountPaid, 0);
+  /**
+   * Get invoice statistics (admin dashboard).
+   */
+  async getStats() {
+    const [statusCounts, revenue] = await Promise.all([
+      prisma.invoice.groupBy({
+        by: ["status"],
+        _count: { id: true },
+        _sum: { totalAmount: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { status: "paid" },
+        _sum: { totalAmount: true, taxAmount: true },
+      }),
+    ]);
 
-    return prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        discountAmount: totals.discountAmount,
-        totalAmount: totals.totalAmount,
-        amountDue: newAmountDue,
-      },
-      include: { lineItems: true, discounts: true },
-    });
+    const byStatus = statusCounts.reduce((acc, row) => {
+      acc[row.status] = {
+        count: row._count.id,
+        total: toCurrency(row._sum.totalAmount || 0),
+      };
+      return acc;
+    }, {});
+
+    return {
+      byStatus,
+      totalRevenue: toCurrency(revenue._sum.totalAmount || 0),
+      totalTaxCollected: toCurrency(revenue._sum.taxAmount || 0),
+    };
   }
 
   /**
-   * Mark overdue invoices (FR-14) — called by scheduler
+   * Get overdue invoices (for scheduled jobs).
    */
-  async markOverdue() {
-    const now = new Date();
-    return prisma.invoice.updateMany({
-      where: { status: "unpaid", dueDate: { lt: now } },
-      data: { status: "overdue" },
-    });
-  }
-
-  /**
-   * Get overdue invoices (FR-14)
-   */
-  async getOverdue(options = {}) {
-    const { limit = 100, offset = 0 } = options;
+  async getOverdue() {
     return prisma.invoice.findMany({
-      where: { status: "overdue" },
+      where: {
+        status: { in: ["unpaid"] },
+        dueDate: { lt: new Date() },
+      },
       include: {
         client: { select: { id: true, email: true } },
-        lineItems: true,
+        order: { select: { id: true } },
       },
-      orderBy: { dueDate: "asc" },
-      take: limit,
-      skip: offset,
     });
   }
 
+  // ============================================================
+  // PRIVATE HELPERS
+  // ============================================================
+
   /**
-   * Internal: log billing transaction (FR-10)
+   * Recompute invoice totals after a discount or line item change.
    */
-  async _logTransaction(invoiceId, clientId, type, amount, description) {
-    return prisma.billingTransaction.create({
-      data: { invoiceId, clientId, type, amount, description },
+  async _recalculateTotals(id) {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { lineItems: true, discounts: true },
+    });
+
+    const subtotal = toCurrency(
+      invoice.lineItems.reduce((s, li) => s + parseFloat(li.total), 0)
+    );
+    const taxAmount = toCurrency(
+      invoice.lineItems.reduce((s, li) => s + parseFloat(li.taxAmount || 0), 0)
+    );
+    const discountAmount = toCurrency(
+      invoice.discounts.reduce((s, d) => s + parseFloat(d.amount), 0)
+    );
+    const totalAmount = toCurrency(
+      Math.max(0, subtotal + taxAmount - discountAmount)
+    );
+    const amountDue = toCurrency(
+      Math.max(0, totalAmount - parseFloat(invoice.amountPaid))
+    );
+
+    return prisma.invoice.update({
+      where: { id },
+      data: { subtotal, taxAmount, discountAmount, totalAmount, amountDue },
+      include: { lineItems: true, discounts: true },
     });
   }
 }

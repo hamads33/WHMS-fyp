@@ -10,7 +10,7 @@
  */
 
 const cron = require("node-cron");
-const recurringService = require("../services/recurring-billing.service");
+const BillingService = require("../services/billing.service");
 const invoiceService = require("../services/invoice.service");
 
 /**
@@ -31,10 +31,10 @@ function scheduleOverdueJob() {
   cron.schedule("0 * * * *", async () => {
     console.log("[BILLING CRON] Running overdue check...");
     try {
-      const result = await invoiceService.markOverdue();
-      if (result.count > 0) {
-        console.log(`[BILLING CRON] Marked ${result.count} invoices as overdue`);
-        emitBillingEvent("billing.invoices.overdue", { count: result.count });
+      const result = await BillingService.processOverdueInvoices(true);
+      if (result.markedOverdue > 0) {
+        console.log(`[BILLING CRON] Marked ${result.markedOverdue} invoices as overdue, suspended ${result.suspended} orders`);
+        emitBillingEvent("billing.invoices.overdue", { count: result.markedOverdue, suspended: result.suspended });
       }
     } catch (err) {
       console.error("[BILLING CRON] Overdue job failed:", err.message);
@@ -50,15 +50,14 @@ function scheduleRenewalJob() {
   cron.schedule("0 1 * * *", async () => {
     console.log("[BILLING CRON] Running renewal processing...");
     try {
-      const result = await recurringService.processRenewals();
+      const result = await BillingService.processDueRenewals();
       console.log(
-        `[BILLING CRON] Renewals: ${result.processed} processed, ${result.skipped} skipped`
+        `[BILLING CRON] Renewals: ${result.processed} processed, ${result.errors.length} errors`
       );
 
       if (result.processed > 0) {
         emitBillingEvent("billing.renewals.processed", {
           processed: result.processed,
-          skipped: result.skipped,
           errors: result.errors,
         });
       }
