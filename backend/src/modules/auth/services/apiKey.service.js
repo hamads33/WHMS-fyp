@@ -10,7 +10,8 @@ const ApiKeyService = {
   // Create API Key (hashed) + multiple scopes
   ////////////////////////////////////////////////////////
   async createKey({ userId, name, scopes = [], expiresInDays = 365 }) {
-    const rawKey = crypto.randomBytes(32).toString("hex");
+    const prefix = process.env.NODE_ENV === "production" ? "pk_live_" : "pk_test_";
+    const rawKey = prefix + crypto.randomBytes(32).toString("hex");
     const hash = await bcrypt.hash(rawKey, SALT_ROUNDS);
 
     const expiresAt = new Date();
@@ -95,12 +96,6 @@ const ApiKeyService = {
         if (key.expiresAt && key.expiresAt < new Date()) {
           return null;
         }
-
-        // update usage timestamp
-        await prisma.apiKey.update({
-          where: { id: key.id },
-          data: { lastUsedAt: new Date() }
-        });
 
         return key;
       }

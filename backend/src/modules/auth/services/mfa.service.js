@@ -4,6 +4,9 @@ const bcrypt = require("bcrypt");
 const prisma = require("../../../../prisma/index");
 const TokenService = require("./token.service");
 
+// Accept ±2 TOTP windows (±60s) to tolerate clock skew and entry delay
+authenticator.options = { window: 2 };
+
 const SALT_ROUNDS = 12;
 
 const MFAService = {
@@ -42,8 +45,8 @@ const MFAService = {
     }
 
     const isValid = authenticator.verify({
-      token: code,
-      secret: user.mfaSecret
+      token: String(code).trim(),
+      secret: user.mfaSecret.trim()
     });
 
     if (!isValid) throw new Error("Invalid MFA code");
@@ -69,8 +72,8 @@ const MFAService = {
 
     // Must validate the current code
     const isValid = authenticator.verify({
-      token: code,
-      secret: user.mfaSecret
+      token: String(code).trim(),
+      secret: user.mfaSecret.trim()
     });
 
     if (!isValid) throw new Error("Invalid MFA code");
@@ -152,12 +155,13 @@ const MFAService = {
     });
 
     if (!user) throw new Error("User not found");
+    if (user.disabled) throw new Error("Account is disabled");
     if (!user.mfaEnabled || !user.mfaSecret) throw new Error("MFA not enabled");
 
     // 1) Try TOTP
     const isTotpValid = authenticator.verify({
-      token: code,
-      secret: user.mfaSecret
+      token: String(code).trim(),
+      secret: user.mfaSecret.trim()
     });
 
     // 2) Try backup codes if TOTP fails
@@ -193,14 +197,14 @@ const MFAService = {
     const accessToken = TokenService.signAccessToken({ userId });
     const refreshToken = TokenService.signRefreshToken({ userId });
 
-    // Store session
+    // Store session (token must be accessToken — authGuard looks up by access token)
     await prisma.session.create({
       data: {
         userId,
-        token: refreshToken,
+        token: accessToken,
         userAgent,
         ip,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7) // 7 days
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24) // 24h
       }
     });
 

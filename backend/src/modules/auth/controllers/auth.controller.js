@@ -53,13 +53,19 @@ class AuthController {
           .json({ error: "Email and password are required" });
       }
 
-      const { accessToken, refreshToken, user } =
-        await AuthService.login({
-          email,
-          password,
-          ip: req.ip,
-          userAgent: req.get("User-Agent"),
-        });
+      const result = await AuthService.login({
+        email,
+        password,
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+
+      // MFA required — return challenge without issuing tokens
+      if (result.requiresMFA) {
+        return res.status(200).json({ requiresMFA: true, userId: result.userId });
+      }
+
+      const { accessToken, refreshToken, user } = result;
 
       // 🔔 AUTH EVENT (SUCCESS)
       AuthEvents.loginSuccess(user, {
@@ -83,6 +89,9 @@ class AuthController {
         ...cookieOptions,
         maxAge: 1000 * 60 * 60 * 24 * 7,
       });
+
+      // Clear any leftover impersonation backup cookie
+      res.clearCookie("_admin_token", { path: "/" });
 
       return res.status(200).json({
         message: "Login successful",

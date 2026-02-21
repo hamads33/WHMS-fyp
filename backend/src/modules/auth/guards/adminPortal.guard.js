@@ -64,17 +64,7 @@ function adminPortalGuard(req, res, next) {
     const enforceMFA = shouldEnforceMFA();
 
     if (enforceMFA) {
-      // Superadmin bypass: optionally skip MFA for superadmin
-      const isSuperadmin = userRoles.includes("superadmin");
-      const superadminBypassMFA = process.env.SUPERADMIN_BYPASS_MFA === "true";
-
-      if (isSuperadmin && superadminBypassMFA) {
-        // Allow superadmin to bypass MFA if configured
-        console.warn(
-          `⚠️  Superadmin ${req.user.email} bypassing MFA (SUPERADMIN_BYPASS_MFA=true)`
-        );
-      } else if (!req.user.mfaVerified) {
-        // MFA required but not verified
+      if (!req.user.mfaVerified) {
         return res.status(403).json({
           error: "MFA required",
           message: "Multi-factor authentication must be verified to access admin portal",

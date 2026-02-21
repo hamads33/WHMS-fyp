@@ -75,6 +75,23 @@ const MFAController = {
         userAgent: req.get("User-Agent")
       });
 
+      const cookieOptions = {
+        httpOnly: true,
+        secure: false, // true in production
+        sameSite: "lax",
+        path: "/",
+      };
+
+      res.cookie("access_token", result.accessToken, {
+        ...cookieOptions,
+        maxAge: 1000 * 60 * 15,
+      });
+
+      res.cookie("refresh_token", result.refreshToken, {
+        ...cookieOptions,
+        maxAge: 1000 * 60 * 60 * 24 * 7,
+      });
+
       return res.json(result);
 
     } catch (err) {

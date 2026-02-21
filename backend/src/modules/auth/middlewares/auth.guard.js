@@ -59,6 +59,42 @@ async function authGuard(req, res, next) {
     const clientIp = resolveClientIp(req);
 
     /* ===================================================
+       0) INTERNAL AUTOMATION BYPASS
+       Service-to-service calls from the automation engine
+       use X-Automation-Secret to skip JWT/session checks.
+    =================================================== */
+    if (process.env.AUTOMATION_SECRET) {
+      const automationSecret = req.headers["x-automation-secret"];
+      if (automationSecret && automationSecret === process.env.AUTOMATION_SECRET) {
+        // Find first superadmin so FK constraints on createdById work correctly
+        const systemUser = await prisma.user.findFirst({
+          where: { roles: { some: { role: { name: "superadmin" } } } },
+          select: { id: true, email: true },
+        });
+        req.user = {
+          id: systemUser?.id || null,
+          email: systemUser?.email || "automation@system.internal",
+          roles: ["superadmin"],
+          permissions: [],
+          portals: ["admin"],
+          mfaEnabled: false,
+          mfaVerified: true,
+          clientProfile: null,
+          adminProfile: null,
+          resellerProfile: null,
+          developerProfile: null,
+          impersonatorId: null,
+          isImpersonation: false,
+          sessionId: null,
+          ip: clientIp,
+          isSystemCall: true,
+        };
+        req.auth = { tokenPayload: { userId: systemUser?.id }, token: null };
+        return next();
+      }
+    }
+
+    /* ===================================================
        1) IP RULE BYPASS (PREVENT SELF-LOCKOUT)
     =================================================== */
     const IP_RULE_BYPASS_ROUTES = [
@@ -232,6 +268,7 @@ async function authGuard(req, res, next) {
       permissions,
       portals,
 
+      mfaEnabled: user.mfaEnabled,
       mfaVerified,
 
       // Profiles

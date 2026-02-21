@@ -1,36 +1,95 @@
 [
   {
     "name": "superadmin",
-    "description": "Full unrestricted access",
+    "description": "Full unrestricted access to all modules",
     "permissions": [
       "admin.access",
       "admin.manage.staff",
       "admin.settings.update",
+      "users.view",
+      "users.deactivate",
+      "users.roles.assign",
+      "users.impersonate",
+      "users.logout.force",
+      "roles.view",
+      "roles.permissions.assign",
+      "services.view",
+      "services.manage",
+      "orders.view",
+      "orders.manage",
+      "billing.view",
+      "billing.manage",
       "billing.invoices.view",
       "billing.invoices.pay",
-      "reseller.dashboard.access",
-      "developer.console.access",
+      "backups.view",
+      "backups.manage",
+      "automation.view",
+      "automation.manage",
+      "impersonation.logs.view",
+      "ip_rules.view",
+      "ip_rules.manage",
+      "audit.logs.view",
+      "plugins.manage",
       "plugins.upload",
       "plugins.update",
-      "client.area.access"
+      "sessions.view",
+      "sessions.manage",
+      "client.area.access",
+      "orders.create",
+      "orders.read",
+      "orders.cancel",
+      "orders.renew",
+      "reseller.dashboard.access",
+      "developer.console.access"
     ]
   },
   {
     "name": "admin",
-    "description": "Admin access with limited control",
+    "description": "Admin portal access with full operational control",
     "permissions": [
       "admin.access",
+      "admin.manage.staff",
+      "admin.settings.update",
+      "users.view",
+      "users.deactivate",
+      "users.roles.assign",
+      "users.impersonate",
+      "users.logout.force",
+      "roles.view",
+      "services.view",
+      "services.manage",
+      "orders.view",
+      "orders.manage",
+      "billing.view",
+      "billing.manage",
       "billing.invoices.view",
       "billing.invoices.pay",
+      "backups.view",
+      "backups.manage",
+      "automation.view",
+      "automation.manage",
+      "impersonation.logs.view",
+      "ip_rules.view",
+      "ip_rules.manage",
+      "audit.logs.view",
+      "plugins.manage",
+      "sessions.view",
+      "sessions.manage",
       "client.area.access"
     ]
   },
   {
     "name": "staff",
-    "description": "Support/billing agent",
+    "description": "Support and billing agent — read-only access to most modules",
     "permissions": [
       "admin.access",
-      "billing.invoices.view"
+      "users.view",
+      "orders.view",
+      "billing.view",
+      "billing.invoices.view",
+      "services.view",
+      "sessions.view",
+      "audit.logs.view"
     ]
   },
   {
@@ -40,12 +99,10 @@
       "client.area.access",
       "billing.invoices.view",
       "billing.invoices.pay",
-       "orders.create",
-    "orders.read",
-    "orders.cancel",
-    "orders.renew"
-
-
+      "orders.create",
+      "orders.read",
+      "orders.cancel",
+      "orders.renew"
     ]
   },
   {

@@ -55,7 +55,7 @@ const ImpersonationService = {
     const session = await prisma.session.create({
       data: {
         userId: targetUserId,
-        token: refreshToken,
+        token: accessToken,
         userAgent: userAgent || null,
         ip: ip || null,
         expiresAt,

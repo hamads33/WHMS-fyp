@@ -85,12 +85,29 @@ const ImpersonationController = {
         userAgent: req.get("User-Agent"),
       });
 
-      const { accessToken, refreshToken, session, targetUser: tgt } = result;
+      const { accessToken, session, targetUser: tgt } = result;
+
+      const cookieOptions = {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+      };
+
+      // Back up admin's current token so we can restore it on stop
+      res.cookie("_admin_token", req.auth.token, {
+        ...cookieOptions,
+        maxAge: 1000 * 60 * 60 * 24, // 24h safety window
+      });
+
+      // Replace session cookie with impersonation token
+      res.cookie("access_token", accessToken, {
+        ...cookieOptions,
+        maxAge: parseInt(process.env.IMPERSONATION_TTL_MINUTES || "60") * 60 * 1000,
+      });
 
       return res.json({
         success: true,
-        accessToken,
-        refreshToken,
         sessionId: session.id,
         targetUser: {
           id: tgt.id,
@@ -161,7 +178,20 @@ const ImpersonationController = {
         sessionId,
       });
 
-      return res.json({ 
+      // Restore admin's original access_token cookie
+      const adminToken = req.cookies?._admin_token;
+      if (adminToken) {
+        res.cookie("access_token", adminToken, {
+          httpOnly: true,
+          secure: false,
+          sameSite: "lax",
+          path: "/",
+          maxAge: 1000 * 60 * 15,
+        });
+        res.clearCookie("_admin_token", { path: "/" });
+      }
+
+      return res.json({
         success: true,
         message: "Impersonation session ended successfully"
       });

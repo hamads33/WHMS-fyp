@@ -1,60 +1,55 @@
 [
-  {
-    "key": "admin.access",
-    "description": "Access admin portal"
-  },
-  {
-    "key": "admin.manage.staff",
-    "description": "Manage admin staff accounts"
-  },
-  {
-    "key": "admin.settings.update",
-    "description": "Update system settings"
-  },
-  {
-    "key": "client.area.access",
-    "description": "Access client dashboard"
-  },
-  {
-    "key": "billing.invoices.view",
-    "description": "View invoices"
-  },
-  {
-    "key": "billing.invoices.pay",
-    "description": "Pay invoices"
-  },
-  {
-    "key": "reseller.dashboard.access",
-    "description": "Access reseller dashboard"
-  },
-  {
-    "key": "developer.console.access",
-    "description": "Access developer console"
-  },
-  {
-    "key": "plugins.upload",
-    "description": "Upload new plugin to marketplace"
-  },
-  {
-    "key": "plugins.update",
-    "description": "Update existing plugin versions"
-  },
-  {
-  "key": "orders.create",
-  "description": "Create a new order"
-},
-{
-  "key": "orders.read",
-  "description": "View own orders"
-},
-{
-  "key": "orders.cancel",
-  "description": "Cancel pending orders"
-},
-{
-  "key": "orders.renew",
-  "description": "Renew active orders"
-}
+  { "key": "admin.access",              "description": "Access admin portal" },
+  { "key": "admin.manage.staff",        "description": "Manage admin staff accounts" },
+  { "key": "admin.settings.update",     "description": "Update system settings" },
 
+  { "key": "users.view",                "description": "View user list" },
+  { "key": "users.deactivate",          "description": "Activate or deactivate user accounts" },
+  { "key": "users.roles.assign",        "description": "Assign or change roles for users" },
+  { "key": "users.impersonate",         "description": "Impersonate another user" },
+  { "key": "users.logout.force",        "description": "Force logout any user" },
 
+  { "key": "roles.view",                "description": "View roles and their permissions" },
+  { "key": "roles.permissions.assign",  "description": "Assign or remove permissions from roles (superadmin only)" },
+
+  { "key": "services.view",             "description": "View service catalog" },
+  { "key": "services.manage",           "description": "Create, edit and delete services" },
+
+  { "key": "orders.view",               "description": "View all orders (admin)" },
+  { "key": "orders.manage",             "description": "Manage orders (admin)" },
+
+  { "key": "billing.view",              "description": "View billing overview (admin)" },
+  { "key": "billing.manage",            "description": "Manage billing (admin)" },
+
+  { "key": "backups.view",              "description": "View backups" },
+  { "key": "backups.manage",            "description": "Create and manage backups" },
+
+  { "key": "automation.view",           "description": "View automation rules and workflows" },
+  { "key": "automation.manage",         "description": "Create and manage automation rules and workflows" },
+
+  { "key": "impersonation.logs.view",   "description": "View impersonation session logs" },
+
+  { "key": "ip_rules.view",             "description": "View IP access rules" },
+  { "key": "ip_rules.manage",           "description": "Create, edit and delete IP access rules" },
+
+  { "key": "audit.logs.view",           "description": "View audit logs" },
+
+  { "key": "plugins.manage",            "description": "Manage installed plugins (admin)" },
+  { "key": "plugins.upload",            "description": "Upload new plugins to marketplace" },
+  { "key": "plugins.update",            "description": "Update existing plugin versions" },
+
+  { "key": "sessions.view",             "description": "View active user sessions" },
+  { "key": "sessions.manage",           "description": "Terminate user sessions" },
+
+  { "key": "client.area.access",        "description": "Access client portal" },
+  { "key": "billing.invoices.view",     "description": "View own invoices" },
+  { "key": "billing.invoices.pay",      "description": "Pay invoices" },
+  { "key": "orders.create",             "description": "Create a new order" },
+  { "key": "orders.read",               "description": "View own orders" },
+  { "key": "orders.cancel",             "description": "Cancel pending orders" },
+  { "key": "orders.renew",              "description": "Renew active orders" },
+
+  { "key": "reseller.dashboard.access", "description": "Access reseller portal" },
+
+  { "key": "developer.console.access",  "description": "Access developer console" }
 ]

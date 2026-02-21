@@ -57,18 +57,30 @@ class AdminUsersController {
         return res.status(400).json({ error: "roles must be an array" });
       }
 
-      // ✅ Prevent self-role modification
+      // Prevent self-role modification
       if (id === req.user.id) {
-        return res.status(403).json({ 
-          error: "Cannot modify your own roles" 
+        return res.status(403).json({ error: "Cannot modify your own roles" });
+      }
+
+      // Only superadmin can assign or retain the superadmin role
+      const isSuperAdmin = req.user.roles.includes("superadmin");
+      if (roles.includes("superadmin") && !isSuperAdmin) {
+        return res.status(403).json({
+          error: "Only superadmins can assign the superadmin role",
         });
       }
 
-      const result = await UserService.updateRoles(
-        id,
-        roles,
-        req.user.id
-      );
+      const result = await UserService.updateRoles(id, roles, req.user.id);
+
+      // Audit log
+      const AuditService = require("../services/audit.service");
+      await AuditService.log({
+        userId: req.user.id,
+        action: "admin.update_user_roles",
+        entity: "user",
+        entityId: id,
+        metadata: { newRoles: roles },
+      });
 
       return res.json(result);
     } catch (err) {

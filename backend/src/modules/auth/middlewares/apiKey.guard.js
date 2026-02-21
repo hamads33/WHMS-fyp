@@ -10,7 +10,13 @@ async function apiKeyGuard(req, res, next) {
     if (!rawKey)
       return res.status(401).json({ error: "API key required" });
 
-    const key = await ApiKeyService.verify(rawKey);
+    // Try full key first (new keys have pk_test_/pk_live_ prefix baked in).
+    // Fall back to stripping known prefixes for backward-compat with old keys.
+    let key = await ApiKeyService.verify(rawKey);
+    if (!key && /^pk_(test|live)_/.test(rawKey)) {
+      const stripped = rawKey.replace(/^pk_(test|live)_/, "");
+      key = await ApiKeyService.verify(stripped);
+    }
     if (!key)
       return res.status(401).json({ error: "Invalid or expired API key" });
 

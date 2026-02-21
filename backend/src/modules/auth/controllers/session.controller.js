@@ -169,8 +169,10 @@ const SessionController = {
           email: user.email,
           roles: user.roles,
           permissions: user.permissions,
+          portals: user.portals || [],
         },
         portal,
+        portals: user.portals || [],
         impersonating: Boolean(req.impersonator),
         impersonator: req.impersonator || null,
       });

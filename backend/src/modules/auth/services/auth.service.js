@@ -6,7 +6,7 @@ const TokenService = require("./token.service");
 const RolePolicyService = require("./rolePolicy.service");
 const AuditService = require("./audit.service");
 const { resolveCountry } = require("../utils/geoip");
-const { hashDevice } = require("..//utils/deviceFingerprint");
+const { hashDevice } = require("../utils/deviceFingerprint");
 
 // Mailer (safe fallback with correct path)
 let Mailer;
@@ -275,6 +275,15 @@ const AuthService = {
     } catch {}
 
     throw new Error("Invalid email or password");
+  }
+
+  // ------------------------------------------------------
+  // 2.5) MFA gate — password is valid but MFA is required
+  // Do NOT issue tokens or create a session yet.
+  // The client must complete /auth/mfa/verify-login first.
+  // ------------------------------------------------------
+  if (user.mfaEnabled) {
+    return { requiresMFA: true, userId: user.id };
   }
 
   // ------------------------------------------------------

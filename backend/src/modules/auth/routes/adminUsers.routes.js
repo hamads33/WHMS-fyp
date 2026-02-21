@@ -1,103 +1,35 @@
 // src/modules/auth/routes/adminUsers.routes.js
-// Complete admin user management routes
+// authGuard + adminPortalGuard are applied at mount point in app.js
 
 const { Router } = require("express");
 const AdminUsersController = require("../controllers/adminUsers.controller");
-const authGuard = require("../middlewares/auth.guard");
-const adminPortalGuard = require("../guards/adminPortal.guard");
+const { permissionGuard } = require("../middlewares/permission.guard");
 
 const router = Router();
 
-/**
- * 👨‍💼 ADMIN USER MANAGEMENT ROUTES
- * All routes require: authentication + admin portal access
- */
+// GET /api/admin/users/stats
+router.get("/stats",     permissionGuard("users.view"),          AdminUsersController.getStats);
 
-router.use(authGuard);
-router.use(adminPortalGuard);
+// GET /api/admin/users/roles — accessible to anyone with admin portal access
+router.get("/roles", AdminUsersController.listRoles);
 
-/**
- * GET /api/auth/admin/users/stats
- * Get user statistics (total, active, disabled, by role)
- * MUST come before /:id routes
- */
-router.get(
-  "/stats",
-  AdminUsersController.getStats
-);
+// GET /api/admin/users
+router.get("/",          permissionGuard("users.view"),          AdminUsersController.list);
 
-/**
- * GET /api/auth/admin/users/roles
- * Get all roles with permissions
- * MUST come before /:id routes
- */
-router.get(
-  "/roles",
-  AdminUsersController.listRoles
-);
+// GET /api/admin/users/:id
+router.get("/:id",       permissionGuard("users.view"),          AdminUsersController.get);
 
-/**
- * GET /api/auth/admin/users
- * List users with pagination, search, and filters
- * Query: q (search), page, limit, role, status
- */
-router.get(
-  "/",
-  AdminUsersController.list
-);
+// POST /api/admin/users/:id/roles
+router.post("/:id/roles",      permissionGuard("users.roles.assign"),  AdminUsersController.updateRoles);
 
-/**
- * GET /api/auth/admin/users/:id
- * Get full user details by ID
- */
-router.get(
-  "/:id",
-  AdminUsersController.get
-);
+// POST /api/admin/users/:id/activate  |  /deactivate
+router.post("/:id/activate",   permissionGuard("users.deactivate"),    AdminUsersController.activate);
+router.post("/:id/deactivate", permissionGuard("users.deactivate"),    AdminUsersController.deactivate);
 
-/**
- * POST /api/auth/admin/users/:id/roles
- * Update user roles (replace existing roles)
- */
-router.post(
-  "/:id/roles",
-  AdminUsersController.updateRoles
-);
+// POST /api/admin/users/:id/logout
+router.post("/:id/logout",     permissionGuard("users.logout.force"),  AdminUsersController.forceLogout);
 
-/**
- * POST /api/auth/admin/users/:id/activate
- * Re-enable disabled user account
- */
-router.post(
-  "/:id/activate",
-  AdminUsersController.activate
-);
-
-/**
- * POST /api/auth/admin/users/:id/deactivate
- * Disable user account
- */
-router.post(
-  "/:id/deactivate",
-  AdminUsersController.deactivate
-);
-
-/**
- * POST /api/auth/admin/users/:id/logout
- * Force logout user (revoke all sessions)
- */
-router.post(
-  "/:id/logout",
-  AdminUsersController.forceLogout
-);
-
-/**
- * POST /api/auth/admin/users/:id/impersonate
- * Start impersonation of target user
- */
-router.post(
-  "/:id/impersonate",
-  AdminUsersController.impersonate
-);
+// POST /api/admin/users/:id/impersonate
+router.post("/:id/impersonate", permissionGuard("users.impersonate"),  AdminUsersController.impersonate);
 
 module.exports = router;
