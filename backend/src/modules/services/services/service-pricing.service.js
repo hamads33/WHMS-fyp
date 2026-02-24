@@ -25,10 +25,18 @@ class ServicePricingService {
       const pricing = await prisma.servicePricing.create({
         data: {
           planId,
-          cycle: data.cycle,
-          price: data.price,
-          currency: data.currency || "USD",
-          active: true,
+          cycle:          data.cycle,
+          price:          data.price,
+          setupFee:       data.setupFee       ?? 0,
+          renewalPrice:   data.renewalPrice   ?? null,
+          suspensionFee:  data.suspensionFee  ?? 0,
+          terminationFee: data.terminationFee ?? 0,
+          currency:       data.currency       || "USD",
+          discountType:   data.discountType   || null,
+          discountAmount: data.discountAmount ?? 0,
+          discountValidUntil: data.discountValidUntil || null,
+          taxable:        data.taxable        ?? true,
+          active:         true,
         },
       });
 
@@ -157,6 +165,14 @@ class ServicePricingService {
         planId,
         active: true,
       },
+      orderBy: { cycle: "asc" },
+    });
+  }
+
+  async getComparison(serviceId) {
+    return prisma.servicePricing.findMany({
+      where: { plan: { serviceId } },
+      include: { plan: true },
       orderBy: { cycle: "asc" },
     });
   }

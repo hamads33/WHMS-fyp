@@ -23,9 +23,15 @@ class ServicePlanService {
         data: {
           serviceId,
           name: data.name,
-          summary: data.description,
+          summary: data.summary || data.description,
           active: true,
           position: data.position || 0,
+          customizeOption: data.customizeOption || "none",
+          paymentType: data.paymentType || "regular",
+          minimumBillingCycles: data.minimumBillingCycles || 1,
+          maximumBillingCycles: data.maximumBillingCycles,
+          maxQuantity: data.maxQuantity || 1,
+          stockLimit: data.stockLimit,
         },
         include: { pricing: true },
       });
@@ -170,6 +176,46 @@ class ServicePlanService {
       include: { pricing: true },
       orderBy: [{ position: "asc" }, { createdAt: "desc" }],
     });
+  }
+
+  async toggleVisibility(id, actor) {
+    const plan = await this.getById(id);
+    return prisma.servicePlan.update({
+      where: { id },
+      data: { hidden: !plan.hidden },
+      include: { pricing: true },
+    });
+  }
+
+  async getComparison(id) {
+    return this.getById(id);
+  }
+
+  async getStats(id) {
+    const plan = await this.getById(id);
+    return { plan };
+  }
+
+  async bulkUpdate(ids, data, actor) {
+    await prisma.servicePlan.updateMany({ where: { id: { in: ids } }, data });
+    return { updated: ids.length };
+  }
+
+  async importPlans(serviceId, data, actor) {
+    const results = [];
+    for (const item of data) {
+      try {
+        const p = await this.create(serviceId, item, actor);
+        results.push({ success: true, name: item.name, id: p.id });
+      } catch (err) {
+        results.push({ success: false, name: item.name, error: err.message });
+      }
+    }
+    return results;
+  }
+
+  async exportPlans(serviceId) {
+    return this.getByServiceId(serviceId);
   }
 
   /**

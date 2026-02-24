@@ -6,7 +6,7 @@ class ServicePlanController {
    */
   async create(req, res) {
     try {
-      const serviceId = Number(req.params.id);
+      const serviceId = req.params.id;
       const plan = await planService.create(serviceId, req.body, req.user);
       res.status(201).json(plan);
     } catch (err) {
@@ -21,7 +21,7 @@ class ServicePlanController {
    */
   async listByService(req, res) {
     try {
-      const serviceId = Number(req.params.id);
+      const serviceId = req.params.id;
       const plans = await planService.getByServiceId(serviceId);
       res.json(plans);
     } catch (err) {
@@ -36,7 +36,7 @@ class ServicePlanController {
    */
   async get(req, res) {
     try {
-      const planId = Number(req.params.id);
+      const planId = req.params.id;
       const plan = await planService.getById(planId);
       res.json(plan);
     } catch (err) {
@@ -51,7 +51,7 @@ class ServicePlanController {
    */
   async update(req, res) {
     try {
-      const planId = Number(req.params.id);
+      const planId = req.params.id;
       const plan = await planService.update(planId, req.body, req.user);
       res.json(plan);
     } catch (err) {
@@ -66,7 +66,7 @@ class ServicePlanController {
    */
   async toggleActive(req, res) {
     try {
-      const planId = Number(req.params.id);
+      const planId = req.params.id;
       const plan = await planService.toggleActive(planId, req.user);
       res.json({
         message: `Plan ${plan.active ? "activated" : "deactivated"} successfully`,
@@ -84,7 +84,7 @@ class ServicePlanController {
    */
   async activate(req, res) {
     try {
-      const planId = Number(req.params.id);
+      const planId = req.params.id;
       const plan = await planService.activate(planId, req.user);
       res.json({
         message: "Plan activated successfully",
@@ -102,7 +102,7 @@ class ServicePlanController {
    */
   async deactivate(req, res) {
     try {
-      const planId = Number(req.params.id);
+      const planId = req.params.id;
       const plan = await planService.deactivate(planId, req.user);
       res.json({
         message: "Plan deactivated successfully",
@@ -115,18 +115,70 @@ class ServicePlanController {
     }
   }
 
-  /**
-   * Get active plans by service (client view)
-   */
   async listActiveByService(req, res) {
     try {
-      const serviceId = Number(req.params.id);
+      const serviceId = req.params.id;
       const plans = await planService.getActiveByServiceId(serviceId);
       res.json(plans);
     } catch (err) {
-      res.status(err.statusCode || 500).json({
-        error: err.message,
-      });
+      res.status(err.statusCode || 500).json({ error: err.message });
+    }
+  }
+
+  async toggleVisibility(req, res) {
+    try {
+      const plan = await planService.toggleVisibility(req.params.id, req.user);
+      res.json(plan);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({ error: err.message });
+    }
+  }
+
+  async getComparison(req, res) {
+    try {
+      const data = await planService.getComparison(req.params.id);
+      res.json(data);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({ error: err.message });
+    }
+  }
+
+  async getStats(req, res) {
+    try {
+      const data = await planService.getStats(req.params.id);
+      res.json(data);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({ error: err.message });
+    }
+  }
+
+  async bulkUpdate(req, res) {
+    try {
+      const { ids, data } = req.body;
+      const result = await planService.bulkUpdate(ids, data, req.user);
+      res.json(result);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({ error: err.message });
+    }
+  }
+
+  async import(req, res) {
+    try {
+      const serviceId = req.params.serviceId;
+      const results = await planService.importPlans(serviceId, req.body, req.user);
+      res.json(results);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({ error: err.message });
+    }
+  }
+
+  async export(req, res) {
+    try {
+      const serviceId = req.params.id;
+      const data = await planService.exportPlans(serviceId);
+      res.json(data);
+    } catch (err) {
+      res.status(err.statusCode || 500).json({ error: err.message });
     }
   }
 }

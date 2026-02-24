@@ -65,12 +65,15 @@ class ServiceSnapshotService {
         capturedAt: new Date().toISOString(),
       };
 
-      // Store snapshot
+      // Store snapshot using new schema fields
       const storedSnapshot = await prisma.serviceSnapshot.create({
         data: {
-          serviceId,
           planId,
-          snapshot: snapshot,
+          service: snapshot.service,
+          planData: snapshot.plan,
+          pricing: snapshot.pricing,
+          features: {},
+          policies: snapshot.policies?.length > 0 ? snapshot.policies : undefined,
         },
       });
 
@@ -98,11 +101,12 @@ class ServiceSnapshotService {
   }
 
   /**
-   * Get snapshots for a service
+   * Get snapshots for a service (via its plans)
    */
   async getByServiceId(serviceId) {
     const service = await prisma.service.findUnique({
       where: { id: serviceId },
+      include: { plans: { select: { id: true } } },
     });
 
     if (!service) {
@@ -111,8 +115,9 @@ class ServiceSnapshotService {
       throw err;
     }
 
+    const planIds = service.plans.map((p) => p.id);
     return prisma.serviceSnapshot.findMany({
-      where: { serviceId },
+      where: { planId: { in: planIds } },
       orderBy: { createdAt: "desc" },
     });
   }
