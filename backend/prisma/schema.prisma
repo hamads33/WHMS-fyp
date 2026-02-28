@@ -1,80 +1,70 @@
-////////////////////////////////////////////////////////////
-// DATABASE + GENERATOR
-////////////////////////////////////////////////////////////
+generator client {
+  provider = "prisma-client-js"
+}
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
-////////////////////////////////////////////////////////////
-// USERS (Single Identity for all roles)
-////////////////////////////////////////////////////////////
-
 model User {
-  id           String @id @default(uuid())
-  email        String @unique
-  passwordHash String
-
-  emailVerified  Boolean  @default(false)
-  disabled       Boolean  @default(false)
-  mfaEnabled     Boolean  @default(false)
-  mfaSecret      String?
-  mfaBackupCodes String[] @default([])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // RBAC
-  roles UserRole[]
-
-  // Auth & Security
-  sessions               Session[]
+  id                     String                  @id @default(uuid())
+  email                  String                  @unique
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  emailVerified          Boolean                 @default(false)
+  mfaBackupCodes         String[]                @default([])
+  mfaEnabled             Boolean                 @default(false)
+  mfaSecret              String?
+  passwordHash           String
+  disabled               Boolean                 @default(false)
+  adminProfile           AdminProfile?
   apiKeys                ApiKey[]
-  loginLogs              LoginLog[]
-  trustedDevices         TrustedDevice[]
-  emailTokens            EmailToken[]
   auditLogs              AuditLog[]
+  backups                Backup[]
+  billingProfile         BillingProfile?
+  chatAgent              ChatAgent?
+  chatMessages           ChatMessage[]
+  chatSessions           ChatSession[]
+  chatSessionAgents      ChatSessionAgent[]
+  clientProfile          ClientProfile?
+  developerProfile       DeveloperProfile?
   domains                Domain[]
-  orders                 Order[]
-  // Impersonation
-  impersonationsStarted  Impersonation[] @relation("Impersonator")
-  impersonationsReceived Impersonation[] @relation("Impersonated")
-
-  // Portal Profiles
-  clientProfile    ClientProfile?
-  adminProfile     AdminProfile?
-  resellerProfile  ResellerProfile?
-  developerProfile DeveloperProfile?
-
-  // Marketplace
+  emailTokens            EmailToken[]
+  hostingAccounts        HostingAccount[]        @relation("HostingAccounts")
+  impersonationsStarted  Impersonation[]         @relation("Impersonator")
+  impersonationsReceived Impersonation[]         @relation("Impersonated")
+  invoices               Invoice[]
+  ipAccessRules          IpAccessRule[]
+  loginLogs              LoginLog[]
+  marketplacePurchases   MarketplacePurchase[]
   marketplaceReviews     MarketplaceReview[]
   marketplaceSubmissions MarketplaceSubmission[]
-  marketplacePurchases   MarketplacePurchase[]
-  billingProfile         BillingProfile?
-  invoices               Invoice[]
+  orders                 Order[]
   payments               Payment[]
-
-  // Tickets
-  tickets Ticket[]
-
-  // Legacy
-  refreshTokens RefreshToken[]
+  paymentMethods         PaymentMethod[]
+  refreshTokens          RefreshToken[]
+  resellerProfile        ResellerProfile?
+  serverManagedAccounts  ServerManagedAccount[]  @relation("ServerManagedAccounts")
+  sessions               Session[]
+  storageConfigs         StorageConfig[]
+  assignedTickets        Ticket[]                @relation("AssignedStaff")
+  tickets                Ticket[]
+  ticketAttachments      TicketAttachment[]
+  departmentMemberships  TicketDepartmentAgent[]
+  ticketReplies          TicketReply[]
+  ticketStatusChanges    TicketStatusHistory[]
+  trustedDevices         TrustedDevice[]
+  roles                  UserRole[]
+  broadcastsCreated      Broadcast[]              @relation("BroadcastCreator")
+  broadcastDismissals    BroadcastDismissal[]     @relation("BroadcastDismissalUser")
+  broadcastEngagements   BroadcastEngagement[]    @relation("BroadcastEngagementUser")
 }
 
-////////////////////////////////////////////////////////////
-// ROLE SYSTEM (RBAC)
-////////////////////////////////////////////////////////////
-
 model Role {
-  id          String  @id @default(uuid())
-  name        String  @unique
+  id          String           @id @default(uuid())
+  name        String           @unique
   description String?
-
   permissions RolePermission[]
   userRoles   UserRole[]
 }
@@ -88,55 +78,44 @@ model Permission {
 
 model RolePermission {
   id           String     @id @default(uuid())
-  role         Role       @relation(fields: [roleId], references: [id])
   roleId       String
-  permission   Permission @relation(fields: [permissionId], references: [id])
   permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  role         Role       @relation(fields: [roleId], references: [id])
 
   @@unique([roleId, permissionId])
 }
 
 model UserRole {
   id     String @id @default(uuid())
-  user   User   @relation(fields: [userId], references: [id])
   userId String
-  role   Role   @relation(fields: [roleId], references: [id])
   roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 
   @@unique([userId, roleId])
 }
 
-////////////////////////////////////////////////////////////
-// SESSIONS
-////////////////////////////////////////////////////////////
-
 model Session {
-  id     String @id @default(uuid())
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-
-  token      String   @unique
-  userAgent  String?
-  ip         String?
-  deviceHash String? // 🔐 hashed device fingerprint
-  country    String? // 🌍 geo-IP (country only)
-  updatedAt  DateTime @updatedAt
-  createdAt  DateTime @default(now())
-  expiresAt  DateTime
-
-  lastActivity        DateTime @default(now())
+  id                  String   @id @default(uuid())
+  userId              String
+  token               String   @unique
+  userAgent           String?
+  ip                  String?
+  createdAt           DateTime @default(now())
+  expiresAt           DateTime
   isImpersonation     Boolean  @default(false)
   impersonatorId      String?
   impersonationReason String?
+  updatedAt           DateTime @updatedAt
+  country             String?
+  deviceHash          String?
+  lastActivity        DateTime @default(now())
+  user                User     @relation(fields: [userId], references: [id])
 }
-
-////////////////////////////////////////////////////////////
-// TRUSTED DEVICES
-////////////////////////////////////////////////////////////
 
 model TrustedDevice {
   id         String   @id @default(uuid())
-  user       User     @relation(fields: [userId], references: [id])
   userId     String
   deviceId   String   @unique
   userAgent  String?
@@ -146,39 +125,30 @@ model TrustedDevice {
   lastUsedAt DateTime @updatedAt
   expiresAt  DateTime
   revoked    Boolean  @default(false)
+  user       User     @relation(fields: [userId], references: [id])
 }
 
-////////////////////////////////////////////////////////////
-// API KEYS
-////////////////////////////////////////////////////////////
-
 model ApiKey {
-  id        String    @id @default(uuid())
-  user      User      @relation(fields: [userId], references: [id])
+  id        String        @id @default(uuid())
   userId    String
   name      String
   keyHash   String
-  createdAt DateTime  @default(now())
-  revoked   Boolean   @default(false)
+  createdAt DateTime      @default(now())
+  revoked   Boolean       @default(false)
   expiresAt DateTime?
-
-  scopes ApiKeyScope[]
+  user      User          @relation(fields: [userId], references: [id])
+  scopes    ApiKeyScope[]
 }
 
 model ApiKeyScope {
   id       String @id @default(uuid())
-  apiKey   ApiKey @relation(fields: [apiKeyId], references: [id])
   apiKeyId String
   scope    String
+  apiKey   ApiKey @relation(fields: [apiKeyId], references: [id])
 }
-
-////////////////////////////////////////////////////////////
-// LOGIN LOGS
-////////////////////////////////////////////////////////////
 
 model LoginLog {
   id        String   @id @default(uuid())
-  user      User?    @relation(fields: [userId], references: [id])
   userId    String?
   userEmail String?
   success   Boolean
@@ -186,245 +156,1599 @@ model LoginLog {
   userAgent String?
   reason    String?
   createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
 }
 
-////////////////////////////////////////////////////////////
-// USER PROFILES
-////////////////////////////////////////////////////////////
-
 model ClientProfile {
-  id     String @id @default(uuid())
-  user   User   @relation(fields: [userId], references: [id])
-  userId String @unique
-
-  company String?
-  phone   String?
-  address String?
-  country String?
-  city    String?
-  postal  String?
+  id        String  @id @default(uuid())
+  userId    String  @unique
+  firstName String?
+  lastName  String?
+  company   String?
+  phone     String?
+  address   String?
+  country   String?
+  city      String?
+  postal    String?
+  user      User    @relation(fields: [userId], references: [id])
 }
 
 model AdminProfile {
-  id     String @id @default(uuid())
-  user   User   @relation(fields: [userId], references: [id])
-  userId String @unique
-
+  id              String  @id @default(uuid())
+  userId          String  @unique
   department      String?
   staffTitle      String?
   restrictionJson Json?
+  user            User    @relation(fields: [userId], references: [id])
 }
 
 model ResellerProfile {
-  id     String @id @default(uuid())
-  user   User   @relation(fields: [userId], references: [id])
-  userId String @unique
-
+  id           String  @id @default(uuid())
+  userId       String  @unique
   resellerCode String  @unique
   company      String?
   phone        String?
   address      String?
+  user         User    @relation(fields: [userId], references: [id])
 }
 
 model DeveloperProfile {
-  id     String @id @default(uuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
-
-  displayName String?
-  website     String?
-  github      String?
-
-  storeName       String?
+  id              String               @id @default(uuid())
+  userId          String               @unique
+  displayName     String?
+  website         String?
+  github          String?
   payoutsEmail    String?
-  stripeAccountId String?
-  publicKeyPem    String?
+  createdAt       DateTime             @default(now())
   marketplaceMeta Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  products MarketplaceProduct[] @relation("dev_products")
+  publicKeyPem    String?
+  storeName       String?
+  stripeAccountId String?
+  updatedAt       DateTime             @updatedAt
+  user            User                 @relation(fields: [userId], references: [id])
+  products        MarketplaceProduct[] @relation("dev_products")
 }
-
-////////////////////////////////////////////////////////////
-// IMPERSONATION RECORDS
-////////////////////////////////////////////////////////////
 
 model Impersonation {
-  id             String @id @default(uuid())
+  id             String    @id @default(uuid())
   adminId        String
-  admin          User?  @relation("Impersonator", fields: [adminId], references: [id])
   impersonatedId String
-  impersonated   User?  @relation("Impersonated", fields: [impersonatedId], references: [id])
-
-  startedAt    DateTime  @default(now())
-  endedAt      DateTime?
-  sessionToken String    @unique
-  reason       String?
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+  sessionToken   String    @unique
+  reason         String?
+  admin          User      @relation("Impersonator", fields: [adminId], references: [id])
+  impersonated   User      @relation("Impersonated", fields: [impersonatedId], references: [id])
 }
-
-////////////////////////////////////////////////////////////
-// EMAIL TOKENS
-////////////////////////////////////////////////////////////
 
 model EmailToken {
   id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id])
   userId    String
   tokenHash String
   type      String
   createdAt DateTime @default(now())
   expiresAt DateTime
   used      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id])
 }
 
-////////////////////////////////////////////////////////////
-// AUDIT LOGS
-////////////////////////////////////////////////////////////
-
 model AuditLog {
-  id        Int                @id @default(autoincrement())
-  source    String
+  userId    String?
   action    String
+  createdAt DateTime           @default(now())
+  data      Json?
+  entity    String?
+  entityId  String?
+  ip        String?
+  userAgent String?
   actor     String
   level     String             @default("INFO")
   meta      Json?
-  userId    String?
-  ip        String?
-  userAgent String?
-  entity    String?
-  entityId  String?
-  data      Json?
+  source    String
+  id        Int                @id @default(autoincrement())
   profileId Int?
-  profile   AutomationProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
-  createdAt DateTime           @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
+  profile   AutomationProfile? @relation(fields: [profileId], references: [id])
+  user      User?              @relation(fields: [userId], references: [id])
 
   @@index([profileId])
 }
 
-////////////////////////////////////////////////////////////
-// WEBHOOKS
-////////////////////////////////////////////////////////////
-
-model Webhook {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  url       String
-  secret    String
-  events    String[]
-  active    Boolean  @default(true)
+model WebhookEvent {
+  id        String   @id @default(uuid())
+  event     String
+  data      Json
+  processed Boolean  @default(false)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  logs WebhookLog[]
+  @@index([event])
 }
 
-model WebhookLog {
-  id         String   @id @default(cuid())
-  webhookId  String
-  event      String
-  payload    Json
-  status     String
-  httpStatus Int?
-  attempts   Int      @default(0)
-  lastError  String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+model Domain {
+  id                String           @id @default(uuid())
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  autoRenew         Boolean          @default(true)
+  currency          String           @default("USD")
+  expiryDate        DateTime?
+  metadata          Json?
+  name              String           @unique
+  nameservers       Json?
+  ownerId           String
+  registrar         String?
+  registrationPrice Int?
+  renewalPrice      Int?
+  status            DomainStatus     @default(pending_registration)
+  dnsRecords        DNSRecord[]
+  user              User             @relation(fields: [ownerId], references: [id])
+  contacts          DomainContact[]
+  logs              DomainLog[]
+  transfers         DomainTransfer[]
 
-  webhook Webhook @relation(fields: [webhookId], references: [id])
+  @@index([ownerId])
+  @@index([status])
+  @@index([expiryDate])
 }
 
-////////////////////////////////////////////////////////////
-// REFRESH TOKENS
-////////////////////////////////////////////////////////////
+model DNSRecord {
+  id               Int      @id @default(autoincrement())
+  domainId         String
+  type             String
+  name             String
+  value            String
+  ttl              Int      @default(3600)
+  providerRecordId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  domain           Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId])
+}
+
+model DomainContact {
+  id        Int               @id @default(autoincrement())
+  domainId  String
+  type      DomainContactType
+  name      String
+  email     String
+  phone     String?
+  country   String
+  createdAt DateTime          @default(now())
+  domain    Domain            @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([domainId, type])
+}
+
+model DomainTransfer {
+  id               Int                  @id @default(autoincrement())
+  domainId         String
+  authCode         String
+  status           DomainTransferStatus @default(pending)
+  requestedAt      DateTime             @default(now())
+  completedAt      DateTime?
+  providerResponse Json?
+  domain           Domain               @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model DomainLog {
+  id        Int      @id @default(autoincrement())
+  domainId  String
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+  domain    Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId])
+}
+
+model TldPricing {
+  id           Int      @id @default(autoincrement())
+  tld          String   @unique
+  registration Decimal  @db.Decimal(10, 2)
+  renewal      Decimal  @db.Decimal(10, 2)
+  transfer     Decimal  @db.Decimal(10, 2)
+  provider     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model TicketDepartment {
+  id                String                  @id @default(uuid())
+  name              String                  @unique
+  slug              String                  @unique
+  description       String?
+  email             String?
+  active            Boolean                 @default(true)
+  slaResponseTime   Int?
+  slaResolutionTime Int?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  chatSessions      ChatSession[]
+  tickets           Ticket[]
+  agents            TicketDepartmentAgent[]
+}
+
+model TicketDepartmentAgent {
+  id           String           @id @default(uuid())
+  departmentId String
+  userId       String
+  isLead       Boolean          @default(false)
+  assignedAt   DateTime         @default(now())
+  department   TicketDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, userId])
+  @@index([userId])
+}
+
+model Ticket {
+  id              String                @id @default(uuid())
+  subject         String
+  createdAt       DateTime              @default(now())
+  closedAt        DateTime?
+  updatedAt       DateTime              @updatedAt
+  assignedToId    String?
+  clientId        String
+  departmentId    String
+  firstResponseAt DateTime?
+  metadata        Json?
+  relatedOrderId  String?
+  resolvedAt      DateTime?
+  slaBreachedAt   DateTime?
+  ticketNumber    String                @unique
+  priority        TicketPriority        @default(medium)
+  status          TicketStatus          @default(open)
+  chatSession     ChatSession?
+  assignedTo      User?                 @relation("AssignedStaff", fields: [assignedToId], references: [id])
+  client          User                  @relation(fields: [clientId], references: [id])
+  department      TicketDepartment      @relation(fields: [departmentId], references: [id])
+  attachments     TicketAttachment[]
+  replies         TicketReply[]
+  statusHistory   TicketStatusHistory[]
+
+  @@index([clientId])
+  @@index([assignedToId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([priority])
+  @@index([ticketNumber])
+  @@index([createdAt])
+}
+
+model TicketReply {
+  id          String             @id @default(uuid())
+  ticketId    String
+  createdAt   DateTime           @default(now())
+  authorId    String
+  body        String
+  isEdited    Boolean            @default(false)
+  type        ReplyType          @default(public)
+  updatedAt   DateTime           @updatedAt
+  attachments TicketAttachment[]
+  author      User               @relation(fields: [authorId], references: [id])
+  ticket      Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+model TicketAttachment {
+  id           String       @id @default(uuid())
+  ticketId     String
+  replyId      String?
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  url          String?
+  uploadedById String
+  createdAt    DateTime     @default(now())
+  reply        TicketReply? @relation(fields: [replyId], references: [id])
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+
+  @@index([ticketId])
+  @@index([replyId])
+}
+
+model TicketStatusHistory {
+  id           String          @id @default(uuid())
+  ticketId     String
+  changedById  String
+  fromStatus   TicketStatus?
+  toStatus     TicketStatus
+  fromPriority TicketPriority?
+  toPriority   TicketPriority?
+  note         String?
+  createdAt    DateTime        @default(now())
+  changedBy    User            @relation(fields: [changedById], references: [id])
+  ticket       Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([createdAt])
+}
+
+model ChatSession {
+  id                  String             @id @default(uuid())
+  sessionCode         String             @unique
+  clientId            String
+  departmentId        String?
+  status              ChatSessionStatus  @default(waiting)
+  subject             String?
+  convertedToTicketId String?            @unique
+  startedAt           DateTime           @default(now())
+  endedAt             DateTime?
+  agentJoinedAt       DateTime?
+  rating              Int?
+  feedback            String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  messages            ChatMessage[]
+  client              User               @relation(fields: [clientId], references: [id])
+  convertedToTicket   Ticket?            @relation(fields: [convertedToTicketId], references: [id])
+  department          TicketDepartment?  @relation(fields: [departmentId], references: [id])
+  agents              ChatSessionAgent[]
+
+  @@index([clientId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model ChatSessionAgent {
+  id        String      @id @default(uuid())
+  sessionId String
+  agentId   String
+  joinedAt  DateTime    @default(now())
+  leftAt    DateTime?
+  isPrimary Boolean     @default(false)
+  agent     User        @relation(fields: [agentId], references: [id])
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, agentId])
+  @@index([agentId])
+}
+
+model ChatMessage {
+  id        String          @id @default(uuid())
+  sessionId String
+  senderId  String
+  type      ChatMessageType @default(text)
+  body      String
+  metadata  Json?
+  sentAt    DateTime        @default(now())
+  sender    User            @relation(fields: [senderId], references: [id])
+  session   ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([senderId])
+  @@index([sentAt])
+}
+
+model ChatAgent {
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  isOnline           Boolean   @default(false)
+  maxConcurrentChats Int       @default(3)
+  currentChatCount   Int       @default(0)
+  acceptingChats     Boolean   @default(true)
+  lastSeenAt         DateTime?
+  updatedAt          DateTime  @updatedAt
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
 
 model RefreshToken {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   token     String   @unique
   userId    String
-  revoked   Boolean  @default(false)
   expiresAt DateTime
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
 
-  user User @relation(fields: [userId], references: [id])
+model MarketplaceProduct {
+  id            String              @id @default(uuid())
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  category      String?
+  description   String?
+  devId         String
+  name          String
+  published     Boolean             @default(false)
+  rating        Decimal             @default(0) @db.Decimal(3, 2)
+  slug          String              @unique
+  iconUrl       String?
+  screenshots   String[]
+  pricingType   String              @default("free")
+  price         Int                 @default(0)
+  currency      String              @default("USD")
+  interval      String?
+  visibility    String              @default("public")
+  status        String              @default("draft")
+  zipPath       String?
+  downloadUrl   String?
+  version       String?
+  changelog     String?
+  checksum      String?
+  totalRevenue  Decimal             @default(0) @db.Decimal(10, 2)
+  salesCount    Int                 @default(0)
+  dev           DeveloperProfile    @relation("dev_products", fields: [devId], references: [id])
+  reviews       MarketplaceReview[]
+  purchases     MarketplacePurchase[]
+
+  @@index([status])
+  @@index([visibility])
+  @@index([devId])
+}
+
+model MarketplaceReview {
+  id        String             @id @default(uuid())
+  productId String
+  userId    String
+  rating    Int
+  createdAt DateTime           @default(now())
+  text      String?
+  title     String?
+  product   MarketplaceProduct @relation(fields: [productId], references: [id])
+  user      User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([productId])
+}
+
+model MarketplaceSubmission {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  json      Json?
+  name      String
+  userId    String
+  status    String   @default("pending")
+  user      User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
 
-////////////////////////////////////////////////////////////
-// TICKETS
-////////////////////////////////////////////////////////////
+model MarketplacePurchase {
+  id        String             @id @default(uuid())
+  userId    String
+  productId String
+  price     Int                @default(0)
+  currency  String             @default("USD")
+  status    String             @default("completed")
+  createdAt DateTime           @default(now())
+  user      User               @relation(fields: [userId], references: [id])
+  product   MarketplaceProduct @relation(fields: [productId], references: [id])
 
-model Ticket {
-  id        Int      @id @default(autoincrement())
-  clientId  String
-  subject   String
-  message   String
-  priority  String
-  status    String   @default("open")
-  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([productId])
+}
 
-  client User @relation(fields: [clientId], references: [id])
+model AutomationProfile {
+  id          Int              @id @default(autoincrement())
+  name        String
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  cron        String
+  enabled     Boolean          @default(false)
+  auditLogs   AuditLog[]
+  runs        AutomationRun[]
+  tasks       AutomationTask[]
+}
+
+model AutomationTask {
+  createdAt  DateTime          @default(now())
+  actionMeta Json              @default("{}")
+  actionType String
+  order      Int               @default(0)
+  profileId  Int
+  updatedAt  DateTime          @updatedAt
+  id         Int               @id @default(autoincrement())
+  profile    AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model AutomationRun {
+  id           Int               @id @default(autoincrement())
+  profileId    Int
+  taskId       Int?
+  status       String            @default("pending")
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  result       Json?
+  errorMessage String?
+  createdAt    DateTime          @default(now())
+  profile      AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model AutomationWorkflow {
+  id          String                @id @default(uuid())
+  name        String
+  description String                @default("")
+  definition  Json
+  enabled     Boolean               @default(true)
+  version     Int                   @default(1)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  deletedAt   DateTime?
+  eventFilter Json?
+  eventType   String?
+  slug        String                @unique
+  trigger     String                @default("manual")
+  type        String                @default("sequential")
+  webhooks    IncomingWebhook[]
+  runs        WorkflowRun[]
+  triggers    WorkflowTriggerRule[]
+}
+
+model IncomingWebhook {
+  id             String             @id @default(uuid())
+  workflowId     String
+  url            String
+  secret         String
+  enabled        Boolean            @default(true)
+  events         Json               @default("[]")
+  retryPolicy    Json?
+  totalReceived  Int                @default(0)
+  lastReceivedAt DateTime?
+  failureCount   Int                @default(0)
+  lastError      String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  workflow       AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+}
+
+model WorkflowTriggerRule {
+  id               String             @id @default(uuid())
+  workflowId       String
+  eventType        String
+  enabled          Boolean            @default(true)
+  conditions       Json?
+  passEventAsInput Boolean            @default(false)
+  inputMapping     Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  workflow         AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, eventType])
+}
+
+model WorkflowRun {
+  id            String             @id @default(uuid())
+  workflowId    String
+  status        String             @default("pending")
+  triggeredBy   String             @default("manual")
+  input         Json?
+  output        Json?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  errorMessage  String?
+  errorStack    String?
+  totalDuration Int?
+  successCount  Int                @default(0)
+  failureCount  Int                @default(0)
+  taskCount     Int                @default(0)
+  skippedCount  Int                @default(0)
+  createdAt     DateTime           @default(now())
+  triggerId     String?
+  workflow      AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  taskRuns      WorkflowTaskRun[]
+}
+
+model WorkflowTaskRun {
+  id              String      @id @default(uuid())
+  runId           String
+  taskId          String
+  status          String      @default("pending")
+  retryCount      Int         @default(0)
+  maxRetries      Int         @default(0)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  duration        Int?
+  output          Json?
+  errorMessage    String?
+  errorStack      String?
+  conditionResult Boolean?
+  selectedPath    String?
+  nextRetryAt     DateTime?
+  createdAt       DateTime    @default(now())
+  run             WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model ServiceGroup {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  icon        String?
+  position    Int       @default(0)
+  active      Boolean   @default(true)
+  hidden      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  services    Service[]
+}
+
+model Service {
+  id                   String                 @id @default(uuid())
+  code                 String                 @unique
+  name                 String
+  description          String?
+  shortDescription     String?
+  groupId              String?
+  parentServiceId      String?
+  moduleName           String?
+  moduleType           String?
+  active               Boolean                @default(true)
+  hidden               Boolean                @default(false)
+  taxable              Boolean                @default(true)
+  autoSetup            Boolean                @default(true)
+  autoSuspend          Boolean                @default(true)
+  autoTerminate        Boolean                @default(false)
+  customizeOption      String                 @default("none")
+  paymentType          String                 @default("regular")
+  requiresDomain       Boolean                @default(false)
+  allowAutoRenew       Boolean                @default(true)
+  billingCycles        String                 @default("monthly,quarterly,semi_annually,annually")
+  position             Int                    @default(0)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  autoTerminateDays    Int                    @default(0)
+  chargeNextMonth      Int                    @default(0)
+  color                String?
+  featured             Boolean                @default(false)
+  multipleQuantities   String                 @default("no")
+  onDemandRenewals     Boolean                @default(true)
+  prorataBilling       Boolean                @default(false)
+  prorataDate          Int                    @default(0)
+  recurringCyclesLimit Int                    @default(0)
+  retired              Boolean                @default(false)
+  serverGroup          String?
+  tagline              String?
+  welcomeEmailTemplate String?
+  group                ServiceGroup?          @relation(fields: [groupId], references: [id])
+  parentService        Service?               @relation("ServiceBundle", fields: [parentServiceId], references: [id])
+  childServices        Service[]              @relation("ServiceBundle")
+  addons               ServiceAddon[]
+  automations          ServiceAutomation[]
+  configurations       ServiceConfiguration[]
+  crossSellTargets     ServiceCrossSell[]     @relation("CrossSellTarget")
+  crossSells           ServiceCrossSell[]
+  customFields         ServiceCustomField[]
+  features             ServiceFeature[]
+  plans                ServicePlan[]
+  policies             ServicePolicy[]
+
+  @@index([groupId])
+  @@index([parentServiceId])
+  @@index([active])
+}
+
+model ServiceAddon {
+  id           String                @id @default(uuid())
+  serviceId    String
+  name         String
+  description  String?
+  code         String
+  setupFee     Decimal               @default(0) @db.Decimal(10, 2)
+  monthlyPrice Decimal               @db.Decimal(10, 2)
+  currency     String                @default("USD")
+  maxQuantity  Int?
+  required     Boolean               @default(false)
+  recurring    Boolean               @default(true)
+  billingType  String                @default("shared")
+  active       Boolean               @default(true)
+  position     Int                   @default(0)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  service      Service               @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  pricing      ServiceAddonPricing[]
+  planAddons   ServicePlanAddon[]
+
+  @@unique([serviceId, code])
+  @@index([serviceId])
+  @@index([active])
+}
+
+model ServiceFeature {
+  id           String               @id @default(uuid())
+  serviceId    String
+  key          String
+  name         String
+  description  String?
+  type         String               @default("text")
+  unit         String?
+  icon         String?
+  category     String?
+  active       Boolean              @default(true)
+  position     Int                  @default(0)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  service      Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  planFeatures ServicePlanFeature[]
+
+  @@unique([serviceId, key])
+  @@index([serviceId])
+}
+
+model ServicePlan {
+  id                   String                     @id @default(uuid())
+  serviceId            String
+  name                 String
+  summary              String?
+  description          String?
+  paymentType          String                     @default("regular")
+  minimumBillingCycles Int                        @default(1)
+  maximumBillingCycles Int?
+  allowAutoSetup       Boolean                    @default(true)
+  customizeOption      String                     @default("none")
+  showDomainOptions    Boolean                    @default(false)
+  maxClients           Int?
+  maxOrders            Int?
+  maxQuantity          Int                        @default(1)
+  stockLimit           Int?
+  active               Boolean                    @default(true)
+  hidden               Boolean                    @default(false)
+  position             Int                        @default(0)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  service              Service                    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  addons               ServicePlanAddon[]
+  automations          ServicePlanAutomation[]
+  configurations       ServicePlanConfiguration[]
+  features             ServicePlanFeature[]
+  policies             ServicePlanPolicy[]
+  pricing              ServicePricing[]
+  snapshots            ServiceSnapshot[]
+  upgradePathsFrom     ServiceUpgradePath[]       @relation("fromUpgradePath")
+  upgradePathsTo       ServiceUpgradePath[]       @relation("toUpgradePath")
+
+  @@unique([serviceId, name])
+  @@index([serviceId])
+  @@index([active])
+}
+
+model ServicePricing {
+  id                 String      @id @default(uuid())
+  planId             String
+  cycle              String
+  setupFee           Decimal     @default(0) @db.Decimal(10, 2)
+  price              Decimal     @db.Decimal(10, 2)
+  renewalPrice       Decimal?    @db.Decimal(10, 2)
+  suspensionFee      Decimal     @default(0) @db.Decimal(10, 2)
+  terminationFee     Decimal     @default(0) @db.Decimal(10, 2)
+  currency           String      @default("USD")
+  discountType       String?
+  discountAmount     Decimal     @default(0) @db.Decimal(10, 2)
+  discountValidUntil DateTime?
+  taxable            Boolean     @default(true)
+  active             Boolean     @default(true)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  plan               ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, cycle])
+  @@index([planId])
+  @@index([active])
+}
+
+model ServicePlanFeature {
+  id        String         @id @default(uuid())
+  planId    String
+  featureId String
+  value     String
+  feature   ServiceFeature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  plan      ServicePlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureId])
+  @@index([planId])
+  @@index([featureId])
+}
+
+model ServicePlanAddon {
+  id       String       @id @default(uuid())
+  planId   String
+  addonId  String
+  included Boolean      @default(false)
+  quantity Int          @default(1)
+  addon    ServiceAddon @relation(fields: [addonId], references: [id], onDelete: Cascade)
+  plan     ServicePlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, addonId])
+  @@index([planId])
+  @@index([addonId])
+}
+
+model ServiceAddonPricing {
+  id           String       @id @default(uuid())
+  addonId      String
+  cycle        String
+  price        Decimal      @db.Decimal(10, 2)
+  setupFee     Decimal      @default(0) @db.Decimal(10, 2)
+  renewalPrice Decimal?     @db.Decimal(10, 2)
+  currency     String       @default("USD")
+  addon        ServiceAddon @relation(fields: [addonId], references: [id], onDelete: Cascade)
+
+  @@unique([addonId, cycle])
+  @@index([addonId])
+}
+
+model ServiceConfiguration {
+  id          String  @id @default(uuid())
+  serviceId   String
+  key         String
+  value       String
+  valueType   String  @default("string")
+  description String?
+  service     Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, key])
+  @@index([serviceId])
+}
+
+model ServicePlanConfiguration {
+  id     String      @id @default(uuid())
+  planId String
+  key    String
+  value  String
+  plan   ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+model ServiceAutomation {
+  id              String   @id @default(uuid())
+  serviceId       String
+  event           String
+  action          String
+  module          String?
+  provisioningKey String?
+  webhookUrl      String?
+  emailTemplate   String?
+  config          Json?
+  enabled         Boolean  @default(true)
+  priority        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@index([event])
+}
+
+model ServicePlanAutomation {
+  id      String      @id @default(uuid())
+  planId  String
+  event   String
+  action  String
+  config  Json?
+  enabled Boolean     @default(true)
+  plan    ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+model ServicePolicy {
+  id          String  @id @default(uuid())
+  serviceId   String
+  key         String
+  name        String
+  value       String
+  valueType   String  @default("string")
+  description String?
+  enforced    Boolean @default(true)
+  service     Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, key])
+  @@index([serviceId])
+}
+
+model ServicePlanPolicy {
+  id     String      @id @default(uuid())
+  planId String
+  key    String
+  name   String
+  value  String
+  plan   ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+model ServiceSnapshot {
+  id          String      @id @default(uuid())
+  planId      String
+  service     Json
+  planData    Json
+  pricing     Json
+  features    Json
+  addons      Json?
+  policies    Json?
+  automations Json?
+  capturedAt  DateTime    @default(now())
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  orders      Order[]
+  plan        ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+model ServiceUpgradePath {
+  id           String      @id @default(uuid())
+  serviceId    String
+  fromPlanId   String
+  toPlanId     String
+  allowed      Boolean     @default(true)
+  prorated     Boolean     @default(true)
+  creditUnused Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  fromPlan     ServicePlan @relation("fromUpgradePath", fields: [fromPlanId], references: [id], onDelete: Cascade)
+  toPlan       ServicePlan @relation("toUpgradePath", fields: [toPlanId], references: [id], onDelete: Cascade)
+
+  @@unique([fromPlanId, toPlanId])
+  @@index([serviceId])
+}
+
+model ServiceTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  category    String
+  config      Json
+  plans       Json
+  addons      Json?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Order {
+  id                 String           @id @default(uuid())
+  clientId           String
+  snapshotId         String?
+  status             OrderStatus      @default(pending)
+  startedAt          DateTime?
+  nextRenewalAt      DateTime?
+  suspendedAt        DateTime?
+  terminatedAt       DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  provisioningError  String?
+  provisioningStatus String?
+  hostingAccount     HostingAccount?
+  invoices           Invoice[]
+  client             User             @relation(fields: [clientId], references: [id])
+  snapshot           ServiceSnapshot? @relation(fields: [snapshotId], references: [id])
 
   @@index([clientId])
+  @@index([status])
+  @@index([nextRenewalAt])
 }
 
-////////////////////////////////////////////////////////////
-// EMAIL SYSTEM
-////////////////////////////////////////////////////////////
-
-model EmailTemplate {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  subject   String
-  bodyHtml  String
-  bodyText  String?
-  language  String   @default("en")
-  isDefault Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  jobs EmailJob[]
+model BillingProfile {
+  id               String          @id @default(uuid())
+  clientId         String          @unique
+  currency         String          @default("USD")
+  billingAddress   String?
+  city             String?
+  country          String?
+  postalCode       String?
+  taxId            String?
+  paymentMethodRef String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  client           User            @relation(fields: [clientId], references: [id])
+  invoices         Invoice[]
+  paymentMethods   PaymentMethod[]
 }
 
-model EmailJob {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  templateId   Int?
-  templateName String?
-  toEmail      String
-  toName       String?
-  payload      Json?
-  status       String   @default("queued")
-  attempts     Int      @default(0)
-  lastError    String?
-  priority     String   @default("normal")
-  provider     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+model PaymentMethod {
+  id               String            @id @default(uuid())
+  clientId         String
+  billingProfileId String?
+  type             PaymentMethodType @default(card)
+  gateway          String
+  gatewayRef       String
+  gatewayCustomer  String?
+  last4            String?
+  brand            String?
+  expiryMonth      Int?
+  expiryYear       Int?
+  email            String?
+  bankName         String?
+  isDefault        Boolean           @default(false)
+  active           Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  payments         Payment[]
+  billingProfile   BillingProfile?   @relation(fields: [billingProfileId], references: [id])
+  client           User              @relation(fields: [clientId], references: [id])
 
-  template EmailTemplate? @relation(fields: [templateId], references: [id])
+  @@unique([clientId, gatewayRef])
+  @@index([clientId])
+  @@index([clientId, isDefault])
+  @@index([gateway])
+}
 
-  @@index([templateId])
+model TaxRule {
+  id          Int      @id @default(autoincrement())
+  name        String
+  rate        Decimal  @db.Decimal(5, 4)
+  country     String?
+  region      String?
+  serviceType String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([country])
+  @@index([active])
+  @@index([country, serviceType])
+}
+
+model Invoice {
+  id               String               @id @default(uuid())
+  invoiceNumber    String               @unique
+  clientId         String
+  billingProfileId String?
+  orderId          String?
+  status           InvoiceStatus        @default(draft)
+  currency         String               @default("USD")
+  subtotal         Decimal              @db.Decimal(10, 2)
+  taxAmount        Decimal              @default(0) @db.Decimal(10, 2)
+  discountAmount   Decimal              @default(0) @db.Decimal(10, 2)
+  totalAmount      Decimal              @db.Decimal(10, 2)
+  amountPaid       Decimal              @default(0) @db.Decimal(10, 2)
+  amountDue        Decimal              @db.Decimal(10, 2)
+  dueDate          DateTime?
+  issuedAt         DateTime?
+  paidAt           DateTime?
+  cancelledAt      DateTime?
+  notes            String?
+  metadata         Json?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  invoiceType      InvoiceType          @default(manual)
+  paymentTermDays  Int                  @default(7)
+  transactions     BillingTransaction[]
+  dunningAttempts  DunningAttempt[]
+  billingProfile   BillingProfile?      @relation(fields: [billingProfileId], references: [id])
+  client           User                 @relation(fields: [clientId], references: [id])
+  order            Order?               @relation(fields: [orderId], references: [id])
+  discounts        InvoiceDiscount[]
+  lineItems        InvoiceLineItem[]
+  payments         Payment[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([invoiceType])
+  @@index([orderId, invoiceType])
+  @@index([clientId, invoiceType])
+  @@index([clientId, status])
+  @@index([dueDate])
+  @@index([orderId])
+  @@index([invoiceNumber])
+}
+
+model InvoiceLineItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  total       Decimal  @db.Decimal(10, 2)
+  taxRate     Decimal? @db.Decimal(5, 4)
+  taxAmount   Decimal? @db.Decimal(10, 2)
+  serviceCode String?
+  planName    String?
+  cycle       String?
+  createdAt   DateTime @default(now())
+  snapshotId  String?
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([snapshotId])
+}
+
+model InvoiceDiscount {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  type        String
+  code        String?
+  description String?
+  amount      Decimal  @db.Decimal(10, 2)
+  isPercent   Boolean  @default(false)
+  appliedAt   DateTime @default(now())
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([code])
+}
+
+model Payment {
+  id              String         @id @default(uuid())
+  invoiceId       String
+  clientId        String
+  amount          Decimal        @db.Decimal(10, 2)
+  currency        String         @default("USD")
+  status          PaymentStatus  @default(pending)
+  gateway         String?
+  gatewayRef      String?
+  gatewayResponse Json?
+  gatewayStatus   String?
+  paidAt          DateTime?
+  failedAt        DateTime?
+  failReason      String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  isAutoCharge    Boolean        @default(false)
+  paymentMethodId String?
+  client          User           @relation(fields: [clientId], references: [id])
+  invoice         Invoice        @relation(fields: [invoiceId], references: [id])
+  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  refunds         Refund[]
+
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([status])
+  @@index([gatewayRef])
+  @@index([paymentMethodId])
+  @@index([isAutoCharge])
+}
+
+model Refund {
+  id              String    @id @default(uuid())
+  paymentId       String
+  invoiceId       String
+  amount          Decimal   @db.Decimal(10, 2)
+  reason          String?
+  notes           String?
+  gateway         String?
+  gatewayRef      String?
+  gatewayResponse Json?
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  payment         Payment   @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
+model BillingTransaction {
+  id          String          @id @default(uuid())
+  invoiceId   String?
+  clientId    String
+  type        TransactionType
+  amount      Decimal         @db.Decimal(10, 2)
+  currency    String          @default("USD")
+  description String?
+  meta        Json?
+  createdAt   DateTime        @default(now())
+  invoice     Invoice?        @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([clientId, createdAt])
+}
+
+model DunningAttempt {
+  id              String        @id @default(uuid())
+  invoiceId       String
+  attemptNumber   Int
+  action          DunningAction
+  status          DunningStatus
+  paymentMethodId String?
+  amountAttempted Decimal?      @db.Decimal(10, 2)
+  gatewayRef      String?
+  errorMessage    String?
+  emailTemplate   String?
+  emailAddress    String?
+  attemptedAt     DateTime      @default(now())
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([invoiceId, action])
+  @@index([invoiceId, attemptNumber])
+  @@index([status, attemptedAt])
+}
+
+model HostingAccount {
+  id              String            @id @default(cuid())
+  orderId         String            @unique
+  clientId        String
+  username        String            @unique
+  password        String
+  controlPanel    String            @default("vestacp")
+  status          String            @default("pending")
+  suspendReason   String?
+  provisionedAt   DateTime?
+  suspendedAt     DateTime?
+  deletedAt       DateTime?
+  archived        Boolean           @default(false)
+  diskUsedMB      Int?
+  bandwidthUsedGB Int?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  client          User              @relation("HostingAccounts", fields: [clientId], references: [id])
+  order           Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  databases       HostingDatabase[]
+  domains         HostingDomain[]
+  emails          HostingEmail[]
+
+  @@index([clientId])
+  @@index([orderId])
   @@index([status])
 }
 
+model HostingDomain {
+  id               String         @id @default(cuid())
+  hostingAccountId String
+  domain           String
+  status           String         @default("active")
+  sslStatus        String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  hostingAccount   HostingAccount @relation(fields: [hostingAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([hostingAccountId, domain])
+  @@index([hostingAccountId])
+}
+
+model HostingEmail {
+  id               String         @id @default(cuid())
+  hostingAccountId String
+  email            String
+  password         String
+  quota            Int            @default(100)
+  status           String         @default("active")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  hostingAccount   HostingAccount @relation(fields: [hostingAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([hostingAccountId, email])
+  @@index([hostingAccountId])
+}
+
+model HostingDatabase {
+  id               String         @id @default(cuid())
+  hostingAccountId String
+  name             String
+  dbUser           String
+  dbPassword       String
+  type             String         @default("mysql")
+  status           String         @default("active")
+  createdAt        DateTime       @default(now())
+  hostingAccount   HostingAccount @relation(fields: [hostingAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([hostingAccountId, name])
+  @@index([hostingAccountId])
+}
+
+model IpAccessRule {
+  id          Int      @id @default(autoincrement())
+  pattern     String
+  type        String
+  description String?
+  active      Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+
+  @@index([active])
+  @@index([createdById])
+}
+
+model StorageConfig {
+  id          Int      @id @default(autoincrement())
+  name        String
+  provider    String
+  config      Json
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  backups     Backup[]
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
+}
+
+model Backup {
+  id              Int             @id @default(autoincrement())
+  name            String
+  type            String          @default("full")
+  status          String          @default("queued")
+  filePath        String?
+  sizeBytes       BigInt?
+  errorMessage    String?
+  metadata        Json?
+  retentionDays   Int             @default(30)
+  storageConfigId Int?
+  createdById     String
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  createdBy       User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  storageConfig   StorageConfig?  @relation(fields: [storageConfigId], references: [id])
+  stepLogs        BackupStepLog[]
+  versions        BackupVersion[]
+
+  @@index([createdById])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model BackupStepLog {
+  id        Int      @id @default(autoincrement())
+  backupId  Int
+  step      String
+  status    String
+  message   String?
+  meta      Json?
+  createdAt DateTime @default(now())
+  backup    Backup   @relation(fields: [backupId], references: [id], onDelete: Cascade)
+
+  @@index([backupId])
+}
+
+model BackupVersion {
+  id        Int      @id @default(autoincrement())
+  backupId  Int
+  version   Int
+  filePath  String
+  sizeBytes BigInt?
+  createdAt DateTime @default(now())
+  backup    Backup   @relation(fields: [backupId], references: [id], onDelete: Cascade)
+
+  @@index([backupId])
+}
+
+model EmailTemplate {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  displayName String
+  subject     String
+  bodyHtml    String
+  bodyText    String?
+  category    String     @default("general")
+  language    String     @default("en")
+  status      String     @default("active")
+  version     Int        @default(1)
+  isSystem    Boolean    @default(false)
+  variables   Json?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  jobs        EmailJob[]
+
+  @@index([category])
+  @@index([language])
+  @@index([status])
+}
+
+model EmailJob {
+  id           String         @id @default(uuid())
+  templateId   String?
+  templateName String?
+  toEmail      String
+  toName       String?
+  subject      String?
+  bodyHtml     String?
+  payload      Json?
+  status       String         @default("queued")
+  priority     String         @default("normal")
+  attempts     Int            @default(0)
+  maxAttempts  Int            @default(3)
+  lastError    String?
+  provider     String?
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  events       EmailEvent[]
+  template     EmailTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([status])
+  @@index([toEmail])
+  @@index([templateName])
+  @@index([createdAt])
+}
+
 model EmailEvent {
-  id         Int      @id @default(autoincrement())
-  jobId      String?
+  id         String   @id @default(uuid())
+  jobId      String
   eventType  String
   providerId String?
   payload    Json?
   createdAt  DateTime @default(now())
+  job        EmailJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([jobId])
+  @@index([eventType])
 }
 
-////////////////////////////////////////////////////////////
-// DOMAINS
-////////////////////////////////////////////////////////////
+model EmailSetting {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  value       String
+  category    String   @default("general")
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+}
+
+model DomainSetting {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  value       String
+  category    String   @default("general")
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+}
+
+model ServerGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  servers     Server[]
+}
+
+model Server {
+  id               String                 @id @default(uuid())
+  name             String
+  hostname         String
+  ipAddress        String
+  type             String
+  status           String                 @default("active")
+  tags             String[]               @default([])
+  isDefault        Boolean                @default(false)
+  groupId          String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  capabilities     Json                   @default("{\"ssl\": true, \"email\": true, \"docker\": false, \"nodejs\": false, \"python\": false, \"backups\": true}")
+  provisioningJobs ProvisioningJob[]
+  group            ServerGroup?           @relation(fields: [groupId], references: [id])
+  logs             ServerLog[]
+  accounts         ServerManagedAccount[]
+  metricsHistory   ServerMetric[]
+
+  @@index([groupId])
+  @@index([status])
+}
+
+model ServerManagedAccount {
+  id               String    @id @default(uuid())
+  userId           String
+  serverId         String
+  domain           String
+  status           String    @default("active")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  bandwidthLimitMB Int       @default(102400)
+  bandwidthUsedMB  Int       @default(0)
+  databaseLimit    Int       @default(5)
+  databaseUsed     Int       @default(0)
+  diskLimitMB      Int       @default(5120)
+  diskUsedMB       Int       @default(0)
+  emailLimit       Int       @default(10)
+  emailUsed        Int       @default(0)
+  lastUsageSyncAt  DateTime?
+  server           Server    @relation(fields: [serverId], references: [id])
+  user             User      @relation("ServerManagedAccounts", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([serverId])
+  @@index([status])
+}
+
+model ServerLog {
+  id        String   @id @default(uuid())
+  serverId  String
+  action    String
+  message   String?
+  createdAt DateTime @default(now())
+  server    Server   @relation(fields: [serverId], references: [id])
+
+  @@index([serverId])
+  @@index([action])
+}
+
+model ProvisioningJob {
+  id          String    @id @default(uuid())
+  serverId    String
+  type        String
+  payload     Json
+  status      String    @default("pending")
+  attempts    Int       @default(0)
+  lastError   String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  server      Server    @relation(fields: [serverId], references: [id])
+
+  @@index([serverId])
+  @@index([status])
+  @@index([type])
+}
+
+model ServerMetric {
+  id         String   @id @default(uuid())
+  serverId   String
+  cpuUsage   Float
+  ramUsage   Float
+  diskUsage  Float
+  latency    Int
+  uptime     Int
+  recordedAt DateTime @default(now())
+  server     Server   @relation(fields: [serverId], references: [id])
+
+  @@index([serverId])
+  @@index([recordedAt])
+  @@index([serverId, recordedAt])
+}
+
+model ServerWebhook {
+  id        String   @id @default(uuid())
+  url       String
+  events    String[]
+  isActive  Boolean  @default(true)
+  secret    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model ServiceCustomField {
+  id              String   @id @default(uuid())
+  serviceId       String
+  fieldName       String
+  fieldType       String   @default("text")
+  description     String?
+  validation      String?
+  selectOptions   String?
+  displayOrder    Int      @default(0)
+  adminOnly       Boolean  @default(false)
+  requiredField   Boolean  @default(false)
+  showOnOrderForm Boolean  @default(false)
+  showOnInvoice   Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+}
+
+model ServiceCrossSell {
+  id                 String   @id @default(uuid())
+  serviceId          String
+  crossSellServiceId String
+  displayOrder       Int      @default(0)
+  createdAt          DateTime @default(now())
+  crossSellService   Service  @relation("CrossSellTarget", fields: [crossSellServiceId], references: [id], onDelete: Cascade)
+  service            Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, crossSellServiceId])
+  @@index([serviceId])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
 
 enum DomainStatus {
   pending_registration
@@ -452,1085 +1776,39 @@ enum DomainTransferStatus {
   completed
 }
 
-model Domain {
-  id   Int    @id @default(autoincrement())
-  name String @unique
-
-  // Ownership
-  ownerId String
-  owner   User   @relation(fields: [ownerId], references: [id])
-
-  // Registrar
-  registrar        String?
-  providerConfigId Int?
-  providerConfig   ProviderConfig? @relation(fields: [providerConfigId], references: [id])
-
-  // Lifecycle
-  status     DomainStatus @default(pending_registration)
-  expiryDate DateTime?
-  autoRenew  Boolean      @default(true)
-
-  // Billing snapshot (price locked at time of invoice)
-  registrationPrice Int?
-  renewalPrice      Int?
-  currency          String @default("USD")
-
-  // DNS
-  nameservers String[] @default([])
-
-  // Extra registrar / TLD specific fields
-  metadata Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  dnsRecords    DNSRecord[]
-  contacts      DomainContact[]
-  transfers     DomainTransfer[]
-  registrarLogs DomainRegistrarCommand[]
-  logs          DomainLog[]
-
-  @@index([ownerId])
-  @@index([status])
-  @@index([expiryDate])
+enum TicketStatus {
+  open
+  waiting_for_staff
+  waiting_for_client
+  on_hold
+  closed
 }
 
-model DomainContact {
-  id       Int    @id @default(autoincrement())
-  domainId Int
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
-
-  type    DomainContactType
-  name    String
-  email   String
-  phone   String
-  country String
-
-  createdAt DateTime @default(now())
-
-  @@unique([domainId, type])
+enum TicketPriority {
+  low
+  medium
+  high
+  urgent
 }
 
-model DomainTransfer {
-  id       Int    @id @default(autoincrement())
-  domainId Int
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
-
-  authCode String
-  status   DomainTransferStatus @default(pending)
-
-  requestedAt DateTime  @default(now())
-  completedAt DateTime?
-
-  providerResponse Json?
-
-  @@index([status])
+enum ReplyType {
+  public
+  internal
 }
 
-model DNSRecord {
-  id       Int    @id @default(autoincrement())
-  domainId Int
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
-
-  type  String // A, AAAA, MX, TXT, CNAME
-  name  String
-  value String
-  ttl   Int    @default(3600)
-
-  providerRecordId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([domainId])
+enum ChatSessionStatus {
+  waiting
+  active
+  ended
+  transferred
+  missed
 }
 
-model DomainRegistrarCommand {
-  id       Int    @id @default(autoincrement())
-  domainId Int
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
-
-  action   String // register, renew, transfer, update_ns
-  request  Json?
-  response Json?
-  success  Boolean
-
-  createdAt DateTime @default(now())
-
-  @@index([domainId])
-  @@index([action])
+enum ChatMessageType {
+  text
+  system
 }
 
-model DomainLog {
-  id       Int    @id @default(autoincrement())
-  domainId Int
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
-
-  action  String
-  message String?
-  meta    Json?
-
-  createdAt DateTime @default(now())
-
-  @@index([domainId])
-}
-
-model TldPricing {
-  id           Int      @id @default(autoincrement())
-  tld          String   @unique
-  registration Decimal  @db.Decimal(10, 2)
-  renewal      Decimal  @db.Decimal(10, 2)
-  transfer     Decimal  @db.Decimal(10, 2)
-  provider     String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-////////////////////////////////////////////////////////////
-// PROVIDER CONFIG
-////////////////////////////////////////////////////////////
-
-model ProviderConfig {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  key       String?
-  secret    String?
-  endpoint  String?
-  active    Boolean  @default(true)
-  domains   Domain[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model StorageConfig {
-  id          Int      @id @default(autoincrement())
-  name        String
-  provider    String
-  config      Json
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // FIX: Added indexes for better query performance
-  @@index([createdById])
-  @@index([provider])
-}
-
-////////////////////////////////////////////////////////////
-// BACKUP SYSTEM
-////////////////////////////////////////////////////////////
-
-model Backup {
-  id              String    @id @default(cuid())
-  name            String
-  type            String
-  storageConfigId Int?
-  filePath        String?
-  sizeBytes       BigInt?
-  status          String
-  retentionDays   Int?
-  createdById     String
-  createdAt       DateTime  @default(now())
-  startedAt       DateTime?
-  finishedAt      DateTime?
-  deleted         Boolean   @default(false)
-  errorMessage    String?
-
-  versions BackupVersion[]
-  stepLogs BackupStepLog[]
-
-  // FIX: Added composite index for retention policy queries
-  // This dramatically improves performance when finding expired backups
-  @@index([deleted, status, finishedAt])
-  @@index([createdById])
-  @@index([status])
-}
-
-model BackupVersion {
-  id        String   @id @default(uuid())
-  backupId  String
-  version   Int      @default(1)
-  filePath  String
-  sizeBytes BigInt?
-  createdAt DateTime @default(now())
-
-  backup Backup @relation(fields: [backupId], references: [id])
-
-  // FIX: Added indexes for version queries
-  @@index([backupId])
-  @@index([createdAt])
-}
-
-model BackupStepLog {
-  id        String   @id @default(uuid())
-  backupId  String
-  step      String
-  meta      Json?
-  status    String   @default("started")
-  message   String?
-  createdAt DateTime @default(now())
-
-  backup Backup @relation(fields: [backupId], references: [id])
-
-  // FIX: Added indexes for log queries
-  @@index([backupId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-////////////////////////////////////////////////////////////
-// TLD PRICING
-////////////////////////////////////////////////////////////
-
-model Tld {
-  id            Int       @id @default(autoincrement())
-  name          String    @unique
-  registerPrice Int?
-  renewPrice    Int?
-  transferPrice Int?
-  markupPercent Int?
-  providerData  Json?
-  lastSynced    DateTime?
-  active        Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-}
-
-////////////////////////////////////////////////////////////
-// AUTOMATION SYSTEM
-///////////////////////////////////////////////////////////
-
-// ============================================================
-// ENUMS - Define all enums first
-// ============================================================
-
-enum AutomationRunStatus {
-  pending
-  running
-  success
-  failed
-}
-
-// ============================================================
-// AUTOMATION SYSTEM (Core)
-// ============================================================
-
-model AutomationProfile {
-  id          Int     @id @default(autoincrement())
-  name        String  @db.VarChar(255)
-  description String? @db.Text
-  cron        String? @db.VarChar(100)
-  enabled     Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  tasks     AutomationTask[]
-  runs      AutomationRun[]
-  auditLogs AuditLog[]
-
-  // Indexes
-  @@unique([name])
-  @@index([enabled])
-  @@index([cron])
-}
-
-model AutomationTask {
-  id         Int    @id @default(autoincrement())
-  profileId  Int
-  actionType String @db.VarChar(100)
-  actionMeta Json?
-  order      Int    @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  profile AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  runs    AutomationRun[]
-
-  // Indexes
-  @@index([profileId])
-  @@index([order])
-}
-
-model AutomationRun {
-  id           Int                 @id @default(autoincrement())
-  profileId    Int
-  taskId       Int?
-  status       AutomationRunStatus
-  result       Json?
-  errorMessage String?             @db.Text
-
-  startedAt  DateTime?
-  finishedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  // Relations
-  profile AutomationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  task    AutomationTask?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
-
-  // Indexes
-  @@index([profileId])
-  @@index([taskId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-///////////////workflows////////////////
-model AutomationWorkflow {
-  id          Int     @id @default(autoincrement())
-  name        String  @db.VarChar(255)
-  slug        String  @unique @db.VarChar(255) // ← ADD
-  description String? @db.Text
-  definition  Json
-  enabled     Boolean @default(true)
-  version     Int     @default(1)
-  isDraft     Boolean @default(false)
-
-  trigger     String  @default("manual") // ← ADD
-  type        String  @default("sequential") // ← ADD
-  eventType   String? // ← ADD
-  eventFilter Json? // ← ADD
-
-  webhookUrl    String? @unique // ← ADD
-  webhookSecret String? @db.Text // ← ADD
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // ← ADD (soft delete)
-
-  runs      WorkflowRun[]
-  webhooks  IncomingWebhook[] // ← ADD
-  triggers  WorkflowTriggerRule[] // ← ADD
-  schedules WorkflowSchedule[] // ← ADD
-  alerts    WorkflowAlert[] // ← ADD
-
-  @@index([enabled])
-  @@index([trigger]) // ← ADD
-  @@index([eventType]) // ← ADD
-  @@index([createdAt])
-}
-
-model WorkflowRun {
-  id            Int                @id @default(autoincrement())
-  workflowId    Int
-  status        WorkflowRunStatus  @default(pending)
-  startedAt     DateTime?
-  finishedAt    DateTime?
-  totalDuration Int?
-  taskCount     Int                @default(0)
-  successCount  Int                @default(0)
-  failureCount  Int                @default(0)
-  skippedCount  Int                @default(0)
-  failedTaskId  String?
-  errorMessage  String?            @db.Text
-  errorStack    String?            @db.Text
-  triggeredBy   String             @default("manual") // ← UPDATE: add "event", "api"
-  triggerId     String? // ← ADD: ID of trigger source
-  input         Json?
-  output        Json?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  workflow      AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  taskRuns      WorkflowTaskRun[]
-
-  @@index([workflowId])
-  @@index([status])
-  @@index([triggeredBy]) // ← ADD
-  @@index([createdAt])
-}
-
-// KEEP EXACTLY AS IS - NO CHANGES NEEDED
-model WorkflowTaskRun {
-  id              Int                @id @default(autoincrement())
-  runId           Int
-  taskId          String
-  status          WorkflowTaskStatus @default(pending)
-  startedAt       DateTime?
-  finishedAt      DateTime?
-  duration        Int?
-  output          Json?
-  errorMessage    String?            @db.Text
-  errorStack      String?            @db.Text
-  retryCount      Int                @default(0)
-  maxRetries      Int                @default(0)
-  nextRetryAt     DateTime?
-  conditionResult Boolean?
-  selectedPath    String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  run             WorkflowRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  @@index([runId])
-  @@index([taskId])
-  @@index([status])
-}
-
-// KEEP EXACTLY AS IS - NO CHANGES NEEDED
-model RateLimitRule {
-  id        Int      @id @default(autoincrement())
-  type      String   @db.VarChar(50)
-  target    String   @db.VarChar(255)
-  limit     Int
-  window    Int
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([type, target])
-  @@index([enabled])
-}
-
-// KEEP EXACTLY AS IS - NO CHANGES NEEDED
-model NotificationRule {
-  id          Int      @id @default(autoincrement())
-  trigger     String   @db.VarChar(100)
-  actionType  String?  @db.VarChar(100)
-  method      String   @db.VarChar(50)
-  destination String   @db.VarChar(500)
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-
-  @@index([trigger])
-  @@index([enabled])
-}
-
-model ActionMetric {
-  id             Int       @id @default(autoincrement())
-  actionType     String    @unique @db.VarChar(100)
-  executionCount Int       @default(0)
-  successCount   Int       @default(0)
-  failureCount   Int       @default(0)
-  avgDuration    Float     @default(0)
-  maxDuration    Int?
-  minDuration    Int?
-  p95Duration    Int?
-  p99Duration    Int?
-  lastExecutedAt DateTime?
-  lastError      String?   @db.Text
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-}
-
-// KEEP EXACTLY AS IS - NO CHANGES NEEDED
-model ActionTemplate {
-  id            Int      @id @default(autoincrement())
-  actionType    String   @unique @db.VarChar(100)
-  name          String   @db.VarChar(255)
-  description   String?  @db.Text
-  inputSchema   Json
-  outputSchema  Json
-  category      String   @db.VarChar(100)
-  isBuiltin     Boolean  @default(true)
-  isActive      Boolean  @default(true)
-  documentation String?  @db.Text
-  examples      Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([category])
-  @@index([isActive])
-}
-
-model IncomingWebhook {
-  id         String             @id @default(uuid())
-  workflowId Int
-  workflow   AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  url    String @unique
-  secret String @db.Text
-
-  enabled Boolean @default(true)
-
-  totalReceived  Int       @default(0)
-  lastReceivedAt DateTime?
-  failureCount   Int       @default(0)
-  lastError      String?   @db.Text
-
-  events      String[]
-  retryPolicy Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([workflowId])
-  @@index([enabled])
-}
-
-model WorkflowTriggerRule {
-  id         String             @id @default(uuid())
-  workflowId Int
-  workflow   AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  eventType String
-
-  conditions Json?
-
-  passEventAsInput Boolean @default(true)
-  inputMapping     Json?
-
-  enabled Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([workflowId, eventType])
-  @@index([eventType])
-}
-
-model WorkflowEvent {
-  id String @id @default(uuid())
-
-  type   String
-  source String
-
-  data     Json
-  metadata Json?
-
-  processed   Boolean   @default(false)
-  processedAt DateTime?
-  error       String?   @db.Text
-
-  createdAt DateTime @default(now())
-
-  @@index([type])
-  @@index([source])
-  @@index([processed])
-  @@index([createdAt])
-}
-
-model WorkflowSchedule {
-  id         String             @id @default(uuid())
-  workflowId Int
-  workflow   AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  cronExpression String
-
-  enabled  Boolean @default(true)
-  timezone String  @default("UTC")
-
-  input Json?
-
-  lastRunAt DateTime?
-  nextRunAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([workflowId])
-  @@index([enabled])
-}
-
-model WorkflowAlert {
-  id         String             @id @default(uuid())
-  workflowId Int
-  workflow   AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  condition String
-  threshold Float
-
-  notifyTo      String[]
-  notifyMethod  String
-  notifyWebhook String?
-
-  enabled Boolean @default(true)
-
-  lastAlertAt DateTime?
-  alertCount  Int       @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([workflowId])
-  @@index([condition])
-}
-
-enum WorkflowRunStatus {
-  pending
-  running
-  success
-  failed
-  cancelled
-  timeout
-}
-
-enum WorkflowTaskStatus {
-  pending
-  running
-  success
-  failed
-  skipped
-  timeout
-}
-
-////////////////////////////////////////////////////////////
-// MARKETPLACE SYSTEM (FR-M1 → FR-M11)
-////////////////////////////////////////////////////////////
-
-/////////////////////////
-// ENUMS
-/////////////////////////
-
-enum MarketplaceSubmissionStatus {
-  pending_review
-  pending_dependency_approval
-  pending_resubmission
-  rejected
-  auto_rejected
-  approved
-}
-
-/////////////////////////
-// CATEGORY
-/////////////////////////
-
-model MarketplaceCategory {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  slug      String   @unique
-  icon      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  products MarketplaceProduct[]
-}
-
-/////////////////////////
-// PRODUCT
-/////////////////////////
-
-model MarketplaceProduct {
-  id String @id @default(uuid())
-
-  sellerId String
-  seller   DeveloperProfile @relation("dev_products", fields: [sellerId], references: [id])
-
-  title     String
-  slug      String  @unique
-  shortDesc String?
-  longDesc  String?
-
-  categoryId String?
-  category   MarketplaceCategory? @relation(fields: [categoryId], references: [id])
-
-  tags         String[] @default([])
-  status       String   @default("draft")
-  rejectReason String?
-
-  logo        String?
-  screenshots String[] @default([])
-
-  documentation String?
-
-  ratingAvg     Float @default(0)
-  ratingCount   Int   @default(0)
-  installCount  Int   @default(0)
-  downloadCount Int   @default(0)
-
-  lastUpdatedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  approvedAt    DateTime?
-
-  versions      MarketplaceVersion[]
-  purchases     MarketplacePurchase[]
-  reviews       MarketplaceReview[]
-  dependencies  MarketplaceDependency[]
-  submissions   MarketplaceSubmission[]
-  verifications MarketplaceVerification[]
-  analytics     MarketplaceAnalytics[]
-}
-
-/////////////////////////
-// VERSION
-/////////////////////////
-
-model MarketplaceVersion {
-  id        String             @id @default(uuid())
-  productId String
-  product   MarketplaceProduct @relation(fields: [productId], references: [id])
-
-  version      String
-  manifestJson Json
-  archivePath  String
-  changelog    String?
-
-  priceCents Int
-  currency   String @default("USD")
-
-  createdAt  DateTime  @default(now())
-  approvedAt DateTime? // REQUIRED for approval pipeline
-
-  purchases     MarketplacePurchase[]
-  analytics     MarketplaceAnalytics[]
-  submissions   MarketplaceSubmission[]
-  verifications MarketplaceVerification[]
-}
-
-/////////////////////////
-// PURCHASE & LICENSE
-/////////////////////////
-
-model MarketplacePurchase {
-  id         String @id @default(uuid())
-  userId     String
-  productId  String
-  versionId  String
-  licenseKey String @unique
-
-  subscribed      Boolean   @default(false)
-  activationLimit Int       @default(1)
-  expiresAt       DateTime?
-  revoked         Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-
-  user    User               @relation(fields: [userId], references: [id])
-  product MarketplaceProduct @relation(fields: [productId], references: [id])
-  version MarketplaceVersion @relation(fields: [versionId], references: [id])
-
-  activations MarketplaceLicenseActivation[]
-}
-
-model MarketplaceLicenseActivation {
-  id        String   @id @default(uuid())
-  licenseId String
-  userAgent String?
-  host      String?
-  ip        String?
-  createdAt DateTime @default(now())
-
-  purchase MarketplacePurchase @relation(fields: [licenseId], references: [id])
-}
-
-/////////////////////////
-// REVIEWS
-/////////////////////////
-
-model MarketplaceReview {
-  id        String @id @default(uuid())
-  productId String
-  userId    String
-
-  rating    Int
-  stability Int?
-  review    String?
-
-  createdAt DateTime @default(now())
-
-  product MarketplaceProduct @relation(fields: [productId], references: [id])
-  user    User               @relation(fields: [userId], references: [id])
-}
-
-/////////////////////////
-// DEPENDENCIES
-/////////////////////////
-
-model MarketplaceDependency {
-  id           String   @id @default(uuid())
-  productId    String
-  dependencyId String
-  versionRange String
-  approved     Boolean  @default(false) // REQUIRED for dependency approval pipeline
-  createdAt    DateTime @default(now())
-
-  product MarketplaceProduct @relation(fields: [productId], references: [id])
-}
-
-/////////////////////////
-// SUBMISSIONS
-/////////////////////////
-
-model MarketplaceSubmission {
-  id         String                      @id @default(uuid())
-  productId  String
-  versionId  String?
-  status     MarketplaceSubmissionStatus
-  reviewerId String?
-  notes      String?
-  createdAt  DateTime                    @default(now())
-
-  product  MarketplaceProduct  @relation(fields: [productId], references: [id])
-  version  MarketplaceVersion? @relation(fields: [versionId], references: [id])
-  reviewer User?               @relation(fields: [reviewerId], references: [id])
-}
-
-/////////////////////////
-// VERIFICATION
-/////////////////////////
-
-model MarketplaceVerification {
-  id        String @id @default(uuid())
-  productId String
-  versionId String
-
-  passed    Boolean
-  issues    Json?
-  createdAt DateTime @default(now())
-
-  product MarketplaceProduct @relation(fields: [productId], references: [id])
-  version MarketplaceVersion @relation(fields: [versionId], references: [id])
-}
-
-/////////////////////////
-// ANALYTICS
-/////////////////////////
-
-model MarketplaceAnalytics {
-  id        String  @id @default(uuid())
-  productId String
-  versionId String?
-
-  product MarketplaceProduct  @relation(fields: [productId], references: [id])
-  version MarketplaceVersion? @relation(fields: [versionId], references: [id])
-
-  eventType String
-  meta      Json?
-  createdAt DateTime @default(now())
-
-  @@index([productId])
-  @@index([versionId])
-  @@index([eventType])
-  @@index([createdAt])
-}
-
-/////////////////////////
-// ACTIVE INSTANCES
-/////////////////////////
-
-model MarketplaceActiveInstance {
-  id         String   @id @default(uuid())
-  productId  String
-  versionId  String?
-  instanceId String
-  userId     String?
-  lastSeen   DateTime @default(now())
-  createdAt  DateTime @default(now())
-  meta       Json?
-
-  @@index([productId])
-  @@index([instanceId])
-  @@index([lastSeen])
-}
-
-/////////////////////////
-// CRASH LOGS
-/////////////////////////
-
-model MarketplaceCrash {
-  id        String  @id @default(uuid())
-  productId String
-  versionId String?
-  userId    String?
-
-  message    String
-  stackTrace String?  @db.Text
-  meta       Json?
-  createdAt  DateTime @default(now())
-
-  @@index([productId])
-  @@index([versionId])
-  @@index([createdAt])
-}
-
-/////////////////////////
-// PERFORMANCE METRICS
-/////////////////////////
-
-model MarketplacePerfMetric {
-  id        String  @id @default(uuid())
-  productId String
-  versionId String?
-
-  metric    String
-  value     Float
-  meta      Json?
-  createdAt DateTime @default(now())
-
-  @@index([productId])
-  @@index([metric])
-  @@index([createdAt])
-}
-
-/////////////////////////
-// DAILY AGGREGATES
-/////////////////////////
-
-model MarketplaceAnalyticsAggregate {
-  id        String   @id @default(uuid())
-  productId String
-  date      DateTime
-  installs  Int      @default(0)
-  active    Int      @default(0)
-  crashes   Int      @default(0)
-  createdAt DateTime @default(now())
-
-  @@unique([productId, date])
-  @@index([productId, date])
-}
-
-/////////////////////////
-// WEBHOOK ENDPOINTS
-/////////////////////////
-
-model MarketplaceWebhookEndpoint {
-  id        String   @id @default(uuid())
-  vendorId  String
-  url       String
-  secret    String?
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-
-  @@index([vendorId])
-}
-
-/////////////////////////
-// BUILD LOGS
-/////////////////////////
-
-model MarketplaceBuildLog {
-  id           String  @id @default(uuid())
-  submissionId String?
-  productId    String?
-  versionId    String?
-
-  level     String   @default("info")
-  message   String
-  meta      Json?
-  step      String?
-  createdAt DateTime @default(now())
-
-  @@index([submissionId])
-  @@index([productId])
-  @@index([versionId])
-  @@index([createdAt])
-}
-
-/////////////////////////
-// WEBHOOK EVENTS
-/////////////////////////
-
-model MarketplaceWebhook {
-  id        String   @id @default(uuid())
-  event     String
-  payload   Json
-  createdAt DateTime @default(now())
-}
-
-////////////////////////////////////////////////////////////
-// IP ACCESS RULES
-////////////////////////////////////////////////////////////
-
-model IpAccessRule {
-  id          Int        @id @default(autoincrement())
-  pattern     String
-  type        IpRuleType
-  description String?    @db.Text
-  active      Boolean    @default(true)
-  createdById String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  @@index([pattern])
-}
-
-enum IpRuleType {
-  ALLOW
-  DENY
-}
-
-////////////////////////////////////////////////////////////
-// SERVICES (Hosting Products Catalog)
-////////////////////////////////////////////////////////////
-
-model Service {
-  id          Int     @id @default(autoincrement())
-  code        String  @unique // internal reference (e.g. shared_hosting)
-  name        String
-  description String
-  active      Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  plans ServicePlan[]
-
-  @@index([active])
-}
-
-model ServicePlan {
-  id        Int     @id @default(autoincrement())
-  serviceId Int
-  name      String // Basic, Pro, Business
-  summary   String?
-  active    Boolean @default(true)
-  position  Int     @default(0)
-
-  service Service @relation(fields: [serviceId], references: [id])
-
-  pricing  ServicePricing[]
-  policies ServicePolicy[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([serviceId, name])
-  @@index([serviceId])
-}
-
-enum BillingCycle {
-  monthly
-  quarterly
-  semi_annually
-  annually
-}
-
-model ServicePricing {
-  id       Int          @id @default(autoincrement())
-  planId   Int
-  cycle    BillingCycle
-  price    Decimal      @db.Decimal(10, 2)
-  currency String       @default("USD")
-  active   Boolean      @default(true)
-
-  plan ServicePlan @relation(fields: [planId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([planId, cycle])
-  @@index([planId])
-}
-
-model ServicePolicy {
-  id       Int     @id @default(autoincrement())
-  planId   Int
-  key      String
-  value    Json
-  enforced Boolean @default(true)
-
-  plan ServicePlan @relation(fields: [planId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@unique([planId, key])
-}
-
-model ServiceSnapshot {
-  id        Int  @id @default(autoincrement())
-  serviceId Int
-  planId    Int?
-
-  snapshot  Json
-  orders    Order[]
-  createdAt DateTime @default(now())
-
-  @@index([serviceId])
-}
-
-/////////orders//////////
 enum OrderStatus {
   pending
   active
@@ -1538,41 +1816,6 @@ enum OrderStatus {
   terminated
   cancelled
 }
-
-model Order {
-  id       String @id @default(uuid())
-  clientId String
-  client   User   @relation(fields: [clientId], references: [id])
-
-  snapshotId Int
-  snapshot   ServiceSnapshot @relation(fields: [snapshotId], references: [id])
-
-  status   OrderStatus @default(pending)
-  invoices Invoice[]
-
-  // NEW
-  startedAt     DateTime?
-  nextRenewalAt DateTime?
-  suspendedAt   DateTime?
-  terminatedAt  DateTime?
-  cancelledAt   DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([clientId])
-  @@index([status])
-  @@index([nextRenewalAt])
-}
-
-// ============================================================
-// BILLING MODULE — SCHEMA ADDITIONS
-// Append these models to your existing schema.prisma
-// ============================================================
-
-// ============================================================
-// ENUMS
-// ============================================================
 
 enum InvoiceStatus {
   draft
@@ -1597,228 +1840,110 @@ enum TransactionType {
   credit
 }
 
-// ============================================================
-// CLIENT BILLING PROFILE (FR-11)
-// ============================================================
-
-model BillingProfile {
-  id       String @id @default(uuid())
-  clientId String @unique
-  client   User   @relation(fields: [clientId], references: [id])
-
-  currency         String  @default("USD") // FR-12
-  billingAddress   String?
-  city             String?
-  country          String?
-  postalCode       String?
-  taxId            String? // FR-07
-  paymentMethodRef String? // FR-05 (gateway token ref)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  invoices Invoice[]
+enum InvoiceType {
+  new_order
+  renewal
+  suspension
+  termination
+  manual
 }
 
-// ============================================================
-// TAX RULES (FR-07)
-// ============================================================
-
-model TaxRule {
-  id          Int     @id @default(autoincrement())
-  name        String
-  rate        Decimal @db.Decimal(5, 4) // e.g. 0.1700 = 17%
-  country     String?
-  region      String?
-  serviceType String? // null = applies to all
-  active      Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([country])
-  @@index([active])
+enum DunningAction {
+  email_reminder
+  charge_attempt
+  suspend
 }
 
-// ============================================================
-// INVOICE (FR-01, FR-02, FR-06)
-// ============================================================
-
-model Invoice {
-  id               String  @id @default(uuid())
-  invoiceNumber    String  @unique // e.g. INV-2024-00001
-  clientId         String
-  billingProfileId String?
-
-  orderId String? // linked order (nullable for manual)
-  order   Order?  @relation(fields: [orderId], references: [id])
-
-  billingProfile BillingProfile? @relation(fields: [billingProfileId], references: [id])
-  client         User            @relation(fields: [clientId], references: [id])
-
-  status InvoiceStatus @default(draft)
-
-  currency       String  @default("USD") // FR-12
-  subtotal       Decimal @db.Decimal(10, 2)
-  taxAmount      Decimal @default(0) @db.Decimal(10, 2)
-  discountAmount Decimal @default(0) @db.Decimal(10, 2)
-  totalAmount    Decimal @db.Decimal(10, 2)
-  amountPaid     Decimal @default(0) @db.Decimal(10, 2)
-  amountDue      Decimal @db.Decimal(10, 2)
-
-  dueDate     DateTime? // FR-14
-  issuedAt    DateTime?
-  paidAt      DateTime?
-  cancelledAt DateTime?
-
-  notes    String?
-  metadata Json? // FR-10 extra context
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  lineItems    InvoiceLineItem[]
-  payments     Payment[]
-  transactions BillingTransaction[]
-  discounts    InvoiceDiscount[]
-
-  @@index([clientId])
-  @@index([status])
-  @@index([dueDate])
-  @@index([orderId])
-  @@index([invoiceNumber])
+enum DunningStatus {
+  sent
+  failed
+  skipped
 }
 
-// ============================================================
-// INVOICE LINE ITEMS (FR-02)
-// ============================================================
-
-model InvoiceLineItem {
-  id        String  @id @default(uuid())
-  invoiceId String
-  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-
-  description String
-  quantity    Int     @default(1)
-  unitPrice   Decimal @db.Decimal(10, 2)
-  total       Decimal @db.Decimal(10, 2)
-
-  taxRate   Decimal? @db.Decimal(5, 4)
-  taxAmount Decimal? @db.Decimal(10, 2)
-
-  serviceCode String? // snapshot reference
-  planName    String?
-  cycle       String?
-
-  createdAt DateTime @default(now())
-
-  @@index([invoiceId])
+enum PaymentMethodType {
+  card
+  paypal
+  bank_transfer
+  other
 }
 
-// ============================================================
-// INVOICE DISCOUNTS / CREDITS (FR-08)
-// ============================================================
-
-model InvoiceDiscount {
-  id        String  @id @default(uuid())
-  invoiceId String
-  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-
-  type        String // promo | credit | manual
-  code        String? // promo code if applicable
-  description String?
-  amount      Decimal @db.Decimal(10, 2)
-  isPercent   Boolean @default(false) // true = %, false = flat
-
-  appliedAt DateTime @default(now())
-
-  @@index([invoiceId])
+enum BroadcastType {
+  NOTIFICATION
+  DOCUMENT
 }
 
-// ============================================================
-// PAYMENT (FR-04, FR-05)
-// ============================================================
-
-model Payment {
-  id        String  @id @default(uuid())
-  invoiceId String
-  invoice   Invoice @relation(fields: [invoiceId], references: [id])
-
-  clientId String
-  client   User   @relation(fields: [clientId], references: [id])
-
-  amount   Decimal       @db.Decimal(10, 2)
-  currency String        @default("USD")
-  status   PaymentStatus @default(pending)
-
-  // Gateway integration (FR-05)
-  gateway         String? // stripe | paypal | manual
-  gatewayRef      String? // external tx id
-  gatewayResponse Json? // raw callback payload
-  gatewayStatus   String?
-
-  paidAt     DateTime?
-  failedAt   DateTime?
-  failReason String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  refunds Refund[]
-
-  @@index([invoiceId])
-  @@index([clientId])
-  @@index([status])
-  @@index([gatewayRef])
+enum BroadcastTarget {
+  ALL
+  CLIENTS
+  STAFF
+  DEVELOPERS
+  SPECIFIC_USERS
 }
 
-// ============================================================
-// REFUND (FR-09)
-// ============================================================
-
-model Refund {
-  id        String  @id @default(uuid())
-  paymentId String
-  payment   Payment @relation(fields: [paymentId], references: [id])
-
-  invoiceId String
-
-  amount Decimal @db.Decimal(10, 2)
-  reason String?
-  notes  String?
-
-  gateway         String?
-  gatewayRef      String?
-  gatewayResponse Json?
-
-  processedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@index([paymentId])
-  @@index([invoiceId])
+enum BroadcastSeverity {
+  INFO
+  WARNING
+  CRITICAL
 }
 
-// ============================================================
-// BILLING TRANSACTION LOG (FR-10)
-// ============================================================
+enum EngagementAction {
+  VIEW
+  DISMISS
+  DOWNLOAD
+}
 
-model BillingTransaction {
-  id        String   @id @default(uuid())
-  invoiceId String?
-  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
-  clientId  String
+model Broadcast {
+  id               Int               @id @default(autoincrement())
+  type             BroadcastType
+  title            String
+  content          String?
+  fileKey          String?
+  fileOriginalName String?
+  fileMimeType     String?
+  fileSize         Int?
+  targetAudience   BroadcastTarget   @default(ALL)
+  targetUserIds    Json?
+  severity         BroadcastSeverity @default(INFO)
+  isDismissible    Boolean           @default(true)
+  publishAt        DateTime?
+  expiresAt        DateTime?
+  isActive         Boolean           @default(true)
+  createdById      String
+  createdBy        User              @relation("BroadcastCreator", fields: [createdById], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  dismissals       BroadcastDismissal[]
+  engagements      BroadcastEngagement[]
 
-  type        TransactionType
-  amount      Decimal         @db.Decimal(10, 2)
-  currency    String          @default("USD")
-  description String?
-  meta        Json?
-
-  createdAt DateTime @default(now())
-
-  @@index([invoiceId])
-  @@index([clientId])
   @@index([type])
-  @@index([createdAt])
+  @@index([targetAudience])
+  @@index([publishAt])
+  @@index([expiresAt])
+  @@index([isActive])
+}
+
+model BroadcastDismissal {
+  id          Int       @id @default(autoincrement())
+  broadcastId Int
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation("BroadcastDismissalUser", fields: [userId], references: [id], onDelete: Cascade)
+  dismissedAt DateTime  @default(now())
+
+  @@unique([broadcastId, userId])
+  @@index([userId])
+}
+
+model BroadcastEngagement {
+  id          Int              @id @default(autoincrement())
+  broadcastId Int
+  broadcast   Broadcast        @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User             @relation("BroadcastEngagementUser", fields: [userId], references: [id], onDelete: Cascade)
+  action      EngagementAction
+  createdAt   DateTime         @default(now())
+
+  @@index([broadcastId])
+  @@index([userId])
+  @@index([action])
 }
