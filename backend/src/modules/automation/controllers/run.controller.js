@@ -27,8 +27,35 @@ class RunController {
   }
 
   /**
+   * List run history for a profile
+   * GET /api/automation/profiles/:profileId/runs
+   */
+  async listRuns(req, res) {
+    try {
+      const profileId = Number(req.params.profileId);
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const offset = Number(req.query.offset) || 0;
+
+      const [runs, total] = await Promise.all([
+        this.profileStore.prisma.automationRun.findMany({
+          where: { profileId },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        this.profileStore.prisma.automationRun.count({ where: { profileId } }),
+      ]);
+
+      return res.success({ runs, total, limit, offset });
+    } catch (err) {
+      this.logger.error("Failed to list runs:", err);
+      return res.error(err, 500);
+    }
+  }
+
+  /**
    * Manually run a profile now
-   * POST /api/automation/run/:profileId
+   * POST /api/automation/profiles/:profileId/run
    */
   async runNow(req, res) {
     try {

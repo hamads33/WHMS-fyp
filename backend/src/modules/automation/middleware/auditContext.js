@@ -15,10 +15,8 @@
 
 module.exports = function auditContext() {
   return (req, res, next) => {
-    // Extract client IP (respecting proxy headers)
-    const clientIp = req.headers["x-forwarded-for"]
-      ? req.headers["x-forwarded-for"].split(",")[0].trim()
-      : req.ip || req.connection.remoteAddress || null;
+    // Extract client IP (req.ip is already normalized by app-level middleware)
+    const clientIp = req.ip || null;
 
     // Extract user agent
     const userAgent = req.headers["user-agent"] || null;

@@ -73,50 +73,46 @@ class ExecutorService {
     }
 
     /* ============================================================
-       1) PLUGIN ACTION HANDLING
+       1) PLUGIN SERVICE ACTION HANDLING
+       Format: "plugin:<serviceName>.<methodName>"
+       Example: "plugin:paymentGateway.charge"
     ============================================================ */
     if (actionType.startsWith("plugin:")) {
-      const parts = actionType.split(":");
+      const descriptor = actionType.slice("plugin:".length); // e.g. "paymentGateway.charge"
+      const dotIndex   = descriptor.lastIndexOf(".");
 
-      if (parts.length < 3) {
+      if (dotIndex === -1) {
         throw new Error(
-          "Invalid plugin actionType format (expected plugin:<id>:<action>)"
+          `Invalid plugin actionType format. Expected "plugin:<serviceName>.<methodName>", got "${actionType}"`
         );
       }
 
-      const pluginId = parts[1];
-      const actionName = parts.slice(2).join(":");
+      const serviceName = descriptor.slice(0, dotIndex);
+      const methodName  = descriptor.slice(dotIndex + 1);
 
-      const pluginEngine = this.app?.locals?.pluginEngine;
-      if (!pluginEngine) {
-        throw new Error("Plugin engine not initialized");
+      const pluginManager = this.app?.locals?.pluginManager;
+      if (!pluginManager) {
+        throw new Error("Plugin system not initialized");
       }
 
-      const action = pluginEngine.getAction(pluginId, actionName);
-      if (!action) {
-        throw new Error(
-          `Plugin action not found: ${pluginId}::${actionName}`
-        );
+      // Retrieve the named service from the container
+      const serviceContainer = require("../../../core/plugin-system/service.container");
+      const service = serviceContainer.get(serviceName);
+
+      if (!service) {
+        throw new Error(`Plugin service not found: "${serviceName}"`);
       }
 
-      let result;
-
-      if (typeof pluginEngine.runAction === "function") {
-        result = await pluginEngine.runAction(pluginId, actionName, meta);
-      } else if (typeof pluginEngine.runFile === "function") {
-        result = await pluginEngine.runFile(
-          action.file,
-          action.fnName || null,
-          meta
-        );
-      } else {
-        throw new Error("Plugin engine missing runAction/runFile");
+      if (typeof service[methodName] !== "function") {
+        throw new Error(`Plugin service "${serviceName}" has no method "${methodName}"`);
       }
+
+      const result = await service[methodName](meta);
 
       await this.audit.automation("plugin.action.execute", {
         profileId,
-        pluginId,
-        actionName,
+        serviceName,
+        methodName,
         meta,
         result,
       });
@@ -172,6 +168,17 @@ class ExecutorService {
     );
 
     throw error;
+  }
+
+  /**
+   * execute() — alias for run(), used by WorkflowEngine
+   * Accepts (actionType, meta) and normalises the call
+   */
+  async execute(actionType, meta = {}) {
+    // WorkflowEngine spreads the whole task into meta.
+    // The http_request action reads top-level fields (url, method, body)
+    // which are already present via ...task spread. Just delegate to run().
+    return this.run(actionType, meta);
   }
 }
 

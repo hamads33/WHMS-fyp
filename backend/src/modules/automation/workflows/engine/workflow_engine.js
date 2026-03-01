@@ -260,9 +260,9 @@ class WorkflowEngine {
 
       const result = await this.executor.execute(task.actionType || task.type, {
         taskId: task.id,
-        input: resolvedInput,
-        context,
         ...task,
+        input: resolvedInput, // must come after ...task so resolved values win
+        context,
       });
 
       return {

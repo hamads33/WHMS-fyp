@@ -49,7 +49,8 @@ class AuditService {
       entityId,
       ip,
       userAgent,
-      data
+      data,
+      ...(profileId != null && { profileId }),
     };
 
     // DB write (fail-safe)
@@ -84,7 +85,8 @@ class AuditService {
       action,
       actor,
       meta,
-      level
+      level,
+      profileId: meta?.profileId ?? null,
     });
   }
 

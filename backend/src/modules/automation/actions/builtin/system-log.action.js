@@ -1,6 +1,8 @@
 module.exports = {
-  name: "system_log",
+  name: "System Log",
   type: "builtin",
+  actionType: "system_log",
+  module: "core",
   description: "Write a system message to audit logs",
 
   schema: {
@@ -20,8 +22,8 @@ module.exports = {
     const { message, level = "INFO" } = meta;
 
     // Audit logging (safe side-effect)
-    if (context?.audit) {
-      await context.audit.log({
+    if (context?.audit?.write) {
+      await context.audit.write({
         source: "automation",
         action: "system.log",
         actor: "automation-engine",

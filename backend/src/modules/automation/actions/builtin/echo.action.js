@@ -1,6 +1,8 @@
 module.exports = {
-  name: "echo",
+  name: "Echo",
   type: "builtin",
+  actionType: "echo",
+  module: "core",
   description: "Echo input for testing",
 
   schema: {

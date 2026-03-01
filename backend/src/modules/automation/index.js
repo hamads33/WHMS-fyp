@@ -52,6 +52,7 @@ const RunController = require("./controllers/run.controller");
 const AuditController = require("./controllers/audit.controller");
 const EventWorkflowController = require("./workflows/controllers/workflow_controller");
 const ActionsController = require("./controllers/actions.controller");
+const RegistryController = require("./controllers/registry.controller");
 
 // ============================================================
 // MIDDLEWARE
@@ -201,6 +202,11 @@ module.exports = async function initAutomationModule({
       logger,
     });
 
+    const registryCtrl = new RegistryController({
+      actionRegistry: ActionRegistry,
+      logger,
+    });
+
     const auditCtrl = new AuditController({ auditService: audit });
 
     // FIXED: Proper controller initialization
@@ -241,6 +247,7 @@ module.exports = async function initAutomationModule({
     // ============================================================
     // ✅ FIXED: Removed validate(profileIdParamSchema, "params")
     // Express automatically extracts :profileId and makes it available in req.params
+    router.get("/profiles/:profileId/runs", runCtrl.listRuns.bind(runCtrl));
     router.post("/profiles/:profileId/run", runCtrl.runNow.bind(runCtrl));
 
     // ============================================================
@@ -258,9 +265,15 @@ module.exports = async function initAutomationModule({
     // ============================================================
     // ACTIONS
     // ============================================================
-    // ✅ No parameter validation needed
     router.get("/actions", actionsCtrl.list.bind(actionsCtrl));
     router.get("/actions/:actionType", actionsCtrl.get.bind(actionsCtrl));
+
+    // ============================================================
+    // REGISTRY (events + actions catalogue for workflow builder)
+    // ============================================================
+    router.get("/registry", registryCtrl.getAll.bind(registryCtrl));
+    router.get("/registry/events", registryCtrl.getEvents.bind(registryCtrl));
+    router.get("/registry/actions", registryCtrl.getActions.bind(registryCtrl));
 
     // ============================================================
     // AUDIT LOGS

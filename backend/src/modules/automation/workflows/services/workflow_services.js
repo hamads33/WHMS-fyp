@@ -65,12 +65,10 @@ class EventWorkflowService {
         where,
         include: {
           _count: {
-            select: { 
+            select: {
               runs: true,
               webhooks: true,
-              triggers: true,
-              schedules: true,
-              alerts: true
+              triggers: true
             }
           }
         },
@@ -87,13 +85,8 @@ class EventWorkflowService {
    */
   async getById(workflowId) {
     try {
-      const id = parseInt(workflowId, 10);
-      if (isNaN(id) || id <= 0) {
-        throw new Error("Invalid workflow ID");
-      }
-      
       const workflow = await this.prisma.automationWorkflow.findUnique({
-        where: { id },
+        where: { id: workflowId },
         include: {
           runs: {
             orderBy: { createdAt: 'desc' },
@@ -101,8 +94,6 @@ class EventWorkflowService {
           },
           webhooks: true,
           triggers: true,
-          schedules: true,
-          alerts: true,
           _count: {
             select: {
               runs: true,
@@ -134,8 +125,7 @@ class EventWorkflowService {
         where: { slug },
         include: {
           triggers: true,
-          webhooks: true,
-          schedules: true
+          webhooks: true
         }
       });
     } catch (error) {
@@ -318,19 +308,14 @@ class EventWorkflowService {
    */
   async executeWorkflow(workflowId, definition = null, input = {}, options = {}) {
     try {
-      const id = parseInt(workflowId, 10);
-      if (isNaN(id) || id <= 0) {
-        throw new Error("Invalid workflow ID");
-      }
-      
       let workflow = null;
       if (!definition) {
         workflow = await this.prisma.automationWorkflow.findUnique({
-          where: { id }
+          where: { id: workflowId }
         });
-        
+
         if (!workflow) {
-          throw new Error(`Workflow not found: ${id}`);
+          throw new Error(`Workflow not found: ${workflowId}`);
         }
         
         if (!workflow.enabled) {
@@ -354,7 +339,7 @@ class EventWorkflowService {
       
       const run = await this.prisma.workflowRun.create({
         data: {
-          workflowId: id,
+          workflowId,
           status: 'running',
           input: workflowInput,
           triggeredBy: options.triggeredBy || 'manual',
@@ -362,11 +347,11 @@ class EventWorkflowService {
           startedAt: new Date()
         }
       });
-      
+
       // Execute in background with proper error handling
-      this._executeInBackground(id, definition, workflowInput, run.id, options);
+      this._executeInBackground(workflowId, definition, workflowInput, run.id, options);
       
-      this.logger.info(`Workflow ${id} execution started (run: ${run.id})`);
+      this.logger.info(`Workflow ${workflowId} execution started (run: ${run.id})`);
       
       return {
         runId: run.id,
@@ -952,11 +937,22 @@ class EventWorkflowService {
    */
   async _updateRunWithResult(runId, result) {
     try {
+      // Strip context (contains non-serializable refs) from output before storing
+      let safeOutput = null;
+      if (result.output && typeof result.output === 'object') {
+        try {
+          safeOutput = JSON.parse(JSON.stringify(result.output, (_k, v) =>
+            v instanceof Object && v.constructor?.name === 'Object' && v.workflow && v.results ? undefined : v
+          ));
+        } catch {
+          safeOutput = null;
+        }
+      }
       await this.prisma.workflowRun.update({
         where: { id: runId },
         data: {
-          status: result.status || 'success',
-          output: result.output || null,
+          status: result.status || 'completed',
+          output: safeOutput,
           finishedAt: new Date(),
           totalDuration: result.duration || 0,
           errorMessage: result.error || null

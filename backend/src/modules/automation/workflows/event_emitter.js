@@ -20,9 +20,6 @@ class EventEmitter {
     if (!this.prisma) {
       throw new Error("EventEmitter requires prisma");
     }
-    if (!this.workflowService) {
-      throw new Error("EventEmitter requires workflowService");
-    }
   }
 
   /**
@@ -34,112 +31,79 @@ class EventEmitter {
         source: metadata.source || 'internal'
       });
 
-      // Record event in database
-      const event = await this.prisma.workflowEvent.create({
-        data: {
-          type: eventType,
-          source: metadata.source || 'internal',
-          data: eventData,
-          metadata
-        }
-      });
+      // Record event in database if model exists
+      let event = { id: null };
+      if (this.prisma.workflowEvent) {
+        event = await this.prisma.workflowEvent.create({
+          data: {
+            type: eventType,
+            source: metadata.source || 'internal',
+            data: eventData,
+            metadata,
+          },
+        });
+      }
 
-      // Find trigger rules for this event type
-      const triggers = await this.prisma.workflowTrigger.findMany({
-        where: {
-          eventType,
-          deletedAt: null
-        },
+      // Find trigger rules — support both model names
+      const triggerModel = this.prisma.workflowTrigger || this.prisma.workflowTriggerRule;
+      if (!triggerModel || !this.workflowService) {
+        return { eventId: event.id, eventType, triggered: 0, results: [] };
+      }
+
+      const triggers = await triggerModel.findMany({
+        where: { eventType, deletedAt: null },
         include: {
           workflow: {
-            select: {
-              id: true,
-              name: true,
-              definition: true,
-              enabled: true
-            }
-          }
-        }
+            select: { id: true, name: true, definition: true, enabled: true },
+          },
+        },
       });
 
       this.logger.debug(`Found ${triggers.length} trigger rules for ${eventType}`);
 
-      // Execute triggered workflows
       const results = [];
       for (const trigger of triggers) {
         try {
-          // Check if workflow is enabled
-          if (!trigger.workflow.enabled) {
-            this.logger.debug(`Skipping disabled workflow: ${trigger.workflow.name}`);
-            continue;
-          }
+          if (!trigger.workflow?.enabled) continue;
+          if (trigger.filter && !this._matchesFilter(eventData, trigger.filter)) continue;
 
-          // Check filter conditions
-          if (trigger.filter && !this._matchesFilter(eventData, trigger.filter)) {
-            this.logger.debug(`Event filtered out by rule ${trigger.id}`);
-            continue;
-          }
-
-          // Execute workflow
           const result = await this.workflowService.executeWorkflow(
             trigger.workflow.id,
             trigger.workflow.definition,
-            {
-              ...eventData,
-              _event: {
-                type: eventType,
-                id: event.id,
-                triggeredAt: new Date()
-              }
-            },
-            {
-              triggedBy: 'event',
-              triggeredByEventId: event.id
-            }
+            { ...eventData, _event: { type: eventType, id: event.id, triggeredAt: new Date() } },
+            { triggeredBy: 'event', triggeredByEventId: event.id }
           );
 
           results.push({
             workflowId: trigger.workflow.id,
             workflowName: trigger.workflow.name,
             status: result.status,
-            runId: result.runId
+            runId: result.runId,
           });
 
-          // Audit log
           if (this.audit) {
             await this.audit.system("workflow.triggered_by_event", {
               entity: "AutomationWorkflow",
               entityId: trigger.workflow.id,
-              data: {
-                eventType,
-                eventId: event.id,
-                triggerId: trigger.id
-              }
+              data: { eventType, eventId: event.id, triggerId: trigger.id },
             });
           }
         } catch (workflowError) {
-          this.logger.error(
-            `Failed to execute workflow ${trigger.workflow.name}:`,
-            workflowError
-          );
+          this.logger.error(`Failed to execute workflow ${trigger.workflow?.name}:`, workflowError);
           results.push({
-            workflowId: trigger.workflow.id,
-            workflowName: trigger.workflow.name,
+            workflowId: trigger.workflow?.id,
+            workflowName: trigger.workflow?.name,
             status: 'failed',
-            error: workflowError.message
+            error: workflowError.message,
           });
         }
       }
 
-      return {
-        eventId: event.id,
-        eventType,
-        triggered: results.length,
-        results
-      };
+      return { eventId: event.id, eventType, triggered: results.length, results };
     } catch (error) {
+      // Never crash the caller — just log
       this.logger.error(`Failed to emit event ${eventType}:`, error);
-      throw error;
+      return { eventId: null, eventType, triggered: 0, error: error.message };
     }
   }
 

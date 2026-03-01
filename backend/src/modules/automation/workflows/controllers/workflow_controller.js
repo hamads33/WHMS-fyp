@@ -161,9 +161,9 @@ class EventWorkflowController {
    */
   async get(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -224,9 +224,9 @@ class EventWorkflowController {
    */
   async update(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -284,9 +284,9 @@ class EventWorkflowController {
    */
   async delete(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -324,9 +324,9 @@ class EventWorkflowController {
    */
   async restore(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -363,9 +363,9 @@ class EventWorkflowController {
    */
   async execute(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -410,9 +410,9 @@ class EventWorkflowController {
    */
   async createWebhook(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -448,9 +448,9 @@ class EventWorkflowController {
    */
   async listWebhooks(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -537,9 +537,9 @@ class EventWorkflowController {
    */
   async createTriggerRule(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -572,9 +572,9 @@ class EventWorkflowController {
    */
   async listTriggerRules(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -682,9 +682,9 @@ class EventWorkflowController {
    */
   async getHistory(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"
@@ -713,9 +713,9 @@ class EventWorkflowController {
    */
   async getExecutionDetails(req, res) {
     try {
-      const runId = parseInt(req.params.runId, 10);
+      const runId = req.params.runId;
 
-      if (isNaN(runId)) {
+      if (!runId) {
         return res.status(400).json({
           success: false,
           error: "Invalid run ID"
@@ -748,9 +748,9 @@ class EventWorkflowController {
    */
   async getMetrics(req, res) {
     try {
-      const workflowId = parseInt(req.params.workflowId, 10);
+      const workflowId = req.params.workflowId;
 
-      if (isNaN(workflowId)) {
+      if (!workflowId) {
         return res.status(400).json({
           success: false,
           error: "Invalid workflow ID"

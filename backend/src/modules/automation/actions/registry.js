@@ -17,10 +17,12 @@ module.exports = {
    * - name → display label (UI only)
    */
   list() {
-    return builtins.all.map(action => ({
-      key: "http_request",          // canonical engine key
-      name: action.name,            // display name
+    return [...builtins.actionMap.entries()].map(([key, action]) => ({
+      key,
+      name: action.name,
       type: "builtin",
+      actionType: action.actionType || key,
+      module: action.module || "core",
       description: action.description,
       schema: action.schema || null,
     }));

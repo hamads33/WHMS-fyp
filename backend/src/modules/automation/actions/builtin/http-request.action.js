@@ -26,6 +26,8 @@ const axios = require('axios');
 module.exports = {
   name: 'HTTP Request',
   type: 'builtin',
+  actionType: 'http_request',
+  module: 'core',
   description: 'Send HTTP requests to external APIs',
 
   schema: {
@@ -77,13 +79,9 @@ module.exports = {
       throw new Error('Invalid metadata for http_request action: metadata must be an object');
     }
 
-    // Log what we received for debugging
-    logger.info({
-      msg: '[http_request] Received metadata',
-      metaKeys: Object.keys(meta),
-      url: meta.url,
-      urlType: typeof meta.url,
-    });
+    // Workflow engine passes resolved task.input inside meta.input;
+    // profile-based tasks pass params directly on meta. Support both.
+    const params = (meta.url !== undefined) ? meta : (meta.input || meta);
 
     const {
       url,
@@ -91,7 +89,7 @@ module.exports = {
       headers = {},
       body,
       timeout = 30000,
-    } = meta;
+    } = params;
 
     // Validate URL with detailed error
     if (!url) {
@@ -139,11 +137,17 @@ module.exports = {
 
     try {
       // Build axios config
+      const isInternalUrl =
+        url.includes("localhost") || url.includes("127.0.0.1");
+
       const config = {
         method: normalizedMethod,
         url,
         headers: {
           'Content-Type': 'application/json',
+          ...(isInternalUrl && process.env.AUTOMATION_SECRET
+            ? { 'X-Automation-Secret': process.env.AUTOMATION_SECRET }
+            : {}),
           ...headers,
         },
         timeout,

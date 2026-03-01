@@ -43,7 +43,9 @@ class VariableResolver {
   resolveString(str, context = {}) {
     if (typeof str !== "string") return str;
 
-    return str.replace(/\$\{([^}]+)\}/g, (match, path) => {
+    // Support both ${variable} and {{variable}} syntax
+    return str.replace(/\$\{([^}]+)\}|\{\{([^}]+)\}\}/g, (match, path1, path2) => {
+      const path = path1 || path2;
       try {
         const value = this.getValue(path, context);
 
