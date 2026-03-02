@@ -898,7 +898,6 @@ model NotificationRule {
   @@index([enabled])
 }
 
-// KEEP EXACTLY AS IS - NO CHANGES NEEDED
 model ActionMetric {
   id             Int       @id @default(autoincrement())
   actionType     String    @unique @db.VarChar(100)
