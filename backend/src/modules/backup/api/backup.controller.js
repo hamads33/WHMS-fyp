@@ -15,7 +15,17 @@ const {
   createProviderInstance,
 } = require("../provider/registry");
 
-const eventBus = require("../eventBus");
+/* =======================
+   WORKFLOW INTEGRATION
+======================= */
+const EventEmitter = require("../../automation/workflows/event_emitter"); // adjust if needed
+const workflowService = require("../../automation/workflows/services/workflow_services"); // adjust if needed
+
+const emitter = new EventEmitter({
+  prisma,
+  workflowService,
+  logger: console,
+});
 
 /* =======================
    VALIDATION
@@ -28,7 +38,6 @@ const {
 
 /* --------------------------------------------------------------------------
    PROVIDER METADATA
-   GET /api/backup/providers
 --------------------------------------------------------------------------- */
 router.get("/providers", authGuard, (req, res) => {
   const providers = listProviders().map((p) => ({
@@ -42,7 +51,6 @@ router.get("/providers", authGuard, (req, res) => {
 
 /* --------------------------------------------------------------------------
    TEST STORAGE CONFIG
-   POST /api/backup/test-storage
 --------------------------------------------------------------------------- */
 router.post("/test-storage", authGuard, async (req, res) => {
   try {
@@ -71,7 +79,6 @@ router.post("/test-storage", authGuard, async (req, res) => {
 
 /* --------------------------------------------------------------------------
    CREATE BACKUP
-   POST /api/backup
 --------------------------------------------------------------------------- */
 router.post(
   "/",
@@ -84,12 +91,26 @@ router.post(
         ...req.body,
       });
 
+      /* 🔥 Emit workflow event */
+      await emitter.emit("backup.completed", {
+        backupId: rec.id,
+        userId: req.user.id,
+        name: rec.name,
+      });
+
       return res.status(201).json({
         success: true,
         data: rec,
       });
     } catch (err) {
       console.error("Backup create error:", err);
+
+      /* 🔥 Emit failure event */
+      await emitter.emit("backup.failed", {
+        userId: req.user.id,
+        error: err.message,
+      });
+
       return res.status(500).json({
         success: false,
         error: err.message,
@@ -100,8 +121,6 @@ router.post(
 
 /* --------------------------------------------------------------------------
    LIST BACKUPS
-   - Admins see all
-   - Users see their own
 --------------------------------------------------------------------------- */
 router.get("/", authGuard, async (req, res) => {
   const isAdmin = req.user.roles.some((r) =>
@@ -220,7 +239,7 @@ router.get("/:id/download", authGuard, async (req, res) => {
 });
 
 /* --------------------------------------------------------------------------
-   RESTORE BACKUP (ADMIN ONLY)
+   RESTORE BACKUP
 --------------------------------------------------------------------------- */
 router.post(
   "/:id/restore",
@@ -264,6 +283,13 @@ router.post(
             jobId,
           },
         },
+      });
+
+      /* 🔥 Emit restore event */
+      await emitter.emit("backup.restore.requested", {
+        backupId: b.id,
+        initiatedBy: req.user.id,
+        jobId,
       });
 
       return res.json({
