@@ -1,0 +1,313 @@
+// ============================================================
+// SUPPORT MODULE — SCHEMA ADDITIONS
+// Replace the basic Ticket model and add full support tables.
+// ============================================================
+// NOTE: Remove the original basic Ticket model from schema.prisma
+// and remove the `tickets Ticket[]` relation from the User model
+// before migrating. Then add the new relation below to User:
+//   tickets         Ticket[]
+//   ticketReplies   TicketReply[]
+//   assignedTickets Ticket[]         @relation("AssignedStaff")
+//   chatSessions    ChatSession[]
+//   chatAgent       ChatAgent?
+// ============================================================
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum TicketStatus {
+  open
+  waiting_for_staff
+  waiting_for_client
+  on_hold
+  closed
+}
+
+enum TicketPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum ReplyType {
+  public    // visible to client
+  internal  // staff-only note
+}
+
+enum ChatSessionStatus {
+  waiting     // client waiting for agent
+  active      // agent joined
+  ended       // chat closed
+  transferred // moved to another agent
+  missed      // no agent joined within timeout
+}
+
+enum ChatMessageType {
+  text
+  system    // join/leave/transfer notices
+  typing    // not persisted — only via socket
+}
+
+// ============================================================
+// TICKET DEPARTMENTS
+// ============================================================
+
+model TicketDepartment {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  slug        String  @unique
+  description String?
+  email       String? // department inbound email (piping)
+  active      Boolean @default(true)
+
+  // SLA settings (in minutes)
+  slaResponseTime   Int? // first response target
+  slaResolutionTime Int? // full resolution target
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tickets     Ticket[]
+  chatSessions ChatSession[]
+  agents      TicketDepartmentAgent[]
+}
+
+// Which staff members belong to which departments
+model TicketDepartmentAgent {
+  id           String           @id @default(uuid())
+  department   TicketDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  departmentId String
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isLead       Boolean          @default(false)
+  assignedAt   DateTime         @default(now())
+
+  @@unique([departmentId, userId])
+  @@index([userId])
+}
+
+// ============================================================
+// TICKETS (replaces basic Ticket model)
+// ============================================================
+
+model Ticket {
+  id           String           @id @default(uuid())
+  ticketNumber String           @unique // human-readable, e.g. TKT-000123
+
+  // Ownership
+  clientId     String
+  client       User             @relation(fields: [clientId], references: [id])
+
+  // Assignment
+  assignedToId String?
+  assignedTo   User?            @relation("AssignedStaff", fields: [assignedToId], references: [id])
+
+  // Classification
+  department   TicketDepartment @relation(fields: [departmentId], references: [id])
+  departmentId String
+  subject      String
+  status       TicketStatus     @default(open)
+  priority     TicketPriority   @default(medium)
+
+  // SLA tracking
+  firstResponseAt   DateTime?   // when staff first replied
+  slaBreachedAt     DateTime?   // set if SLA missed
+  resolvedAt        DateTime?
+
+  // Optional linkage to orders/services
+  relatedOrderId    String?
+  metadata          Json?       // extensible by plugins
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  closedAt   DateTime?
+
+  replies        TicketReply[]
+  attachments    TicketAttachment[]
+  statusHistory  TicketStatusHistory[]
+  chatSession    ChatSession?          // if converted from chat
+
+  @@index([clientId])
+  @@index([assignedToId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([priority])
+  @@index([ticketNumber])
+  @@index([createdAt])
+}
+
+// ============================================================
+// TICKET REPLIES
+// ============================================================
+
+model TicketReply {
+  id        String     @id @default(uuid())
+  ticket    Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId  String
+  author    User       @relation(fields: [authorId], references: [id])
+  authorId  String
+  type      ReplyType  @default(public)
+  body      String     @db.Text
+  isEdited  Boolean    @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attachments TicketAttachment[]
+
+  @@index([ticketId])
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// TICKET ATTACHMENTS
+// ============================================================
+
+model TicketAttachment {
+  id        String  @id @default(uuid())
+  ticket    Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId  String
+  reply     TicketReply? @relation(fields: [replyId], references: [id], onDelete: SetNull)
+  replyId   String?
+
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  storageKey String   // path in storage backend (S3, local, etc.)
+  url        String?  // public/signed URL (optional, generated on demand)
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([replyId])
+}
+
+// ============================================================
+// TICKET STATUS HISTORY (full audit trail)
+// ============================================================
+
+model TicketStatusHistory {
+  id        String       @id @default(uuid())
+  ticket    Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId  String
+  changedBy User         @relation(fields: [changedById], references: [id])
+  changedById String
+
+  fromStatus TicketStatus?
+  toStatus   TicketStatus
+  fromPriority TicketPriority?
+  toPriority   TicketPriority?
+  note         String?         // reason / comment
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// CHAT SESSIONS
+// ============================================================
+
+model ChatSession {
+  id           String           @id @default(uuid())
+  sessionCode  String           @unique // human-readable, e.g. CHAT-ABC123
+
+  // Who started it
+  clientId     String
+  client       User             @relation(fields: [clientId], references: [id])
+
+  // Which department
+  department   TicketDepartment? @relation(fields: [departmentId], references: [id])
+  departmentId String?
+
+  status       ChatSessionStatus @default(waiting)
+
+  // Transcript / conversion
+  subject      String?           // optional, set if client provides it
+  convertedToTicketId String?    @unique
+  convertedToTicket   Ticket?    @relation(fields: [convertedToTicketId], references: [id])
+
+  // Timing
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  agentJoinedAt DateTime?
+
+  // Rating (optional post-chat)
+  rating     Int?      // 1-5
+  feedback   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ChatMessage[]
+  agents   ChatSessionAgent[]
+
+  @@index([clientId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// ============================================================
+// CHAT SESSION AGENTS (which agents participated)
+// ============================================================
+
+model ChatSessionAgent {
+  id        String      @id @default(uuid())
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  agent     User        @relation(fields: [agentId], references: [id])
+  agentId   String
+  joinedAt  DateTime    @default(now())
+  leftAt    DateTime?
+  isPrimary Boolean     @default(false) // first/main agent
+
+  @@unique([sessionId, agentId])
+  @@index([agentId])
+}
+
+// ============================================================
+// CHAT MESSAGES (transcript storage)
+// ============================================================
+
+model ChatMessage {
+  id        String          @id @default(uuid())
+  session   ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  sender    User            @relation(fields: [senderId], references: [id])
+  senderId  String
+  type      ChatMessageType @default(text)
+  body      String          @db.Text
+  metadata  Json?           // e.g. { fileUrl, fileName } for attachments
+
+  sentAt    DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([senderId])
+  @@index([sentAt])
+}
+
+// ============================================================
+// CHAT AGENTS (availability / config per staff member)
+// ============================================================
+
+model ChatAgent {
+  id        String  @id @default(uuid())
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  isOnline          Boolean @default(false)
+  maxConcurrentChats Int    @default(3)
+  currentChatCount   Int    @default(0)
+  acceptingChats     Boolean @default(true)
+
+  lastSeenAt DateTime?
+  updatedAt  DateTime @updatedAt
+}
