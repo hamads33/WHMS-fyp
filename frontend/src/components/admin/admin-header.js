@@ -13,16 +13,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@/lib/context/AuthContext"; // ✅ FIXED: Updated import path
+import { useAuth } from "@/lib/context/AuthContext"; 
 import { useRouter } from "next/navigation";
 
 export function AdminHeader() {
-  const { user, logout } = useAuth(); // ✅ FIXED: Use logout from context
+  const { user, logout } = useAuth(); 
   const router = useRouter();
 
   async function handleLogout() {
     try {
-      await logout(); // ✅ FIXED: Use AuthContext logout (handles everything)
+      await logout(); //  Use AuthContext logout (handles everything)
       // AuthContext will handle redirect to /login
     } catch (error) {
       console.error("Logout failed:", error);
