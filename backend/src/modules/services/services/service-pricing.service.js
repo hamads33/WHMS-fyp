@@ -1,10 +1,13 @@
+/**
+ * Service Pricing Service
+ * Path: src/modules/services/services/service-pricing.service.js
+ */
+
 const prisma = require("../../../../prisma");
 
 class ServicePricingService {
   /**
-   * Create pricing
-   * - Validates plan exists
-   * - Prevents duplicate pricing per billing cycle
+   * Create pricing for a plan
    */
   async create(planId, data, actor) {
     try {
@@ -32,7 +35,7 @@ class ServicePricingService {
       return pricing;
     } catch (err) {
       if (err.statusCode) throw err;
-      
+
       // FIX: Handle unique constraint on [planId, cycle]
       if (err.code === "P2002") {
         const e = new Error(
@@ -125,8 +128,8 @@ class ServicePricingService {
 
   /**
    * Get active pricing by plan ID (client view)
-   * FIX: Only check if PRICING is active, not if plan is active
-   * This allows clients to see pricing even if plan is temporarily inactive
+   * ✅ FIXED: Now validates that PLAN is also active
+   * Clients should only see pricing for active plans
    */
   async getActiveByPlanId(planId) {
     // Validate plan exists
@@ -140,12 +143,19 @@ class ServicePricingService {
       throw err;
     }
 
-    // FIX: Only filter by pricing.active, not plan.active
-    // This way clients can see pricing for a plan even if temporarily deactivated
+    // ✅ NEW: Check that plan is active
+    // Only show pricing if plan is currently active
+    if (!plan.active) {
+      const err = new Error("Plan is currently inactive");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    // Only return pricing if BOTH plan and pricing are active
     return prisma.servicePricing.findMany({
-      where: { 
+      where: {
         planId,
-        active: true 
+        active: true,
       },
       orderBy: { cycle: "asc" },
     });

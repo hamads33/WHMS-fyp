@@ -15,6 +15,10 @@ const billingProfileService = require("./billing-profile.service");
 class InvoiceService {
   /**
    * Generate invoice from an order snapshot (FR-01)
+   * 
+   * ✅ FIXED: Now validates order status before generating invoice
+   * ✅ FIXED: Uses pricing currency (not profile currency)
+   * ✅ FIXED: Captures more metadata in line items
    */
   async generateFromOrder(orderId, options = {}) {
     const order = await prisma.order.findUnique({
@@ -28,6 +32,17 @@ class InvoiceService {
     if (!order) {
       const err = new Error("Order not found");
       err.statusCode = 404;
+      throw err;
+    }
+
+    // ✅ NEW: Validate order status - only active/suspended can be invoiced
+    const INVOICEABLE_STATUSES = ['active', 'suspended'];
+    if (!INVOICEABLE_STATUSES.includes(order.status)) {
+      const err = new Error(
+        `Cannot invoice ${order.status} order. ` +
+        `Only ${INVOICEABLE_STATUSES.join(', ')} orders can be invoiced.`
+      );
+      err.statusCode = 409;
       throw err;
     }
 
@@ -46,17 +61,36 @@ class InvoiceService {
     const clientId = order.clientId;
 
     const profile = await billingProfileService.getOrCreate(clientId);
-    const currency = profile.currency || snap.pricing?.currency || "USD";
+    
+    // ✅ NEW: Use pricing currency as source of truth (not profile currency)
+    const pricingCurrency = snap.pricing?.currency || "USD";
+    
+    // ✅ NEW: Warn if currency mismatch
+    if (profile.currency && profile.currency !== pricingCurrency) {
+      console.warn(
+        `[INVOICE] Currency mismatch for order ${orderId}: ` +
+        `pricing=${pricingCurrency}, profile=${profile.currency}. ` +
+        `Using pricing currency.`
+      );
+    }
 
+    const currency = pricingCurrency;
     const unitPrice = parseFloat(snap.pricing?.price || 0);
+    
+    // ✅ NEW: Capture complete metadata
     const lineItem = {
       description: `${snap.service?.name} — ${snap.plan?.name} (${snap.pricing?.cycle})`,
       quantity: 1,
       unitPrice,
       total: unitPrice,
       serviceCode: snap.service?.code,
+      serviceId: snap.service?.id,                    // ← NEW
+      serviceDescription: snap.service?.description,  // ← NEW
       planName: snap.plan?.name,
-      cycle: snap.pricing?.cycle,
+      planId: snap.plan?.id,                          // ← NEW
+      pricingId: snap.pricing?.id,                    // ← NEW
+      pricingCycle: snap.pricing?.cycle,              // ← NEW
+      currency: pricingCurrency,                      // ← NEW
     };
 
     const taxRate = await taxService.getApplicableRate(clientId, snap.service?.code);
@@ -93,7 +127,7 @@ class InvoiceService {
               taxAmount: totals.taxAmount,
               serviceCode: lineItem.serviceCode,
               planName: lineItem.planName,
-              cycle: lineItem.cycle,
+              cycle: lineItem.pricingCycle,
             },
           ],
         },
