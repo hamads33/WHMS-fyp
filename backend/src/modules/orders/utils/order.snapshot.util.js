@@ -11,6 +11,54 @@
 const prisma = require("../../../../prisma");
 
 /**
+ * ✅ Order Snapshot Structure (STANDARD FORMAT)
+ * 
+ * All order snapshots created by this utility have this structure:
+ * 
+ * {
+ *   id: string,
+ *   serviceId: number,
+ *   planId: number,
+ *   snapshot: {
+ *     service: { 
+ *       id: number, 
+ *       code: string, 
+ *       name: string, 
+ *       description: string 
+ *     },
+ *     plan: { 
+ *       id: number, 
+ *       name: string, 
+ *       summary: string, 
+ *       position: number 
+ *     },
+ *     pricing: { 
+ *       id: number,
+ *       cycle: string,            // monthly | quarterly | semi_annually | annually
+ *       price: string,            // Stored as string for precision
+ *       currency: string          // e.g., "USD"
+ *     }
+ *   },
+ *   createdAt: Date,
+ *   updatedAt: Date
+ * }
+ * 
+ * IMPORTANT:
+ * - pricing is a SINGLE OBJECT (not an array)
+ * - DO NOT use service-snapshot_service.js for orders
+ * - service-snapshot_service creates a different format with array pricing
+ * - All consumers (invoice.service, recurring-billing, etc) expect this format
+ * 
+ * Usage:
+ *   const snapshot = await createOrderSnapshot({
+ *     serviceId: 1,
+ *     planId: 10,
+ *     pricingId: 100
+ *   });
+ *   // Returns snapshot matching structure above
+ */
+
+/**
  * Create immutable order snapshot
  * @param {Object} dto
  * @param {string} dto.serviceId
@@ -65,6 +113,7 @@ async function createOrderSnapshot(dto) {
 
   // -------------------------------
   // Build immutable snapshot payload
+  // ✅ STANDARD FORMAT: pricing is OBJECT, not array
   // -------------------------------
   const snapshotPayload = {
     service: {

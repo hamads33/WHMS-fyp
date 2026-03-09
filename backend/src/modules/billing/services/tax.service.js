@@ -9,6 +9,7 @@ const prisma = require("../../../../prisma");
 class TaxService {
   /**
    * Find applicable tax rule for a client/service combination
+   * ✅ FIXED: Now logs which rule was applied for audit trail
    */
   async getApplicableRate(clientId, serviceCode = null) {
     // Get billing profile for region info
@@ -45,7 +46,30 @@ class TaxService {
       candidates.find((r) => r.country === null && r.serviceType === null) ||
       null;
 
-    return match ? parseFloat(match.rate) : 0;
+    // ✅ NEW: Add logging for audit trail
+    if (!match) {
+      console.warn(
+        `[TAX] No applicable tax rule found for:`,
+        { clientId, country, region, serviceCode },
+        `Using 0% tax (default).`
+      );
+      return 0;
+    }
+
+    // ✅ NEW: Log which rule was applied
+    console.debug(
+      `[TAX] Applied rule for clientId=${clientId}:`,
+      {
+        ruleId: match.id,
+        ruleName: match.name,
+        rate: match.rate,
+        country: match.country,
+        region: match.region,
+        serviceType: match.serviceType,
+      }
+    );
+
+    return parseFloat(match.rate);
   }
 
   /**
@@ -85,7 +109,7 @@ class TaxService {
   }
 
   /**
-   * Delete tax rule
+   * Delete tax rule (soft delete - mark inactive)
    */
   async delete(id) {
     const rule = await prisma.taxRule.findUnique({ where: { id } });

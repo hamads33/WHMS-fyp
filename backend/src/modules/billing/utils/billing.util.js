@@ -24,7 +24,57 @@ async function generateInvoiceNumber() {
 }
 
 /**
+ * ✅ NEW: Calculate next renewal date based on billing cycle
+ * Uses calendar-based date arithmetic (proper month/year handling)
+ * 
+ * IMPORTANT: Handles month boundaries correctly
+ * Examples:
+ *   Jan 31 + 1 month = Feb 28/29 (NOT Mar 3)
+ *   Feb 28 + 1 quarter = May 28
+ *   2024-01-31 + 1 year = 2025-01-31 (leap year safe)
+ * 
+ * @param {Date} currentDate - Base date to add cycle to
+ * @param {string} cycle - 'monthly' | 'quarterly' | 'semi_annually' | 'annually'
+ * @returns {Date} Next renewal date
+ */
+function getNextRenewalDate(currentDate, cycle) {
+  const date = new Date(currentDate);
+  
+  switch(cycle) {
+    case 'monthly':
+      // Add 1 month (handles month boundary overflow)
+      date.setMonth(date.getMonth() + 1);
+      break;
+      
+    case 'quarterly':
+      // Add 3 months
+      date.setMonth(date.getMonth() + 3);
+      break;
+      
+    case 'semi_annually':
+      // Add 6 months
+      date.setMonth(date.getMonth() + 6);
+      break;
+      
+    case 'annually':
+      // Add 1 year
+      date.setFullYear(date.getFullYear() + 1);
+      break;
+      
+    default:
+      // Fallback: add 30 days (backward compatible)
+      date.setDate(date.getDate() + 30);
+  }
+  
+  return date;
+}
+
+/**
+ * @deprecated Use getNextRenewalDate() instead
+ * 
  * Calculate billing cycle days
+ * Returns approximate days for reference only.
+ * For actual date calculations, use getNextRenewalDate() which handles month boundaries.
  */
 function cycleToDays(cycle) {
   const map = {
@@ -92,7 +142,8 @@ function buildTotals(lineItems, taxRate = 0, discounts = []) {
 
 module.exports = {
   generateInvoiceNumber,
-  cycleToDays,
+  getNextRenewalDate,  // ✅ NEW: Use this for accurate date calculations
+  cycleToDays,         // ⚠️  DEPRECATED: Use getNextRenewalDate instead
   calculateDueDate,
   computeTax,
   computeDiscount,

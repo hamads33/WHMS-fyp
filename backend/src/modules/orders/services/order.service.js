@@ -11,7 +11,7 @@
 
 const prisma = require("../../../../prisma");
 const { createOrderSnapshot } = require("../utils/order.snapshot.util");
-const { cycleToDays } = require("../../billing/utils/billing.util"); // ✅ FIXED: import cycleToDays
+const { getNextRenewalDate } = require("../../billing/utils/billing.util"); // ✅ FIXED: Use new function
 
 /**
  * Create new order with immutable snapshot
@@ -144,8 +144,8 @@ async function cancel(orderId, clientId) {
  * Activate pending order (admin action)
  * pending → active
  *
- * ✅ FIXED: nextRenewalAt now uses the actual billing cycle from the snapshot
- * instead of a hardcoded 30 days, so quarterly/annual plans get the correct
+ * ✅ FIXED: nextRenewalAt now uses calendar-based calculation from getNextRenewalDate
+ * instead of hardcoded 30 days, so quarterly/annual plans get the correct
  * renewal date and billing's recurring job stays in sync.
  */
 async function activate(orderId) {
@@ -168,11 +168,10 @@ async function activate(orderId) {
 
   // ✅ FIXED: read cycle from snapshot, fall back to monthly
   const cycle = order.snapshot?.snapshot?.pricing?.cycle || "monthly";
-  const days = cycleToDays(cycle);
-
+  
+  // ✅ FIXED: Use calendar-based calculation instead of hardcoded days
   const now = new Date();
-  const nextRenewal = new Date(now);
-  nextRenewal.setDate(nextRenewal.getDate() + days);
+  const nextRenewal = getNextRenewalDate(now, cycle);
 
   const updated = await prisma.order.update({
     where: { id: orderId },
@@ -191,7 +190,7 @@ async function activate(orderId) {
  * Renew order (extend renewal date)
  * active → active (extends renewal)
  *
- * ✅ FIXED: also uses cycleToDays instead of hardcoded 30 days
+ * ✅ FIXED: also uses getNextRenewalDate instead of hardcoded 30 days
  */
 async function renew(orderId) {
   const order = await prisma.order.findUnique({
@@ -211,13 +210,10 @@ async function renew(orderId) {
     throw err;
   }
 
-  // ✅ FIXED: use actual billing cycle
+  // ✅ FIXED: use actual billing cycle with calendar-based calculation
   const cycle = order.snapshot?.snapshot?.pricing?.cycle || "monthly";
-  const days = cycleToDays(cycle);
-
   const base = order.nextRenewalAt || new Date();
-  const next = new Date(base);
-  next.setDate(next.getDate() + days);
+  const next = getNextRenewalDate(base, cycle);
 
   const updated = await prisma.order.update({
     where: { id: orderId },
