@@ -1,0 +1,9 @@
+{
+  "name": "slack-notifier",
+  "version": "1.1.0",
+  "description": "Posts notifications to a Slack channel for key billing and service events",
+  "main": "plugin.js",
+  "plugin": {
+    "dependencies": {}
+  }
+}
