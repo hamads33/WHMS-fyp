@@ -1,13 +1,65 @@
 const express = require("express");
 const router = express.Router();
-const { PrismaClient } = require("@prisma/client");
-
-const prisma = new PrismaClient();
+const prisma = require("../../../../prisma");
+const { lookupWhois } = require("../services/whois.service");
+const domainSettings = require("../services/domain-settings.service");
 
 /* =====================================================
    ADMIN DOMAIN ROUTES
    Base path: /api/admin/domains
 ===================================================== */
+
+/* =====================================================
+   DOMAIN REGISTRAR SETTINGS
+===================================================== */
+
+/**
+ * GET /api/admin/domains/settings?category=porkbun|namecheap
+ * Returns settings with sensitive values masked
+ */
+router.get("/settings", async (req, res, next) => {
+  try {
+    const { category } = req.query;
+    const settings = await domainSettings.getSettings(category || null);
+    res.json({ success: true, settings });
+  } catch (err) { next(err); }
+});
+
+/**
+ * PUT /api/admin/domains/settings
+ * Body: { porkbun_api_key: "...", namecheap_api_user: "...", ... }
+ */
+router.put("/settings", async (req, res, next) => {
+  try {
+    const updates = req.body || {};
+    await Promise.all(
+      Object.entries(updates).map(([key, value]) =>
+        domainSettings.setSetting(key, value)
+      )
+    );
+    res.json({ success: true, message: "Registrar settings saved" });
+  } catch (err) { next(err); }
+});
+
+/**
+ * POST /api/admin/domains/settings/test?registrar=namecheap|porkbun
+ * Quick connectivity test — attempts to ping the registrar API
+ */
+router.post("/settings/test", async (req, res, next) => {
+  try {
+    const { registrar } = req.query;
+    if (!registrar) return res.status(400).json({ error: "registrar param required" });
+
+    const { loadRegistrar } = require("../registrars");
+    const mod = loadRegistrar(registrar);
+
+    // Test with a known domain — just checking if credentials work
+    await mod.checkAvailability("testconnection.com");
+    res.json({ success: true, message: `${registrar} credentials are valid` });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
 
 /**
  * GET /api/admin/domains/stats
@@ -37,6 +89,51 @@ router.get("/stats", async (req, res, next) => {
       success: true,
       data: { total, active, expiringSoon, expired },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/admin/domains/whois?domain=example.com
+ * WHOIS/RDAP lookup — free, no credentials required
+ */
+router.get("/whois", async (req, res, next) => {
+  try {
+    const { domain } = req.query;
+    if (!domain) {
+      return res.status(400).json({ error: "domain query parameter is required" });
+    }
+    const result = await lookupWhois(domain);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/admin/domains/expiring?days=30
+ * Get domains expiring within N days
+ */
+router.get("/expiring", async (req, res, next) => {
+  try {
+    const days = Number(req.query.days) || 30;
+    const now = new Date();
+    const limit = new Date();
+    limit.setDate(limit.getDate() + days);
+
+    const domains = await prisma.domain.findMany({
+      where: {
+        status: "active",
+        expiryDate: {
+          gte: now,
+          lte: limit,
+        },
+      },
+      orderBy: { expiryDate: "asc" },
+    });
+
+    res.json({ success: true, data: domains });
   } catch (err) {
     next(err);
   }
@@ -87,7 +184,7 @@ router.get("/", async (req, res, next) => {
  */
 router.get("/:id", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.id);
+    const domainId = req.params.id;
 
     const domain = await prisma.domain.findUnique({
       where: { id: domainId },
@@ -118,7 +215,7 @@ router.get("/:id", async (req, res, next) => {
  */
 router.get("/:id/logs", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.id);
+    const domainId = req.params.id;
     const { limit = 50 } = req.query;
 
     const logs = await prisma.domainLog.findMany({
@@ -138,7 +235,7 @@ router.get("/:id/logs", async (req, res, next) => {
  */
 router.post("/:id/renew", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.id);
+    const domainId = req.params.id;
     const { years = 1 } = req.body;
 
     const domain = await prisma.domain.findUnique({
@@ -182,7 +279,7 @@ router.post("/:id/renew", async (req, res, next) => {
  */
 router.patch("/:id/override", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.id);
+    const domainId = req.params.id;
     const { changes } = req.body;
 
     const updated = await prisma.domain.update({
@@ -209,7 +306,7 @@ router.patch("/:id/override", async (req, res, next) => {
  */
 router.post("/:id/sync", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.id);
+    const domainId = req.params.id;
 
     const domain = await prisma.domain.findUnique({
       where: { id: domainId },
@@ -252,7 +349,7 @@ router.post("/:id/sync", async (req, res, next) => {
  */
 router.delete("/:id", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.id);
+    const domainId = req.params.id;
 
     const updated = await prisma.domain.update({
       where: { id: domainId },

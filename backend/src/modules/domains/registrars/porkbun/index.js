@@ -1,9 +1,6 @@
-const path = require("path");
-
 const axios = require("axios");
-const prisma = require("../../../../../prisma");
-const crypto = require("crypto");
 const https = require("https");
+const { getRawCategory } = require("../../services/domain-settings.service");
 
 /**
  * Porkbun API v3 base
@@ -19,76 +16,21 @@ const httpsAgent = new https.Agent({
 });
 
 /**
- * AES-256-GCM decrypt
- * Format: iv(12) + tag(16) + ciphertext
+ * Load Porkbun credentials — DB first, then env var fallback
  */
-function decrypt(encryptedHex) {
-  if (!process.env.SECRET_ENCRYPTION_KEY) {
+async function getCredentials() {
+  const db = await getRawCategory("porkbun");
+  const apiKey   = db.porkbun_api_key   || process.env.PORKBUN_API_KEY;
+  const secretKey = db.porkbun_secret_key || process.env.PORKBUN_SECRET_KEY;
+
+  if (!apiKey || !secretKey) {
     throw new Error(
-      "SECRET_ENCRYPTION_KEY environment variable is not set. " +
-      "Cannot decrypt registrar credentials."
+      "Porkbun credentials not configured. " +
+      "Add them in Admin → Settings → Domains or set PORKBUN_API_KEY / PORKBUN_SECRET_KEY."
     );
   }
 
-  if (encryptedHex.length < 56) {
-    // 12 (iv) + 16 (tag) + min 0 (ciphertext) = 28 hex pairs
-    throw new Error("Invalid encrypted data format");
-  }
-
-  const raw = Buffer.from(encryptedHex, "hex");
-
-  const iv = raw.subarray(0, 12);
-  const tag = raw.subarray(12, 28);
-  const ciphertext = raw.subarray(28);
-
-  const decipher = crypto.createDecipheriv(
-    "aes-256-gcm",
-    Buffer.from(process.env.SECRET_ENCRYPTION_KEY, "hex"),
-    iv
-  );
-
-  decipher.setAuthTag(tag);
-
-  return Buffer.concat([
-    decipher.update(ciphertext),
-    decipher.final()
-  ]).toString("utf8");
-}
-
-/**
- * Load Porkbun credentials from DB
- */
-async function getCredentials() {
-  try {
-    const provider = await prisma.providerConfig.findUnique({
-      where: { name: "porkbun" }
-    });
-
-    if (!provider) {
-      throw new Error(
-        "Porkbun provider not configured in database. " +
-        "Please add a ProviderConfig record with name='porkbun'"
-      );
-    }
-
-    if (!provider.active) {
-      throw new Error("Porkbun registrar is not active");
-    }
-
-    if (!provider.key || !provider.secret) {
-      throw new Error(
-        "Porkbun credentials are not set in database. " +
-        "Please ensure 'key' and 'secret' fields are populated."
-      );
-    }
-
-    return {
-      apikey: decrypt(provider.key),
-      secretapikey: decrypt(provider.secret)
-    };
-  } catch (err) {
-    throw new Error(`Failed to load Porkbun credentials: ${err.message}`);
-  }
+  return { apikey: apiKey, secretapikey: secretKey };
 }
 
 /**
@@ -282,11 +224,11 @@ module.exports = {
 
       while (hasMore) {
         const data = await porkbunPost("/domain/listAll", { start });
-        
+
         if (data.domains && data.domains.length > 0) {
           domains.push(...data.domains);
           start += 1000;
-          
+
           // If we got less than 1000, we've reached the end
           if (data.domains.length < 1000) {
             hasMore = false;
@@ -310,6 +252,20 @@ module.exports = {
       };
     } catch (err) {
       throw new Error(`List domains failed: ${err.message}`);
+    }
+  },
+
+  /**
+   * Check if Porkbun credentials are configured
+   */
+  async hasCredentials() {
+    try {
+      const db = await getRawCategory("porkbun");
+      const apiKey = db.porkbun_api_key || process.env.PORKBUN_API_KEY;
+      const secretKey = db.porkbun_secret_key || process.env.PORKBUN_SECRET_KEY;
+      return !!(apiKey && secretKey);
+    } catch {
+      return false;
     }
   }
 };

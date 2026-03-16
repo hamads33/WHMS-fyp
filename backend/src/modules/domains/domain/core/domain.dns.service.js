@@ -1,5 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../../../../../prisma");
 
 /**
  * Fetch domain with access control.
@@ -7,10 +6,14 @@ const prisma = new PrismaClient();
  * - Superadmin OR missing user context: unrestricted
  */
 async function getDomainOrThrow({ domainId, user }) {
+  if (!user) {
+    throw new Error("Authentication required");
+  }
+
   const where = { id: domainId };
 
-  // Enforce ownership ONLY if user exists AND is not superadmin
-  if (user && user.role !== "superadmin") {
+  // Enforce ownership ONLY if user is not superadmin
+  if (user.role !== "superadmin") {
     where.ownerId = user.id;
   }
 

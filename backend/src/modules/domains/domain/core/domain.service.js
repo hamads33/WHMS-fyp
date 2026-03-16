@@ -12,8 +12,7 @@
  * Currency is ADMIN-SELECTED and passed explicitly.
  */
 
-const { loadRegistrar } = require("../../registrars");
-const domainLogRepo = require('../repositories/domainLog.repo')
+const { loadRegistrar, loadRegistrarWithFallback } = require("../../registrars");
 const { logDomainAction } = require("../repositories/domainLog.repo");
 const { createDomainContacts } = require("../repositories/domainContact.repo");
 const { validateContacts } = require("../../validators/domainContact.validator");
@@ -29,7 +28,7 @@ async function checkAvailability({ domain, registrar }) {
     throw new Error("domain and registrar are required");
   }
 
-  const registrarModule = loadRegistrar(registrar);
+  const { module: registrarModule, isMock, reason } = await loadRegistrarWithFallback(registrar);
 
   if (typeof registrarModule.checkAvailability !== "function") {
     throw new Error(`Registrar ${registrar} does not support availability check`);
@@ -41,7 +40,8 @@ async function checkAvailability({ domain, registrar }) {
     domain,
     available: Boolean(result.available),
     premium: Boolean(result.premium),
-    price: result.price ?? null
+    price: result.price ?? null,
+    ...(isMock && { isMock: true, warning: reason })
   };
 }
 
@@ -90,7 +90,7 @@ async function registerDomain({
   // ─────────────────────────────
   // 3️⃣ Load registrar module
   // ─────────────────────────────
-  const registrarModule = loadRegistrar(registrar);
+  const { module: registrarModule, isMock: isMockRegistrar, reason: mockReason } = await loadRegistrarWithFallback(registrar);
 
   // ─────────────────────────────
   // 4️⃣ Availability check (MANDATORY)
@@ -195,6 +195,10 @@ async function registerDomain({
   await logDomainAction(createdDomain.id, "domain_contacts_created", {
     count: contacts.length
   });
+
+  if (isMockRegistrar) {
+    return { ...createdDomain, isMock: true, warning: mockReason || "Domain registered with mock registrar — for testing only, not a real domain" };
+  }
 
   return createdDomain;
 }

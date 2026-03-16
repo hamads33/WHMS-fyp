@@ -7,7 +7,7 @@ const dnsService = require("../domain/core/domain.dns.service");
  */
 router.get("/:domainId/dns", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.domainId);
+    const domainId = req.params.domainId;
 
     const records = await dnsService.listDNS({
       domainId,
@@ -25,7 +25,7 @@ router.get("/:domainId/dns", async (req, res, next) => {
  */
 router.post("/:domainId/dns", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.domainId);
+    const domainId = req.params.domainId;
     const { type, name, value, ttl } = req.body;
 
     const record = await dnsService.addDNSRecord({
@@ -45,7 +45,7 @@ router.post("/:domainId/dns", async (req, res, next) => {
  */
 router.put("/:domainId/dns/:recordId", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.domainId);
+    const domainId = req.params.domainId;
     const recordId = Number(req.params.recordId);
 
     const updated = await dnsService.updateDNSRecord({
@@ -66,7 +66,7 @@ router.put("/:domainId/dns/:recordId", async (req, res, next) => {
  */
 router.delete("/:domainId/dns/:recordId", async (req, res, next) => {
   try {
-    const domainId = Number(req.params.domainId);
+    const domainId = req.params.domainId;
     const recordId = Number(req.params.recordId);
 
     await dnsService.deleteDNSRecord({

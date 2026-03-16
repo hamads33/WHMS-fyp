@@ -82,8 +82,6 @@ async function initiateTransfer({
     autoRenew: true,
     currency,
     registrationPrice: transferPrice,
-    invoiceId: invoice.invoiceId,
-    billingStatus: invoice.status
   });
 
   // ─────────────────────────────
