@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Payment Overdue - Invoice #{{invoice_id}}</title>
+<style>body{margin:0;padding:0;background:#f4f4f7;font-family:'Segoe UI',Arial,sans-serif;color:#333}.wrapper{width:100%;background:#f4f4f7;padding:32px 0}.container{max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)}.header{background:#ea580c;padding:28px 40px;text-align:center}.header h1{color:#fff;margin:0;font-size:22px;font-weight:600}.body{padding:36px 40px}.body p{font-size:15px;line-height:1.7;margin:0 0 16px}.btn{display:inline-block;background:#ea580c;color:#fff!important;text-decoration:none;padding:13px 32px;border-radius:5px;font-size:15px;font-weight:600;margin:8px 0 16px}.alert-box{background:#fde8e8;border-left:4px solid #e53e3e;border-radius:4px;padding:14px 18px;margin:20px 0;font-size:14px}table.details{width:100%;border-collapse:collapse;margin:20px 0;font-size:14px}table.details td{padding:9px 0;border-bottom:1px solid #eef0f4}table.details td:last-child{text-align:right;font-weight:600}table.details tr:last-child td{border-bottom:none}.footer{background:#f8f9fc;padding:20px 40px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eef0f4}</style>
+</head><body>
+<div class="wrapper"><div class="container">
+  <div class="header"><h1>{{company_name}}</h1></div>
+  <div class="body">
+    <h2 style="font-size:20px;margin:0 0 16px;color:#ea580c">Payment Overdue</h2>
+    <p>Hi {{client_name}},</p>
+    <div class="alert-box">⚠️ Invoice <strong>#{{invoice_id}}</strong> is <strong>{{days_overdue}} day(s) overdue</strong>. Please make payment immediately to avoid service interruption.</div>
+    <table class="details">
+      <tr><td style="color:#666">Invoice #</td><td>{{invoice_id}}</td></tr>
+      <tr><td style="color:#666">Amount Due</td><td>{{invoice_total}}</td></tr>
+      <tr><td style="color:#666">Original Due Date</td><td>{{due_date}}</td></tr>
+      <tr><td style="color:#666">Days Overdue</td><td style="color:#e53e3e">{{days_overdue}} days</td></tr>
+    </table>
+    <p>Failure to pay may result in suspension of your services. If you have already made payment, please disregard this notice.</p>
+    <p style="text-align:center"><a href="{{invoice_url}}" class="btn">Pay Now</a></p>
+    <p>If you have any questions, contact <a href="mailto:{{support_email}}">{{support_email}}</a>.</p>
+    <p>Regards,<br/><strong>{{company_name}} Billing Team</strong></p>
+  </div>
+  <div class="footer"><p>&copy; {{year}} {{company_name}}. All rights reserved.</p>{{#if footer_text}}<p>{{footer_text}}</p>{{/if}}</div>
+</div></div>
+</body></html>

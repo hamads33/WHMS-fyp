@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Order Confirmation - #{{order_id}}</title>
+<style>body{margin:0;padding:0;background:#f4f4f7;font-family:'Segoe UI',Arial,sans-serif;color:#333}.wrapper{width:100%;background:#f4f4f7;padding:32px 0}.container{max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)}.header{background:#4f46e5;padding:28px 40px;text-align:center}.header h1{color:#fff;margin:0;font-size:22px;font-weight:600}.body{padding:36px 40px}.body p{font-size:15px;line-height:1.7;margin:0 0 16px}.btn{display:inline-block;background:#4f46e5;color:#fff!important;text-decoration:none;padding:13px 32px;border-radius:5px;font-size:15px;font-weight:600;margin:8px 0 16px}.success-box{background:#e8f5e9;border-left:4px solid #16a34a;border-radius:4px;padding:14px 18px;margin:20px 0;font-size:14px}table.details{width:100%;border-collapse:collapse;margin:20px 0;font-size:14px}table.details th{background:#f0f2f5;text-align:left;padding:10px 14px;color:#555;font-weight:600;border-bottom:2px solid #e0e3ea}table.details td{padding:10px 14px;border-bottom:1px solid #eef0f4}table.details tr:last-child td{border-bottom:none}.total-row td{font-weight:700;font-size:15px;background:#f8f9fc}.footer{background:#f8f9fc;padding:20px 40px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eef0f4}</style>
+</head><body>
+<div class="wrapper"><div class="container">
+  <div class="header"><h1>{{company_name}}</h1></div>
+  <div class="body">
+    <h2 style="font-size:20px;margin:0 0 16px">Order Confirmed 🎉</h2>
+    <p>Hi {{client_name}},</p>
+    <div class="success-box">✅ Your order <strong>#{{order_id}}</strong> has been received and is being processed.</div>
+    <table class="details">
+      <tr><th>Item</th><th style="text-align:right">Price</th></tr>
+      {{#each order_items}}
+      <tr><td>{{this.name}}<br/><span style="color:#888;font-size:12px">{{this.description}}</span></td><td style="text-align:right">{{this.price}}</td></tr>
+      {{/each}}
+      <tr class="total-row"><td>Total</td><td style="text-align:right">{{order_total}}</td></tr>
+    </table>
+    <p><strong>Order Date:</strong> {{order_date}}<br/><strong>Status:</strong> {{order_status}}</p>
+    <p style="text-align:center"><a href="{{order_url}}" class="btn">View Order Details</a></p>
+    <p>Regards,<br/><strong>{{company_name}} Team</strong></p>
+  </div>
+  <div class="footer"><p>&copy; {{year}} {{company_name}}. All rights reserved.</p>{{#if footer_text}}<p>{{footer_text}}</p>{{/if}}</div>
+</div></div>
+</body></html>

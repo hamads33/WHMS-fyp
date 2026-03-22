@@ -6,15 +6,19 @@ const ip = require("ip");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
 const { PrismaClient } = require("@prisma/client");
+const swaggerSpec = require("./docs/swagger.config");
 
 const app = express();
 const prisma = new PrismaClient();
-app.set("trust proxy", false);
+app.set("trust proxy", true);
 // 🔧 FIX: Allow JSON.stringify(BigInt)
 BigInt.prototype.toJSON = function () {
   return this.toString();
 };
-
+app.use((req, res, next) => {
+  console.log("➡ Request reached server");
+  next();
+});
 /* ================================================================
    GLOBAL MIDDLEWARES
    – JSON body limit
@@ -27,6 +31,15 @@ app.use(cookieParser());
 // Debugging request origins (useful when testing CORS issues)
 app.use((req, res, next) => {
   console.log("🌐 Incoming Origin:", req.headers.origin);
+  next();
+});
+
+// Normalize IPv4-mapped IPv6 addresses (::ffff:x.x.x.x → x.x.x.x)
+// Overrides req.ip so all downstream code gets a clean IPv4 string automatically
+app.use((req, res, next) => {
+  const raw = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket?.remoteAddress || req.ip || "";
+  const normalized = raw.startsWith("::ffff:") ? raw.slice(7) : (raw === "::1" ? "127.0.0.1" : raw) || null;
+  Object.defineProperty(req, "ip", { get: () => normalized, configurable: true });
   next();
 });
 const adminPortalGuard = require("./modules/auth/guards/adminPortal.guard");
@@ -89,6 +102,18 @@ let allowedOrigins = FRONTEND_ORIGIN.split(",")
 allowedOrigins.push("http://127.0.0.1:3000");
 allowedOrigins.push(`http://${ip.address()}:3000`);
 allowedOrigins.push("http://localhost:3000");
+// Frontend on port 3002
+allowedOrigins.push("http://localhost:3002");
+allowedOrigins.push("http://127.0.0.1:3002");
+allowedOrigins.push(`http://${ip.address()}:3002`);
+// Billing demo page
+allowedOrigins.push("http://localhost:3333");
+allowedOrigins.push("http://127.0.0.1:3333");
+allowedOrigins.push("http://localhost:5555");
+allowedOrigins.push("http://127.0.0.1:5555");
+// HostHub (third-party site integration)
+allowedOrigins.push("http://localhost:3001");
+allowedOrigins.push("http://127.0.0.1:3001");
 
 console.log("✅ Allowed Origins:", allowedOrigins);
 
@@ -109,7 +134,7 @@ app.use(
 
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-client-token"],
   })
 );
 
@@ -128,7 +153,6 @@ registerBackupAuditHooks({
   auditLogger: app.locals.auditLogger,
 });
 
-
 /////////////////////////////////////////////////////////////////////
 /* ===============================================AUDIT=================  
    AUDIT CONTEXT MIDDLEWARE (NEW + REQUIRED)
@@ -142,17 +166,7 @@ app.use(auditContext());
 // const impersonationMiddleware = require("./modules/auth/middlewares/impersonation.middleware");
 // app.use(impersonationMiddleware);
 
-/* ================================================================
-   STATIC SDK FOR PLUGIN UIs (REQUIRED)
-   – Lets frontend plugins load plugin-sdk.js
-================================================================ */
 const path = require("path");
-
-// Serves: http://localhost:4000/plugins/sdk/plugin-sdk.js
-app.use(
-  "/plugins/sdk",
-  express.static(path.join(process.cwd(), "public", "plugins"))
-);
 
 /* ================================================================
    AUTH MODULE ROUTES
@@ -166,16 +180,18 @@ app.use("/api/auth/trusted-devices", require("./modules/auth/routes/trustedDevic
 app.use("/api/auth/apikeys", require("./modules/auth/routes/apiKey.routes"));
 app.use("/api/auth/impersonate", require("./modules/auth/routes/impersonation.routes"));
 
-app.use("/api/admin/impersonation", require("./modules/auth/routes/impersonationLogs.routes"));
-app.use("/api/admin/users", require("./modules/auth/routes/adminUsers.routes"));
-app.use("/api/admin/roles", require("./modules/auth/routes/roles.routes"));
+app.use("/api/admin/impersonation", authGuard, adminPortalGuard, require("./modules/auth/routes/impersonationLogs.routes"));
+app.use("/api/admin/users",         authGuard, adminPortalGuard, require("./modules/auth/routes/adminUsers.routes"));
+app.use("/api/admin/roles",         authGuard, adminPortalGuard, require("./modules/auth/routes/roles.routes"));
+app.use("/api/admin/rbac",          authGuard, adminPortalGuard, require("./modules/auth/routes/rbacAdmin.routes"));
 const ipRulesRoutes = require("./modules/auth/routes/ipRules.routes");
 app.use("/api/ip-rules", ipRulesRoutes);
 
 /* ================================================================
    OTHER MODULE ROUTES
 ================================================================ */
-app.use("/api/v1/clients", require("./modules/clients/clients.routes"));
+app.use("/api/admin/dashboard", authGuard, adminPortalGuard, require("./modules/dashboard/dashboard.routes"));
+app.use("/api/admin/clients", authGuard, adminPortalGuard, require("./modules/clients/clients.routes"));
 
 // ✅ DOMAIN MODULE ROUTES (ALL DOMAINS - USER & ADMIN)
 // This is the FIX for: Cannot GET /api/admin/domains/stats error
@@ -185,7 +201,7 @@ const domainRoutes = require("./modules/domains/index");
 app.use("/api", domainRoutes);
 
 /////services
-app.use("/api/admin", require("./modules/services").adminRoutes);
+app.use("/api/admin", authGuard, adminPortalGuard, require("./modules/services").adminRoutes);
 app.use("/api/client", require("./modules/services").clientRoutes);
 
 /// orders (FIXED & CONSISTENT)
@@ -195,8 +211,40 @@ app.use("/api/client/orders", ordersModule.clientRoutes);
 app.use("/api/admin/orders", authGuard, adminPortalGuard, ordersModule.adminRoutes);
 /////billing////
 const billing = require('./modules/billing');
-  app.use("/api/admin/billing", authGuard, adminPortalGuard, billing.adminRoutes);
-    app.use('/api/client/billing', billing.clientRoutes);
+app.use("/api/admin/billing", authGuard, adminPortalGuard, billing.adminRoutes);
+app.use('/api/client/billing', billing.clientRoutes);
+
+// Start billing cron jobs (renewal processing, overdue detection)
+const { scheduleBillingJobs } = require('./modules/billing/jobs/billing.cron');
+scheduleBillingJobs();
+
+// Client profile endpoints
+app.use('/api/client/profile', require('./modules/clients/client-portal.routes'));
+
+/* ================================================================
+   BROADCAST MODULE (DOCUMENTS & NOTIFICATIONS)
+================================================================ */
+const broadcastModule = require('./modules/broadcast');
+app.use("/api/admin/broadcasts", authGuard, adminPortalGuard, broadcastModule.admin);
+app.use("/api/client/broadcasts", authGuard, broadcastModule.client);
+
+/* ================================================================
+   SERVER MANAGEMENT MODULE
+================================================================ */
+app.use("/api/admin/server-management", authGuard, adminPortalGuard, require("./modules/server-management"));
+
+/* ================================================================
+   ADMIN SYSTEM SETTINGS (storage paths, etc.)
+================================================================ */
+app.use("/api/admin", authGuard, adminPortalGuard, require("./modules/settings/settings.routes"));
+
+/* ================================================================
+   PUBLIC EMBEDDABLE API  —  /public/v1/
+================================================================ */
+app.use("/public/v1", require("./modules/public/public.routes"));
+// Hosted storefront — no API key required
+app.use("/api/store",  require("./modules/public/store.routes"));
+
 /* ================================================================
    BACKUP MODULE (AUTO-LOADS PROVIDERS + ROUTES)
 ================================================================ */
@@ -204,19 +252,69 @@ const backupApi = require("./modules/backup/api");
 app.use("/api", backupApi);
 
 ////////email///
-// ADD your routes AFTER app is loaded (optional)
 const emailRoutes = require("./modules/email/email.routes");
+// Public send API
 app.use("/api/v1/email", emailRoutes);
+// Admin-protected email routes (templates, logs, settings)
+app.use("/api/admin/email", authGuard, adminPortalGuard, emailRoutes);
 
 ///////////////
 /* ================================================================
-   MARKETPLACE MODULE
-   – FIXED: Properly initialize marketplace with async setup
-   – Returns router function that must be called to get middleware
+   PLUGIN MARKETPLACE MODULE
 ================================================================ */
-// NOTE: Marketplace initialization is deferred to init() function
-// This ensures pluginEngine is available before marketplace is initialized
-// See init() function below for marketplace async setup
+const buildMarketplaceRouter = require("./modules/plugin-marketplace/plugin-marketplace.routes");
+app.use("/api", buildMarketplaceRouter({ app, prisma, logger: console }));
+
+// Serve plugin assets (icons, screenshots, etc.)
+const assetPath = require("path").join(process.cwd(), "storage", "plugin-assets");
+app.use("/uploads/plugin-assets", express.static(assetPath));
+
+/* ================================================================
+   INSTALLED PLUGINS API
+================================================================ */
+const pluginStateService = require("./core/plugin-system/plugin-state.service");
+
+app.get("/api/admin/installed-plugins", authGuard, adminPortalGuard, (_req, res) => {
+  const pm = app.locals.pluginManager;
+  if (!pm) return res.json({ success: true, data: [] });
+
+  const plugins = pm.list().map(p => ({
+    ...p,
+    enabled : pluginStateService.isEnabled(p.name),
+    state   : pluginStateService.isEnabled(p.name) ? "enabled" : "disabled",
+  }));
+
+  res.json({ success: true, count: plugins.length, data: plugins });
+});
+
+app.post("/api/admin/installed-plugins/:name/enable", authGuard, adminPortalGuard, (req, res) => {
+  const pm = app.locals.pluginManager;
+  if (!pm) return res.status(503).json({ success: false, message: "Plugin system not ready" });
+  const result = pm.enablePlugin(req.params.name);
+  res.json({ success: result.ok, message: result.message || `Plugin ${req.params.name} enabled` });
+});
+
+app.post("/api/admin/installed-plugins/:name/disable", authGuard, adminPortalGuard, (req, res) => {
+  const pm = app.locals.pluginManager;
+  if (!pm) return res.status(503).json({ success: false, message: "Plugin system not ready" });
+  const result = pm.disablePlugin(req.params.name);
+  res.json({ success: result.ok, message: result.message || `Plugin ${req.params.name} disabled` });
+});
+
+/* ================================================================
+   PLUGIN UI MANIFEST
+   – Returns nav entries contributed by enabled plugins with ui capability
+================================================================ */
+app.get("/api/admin/plugin-ui-manifest", authGuard, adminPortalGuard, (_req, res) => {
+  const pm = app.locals.pluginManager;
+  if (!pm) return res.json({ success: true, data: [] });
+  res.json({ success: true, data: pm.getPluginUiManifest() });
+});
+
+/* ================================================================
+   OPENAPI SPEC ENDPOINT
+================================================================ */
+app.get("/api/openapi.json", (_req, res) => res.json(swaggerSpec));
 
 /* ================================================================
    HEALTH CHECK
@@ -226,107 +324,171 @@ app.get("/health", (req, res) => {
 });
 
 /* ================================================================
-   INIT FUNCTION
-   – Seeds RBAC
-   – Initializes Plugin System
-   – Initializes Marketplace Module (with plugin engine)
-   – Initializes Automation Module (new architecture)
-   – Starts Worker (BullMQ worker)
+   HELPER: Run async operation with timeout
+   – Prevents hangs from long-running operations
+   – Returns null if timeout occurs
+================================================================ */
+async function withTimeout(promise, timeoutMs, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`⏱️ ${label} timed out after ${timeoutMs}ms`)),
+        timeoutMs
+      )
+    ),
+  ]).catch(err => {
+    console.error(`❌ ${label} failed:`, err.message);
+    return null;
+  });
+}
+
+/* ================================================================
+   INIT FUNCTION (IMPROVED)
+   – Non-blocking: Server starts even if modules fail
+   – Timeouts: Each module has a timeout to prevent hanging
+   – Better logging: Shows exactly where it's stuck
+   – Graceful degradation: Logs errors but continues
 ================================================================ */
 async function init() {
   console.log("🚀 Initializing core modules...");
+  const startTime = Date.now();
 
-  /* ------------------------------------------------------------
-     1. RBAC SEED (Required for admin)
-  ------------------------------------------------------------ */
-  const { seedRBAC } = require("./modules/auth/seed/rbac-seed");
-  await seedRBAC(prisma);
-  console.log("🔐 RBAC seeded successfully!");
+  /* ✅ 1. RBAC SEED (Required for auth, usually fast) */
+  console.log("📋 Step 1/6: Seeding RBAC...");
+  try {
+    await withTimeout(
+      (async () => {
+        const { seedRBAC } = require("./modules/auth/seed/rbac-seed");
+        await seedRBAC(prisma);
+      })(),
+      10000,
+      "RBAC seed"
+    );
+    console.log("✅ RBAC seeded successfully!");
+  } catch (err) {
+    console.error("❌ RBAC seed error:", err.message);
+  }
 
-  /* ------------------------------------------------------------
-     2. PLUGIN SYSTEM (MUST LOAD BEFORE AUTOMATION & MARKETPLACE)
-     – Allows automation actions like plugin:<pluginId>:<actionName>
-     – Allows marketplace to verify plugin compatibility
-  ------------------------------------------------------------ */
+  /* ✅ 1b. EMAIL SEED (Templates + default settings) */
+  try {
+    await withTimeout(
+      (async () => {
+        const { seedEmail } = require("./modules/email/seed/email.seed");
+        await seedEmail(prisma);
+      })(),
+      15000,
+      "Email seed"
+    );
+  } catch (err) {
+    console.error("❌ Email seed error:", err.message);
+  }
+
+  /* ✅ 1b-ii. SEED SMTP SETTINGS from env → DB (idempotent, never overwrites) */
+  try {
+    const { seedEnvSettings } = require("./modules/email/emailProvider");
+    await seedEnvSettings();
+  } catch (err) {
+    console.error("❌ Email settings seed error:", err.message);
+  }
+
+  /* ✅ 1c. EMAIL WORKER (background) */
+  try {
+    require("./worker/emailWorker");
+    console.log("✅ Email worker started");
+  } catch (err) {
+    console.error("❌ Email worker error:", err.message);
+  }
+
+  /* ✅ 1d. EXPOSE emailTriggers on app.locals for other modules */
+  app.locals.emailTriggers = require("./modules/email/triggers/email.triggers");
+
+  /* ✅ 2. PLUGIN SYSTEM */
+  console.log("📋 Step 2/5: Initializing Plugin System...");
   const automationLogger = require("./modules/automation/lib/logger");
-  const initPluginModule = require("./modules/plugins");
+  const PluginManager = require("./core/plugin-system/plugin.manager");
 
-  const pluginEngine = await initPluginModule({
-    app,
-    prisma,
-    logger: console,
-    ajv: new (require("ajv"))(),
-    publicKeyPem: null,
-  });
+  const pluginManager = new PluginManager({ app, prisma, logger: console });
 
-  app.locals.pluginEngine = pluginEngine;
-  console.log("✅ Plugin engine initialized");
+  try {
+    await withTimeout(
+      pluginManager.init(),
+      15000,
+      "Plugin system initialization"
+    );
+    app.locals.pluginManager = pluginManager;
+    console.log(`✅ Plugin system initialized (${pluginManager.list().length} plugin(s))`);
+  } catch (err) {
+    console.error("❌ Plugin system error:", err.message);
+    console.warn("⚠️ Continuing without plugins");
+  }
 
-  /* ------------------------------------------------------------
-     3. MARKETPLACE MODULE INITIALIZATION
-     – Now that pluginEngine is available, initialize marketplace
-     – Marketplace uses pluginEngine for verification
-  ------------------------------------------------------------ */
-   try {
-  const initMarketplaceModule = require("./modules/marketplace");
+  /* ✅ 3. AUTOMATION MODULE INITIALIZATION */
+  console.log("📋 Step 4/5: Initializing Automation...");
+  try {
+    const initAutomationModule = require("./modules/automation");
 
-  await initMarketplaceModule({
-    app,
-    prisma,
-    logger: console,
-    pluginEngine,
-    pluginInstaller: pluginEngine?.installer,
-    pluginVerifier: pluginEngine?.verifier,
-    emailService: null,
-    webhookService: null,
-  });
+    const automation = await withTimeout(
+      initAutomationModule({
+        app,
+        prismaClient: prisma,
+        logger: automationLogger,
+        config: {},
+      }),
+      15000, // 15 second timeout
+      "Automation module initialization"
+    );
 
-  console.log("🪐 Marketplace module initialized successfully");
-} catch (err) {
-  console.error("❌ Marketplace initialization failed:", err.message);
-}
+    if (automation && automation.scheduler) {
+      app.locals.scheduler = automation.scheduler;
+      console.log("✅ Automation module initialized successfully");
+    } else {
+      console.warn("⚠️ Automation initialization incomplete - some features may not work");
+    }
+  } catch (err) {
+    console.error("❌ Automation module error:", err.message);
+    console.log("⚠️ Continuing without automation functionality...");
+  }
 
-     
+  /* ✅ 5. START BACKGROUND WORKER (Non-blocking) */
+  console.log("📋 Step 5/6: Starting Background Worker...");
+  try {
+    const startWorker = require("./modules/automation/worker/worker");
 
-// ============================================================
-// END MARKETPLACE INITIALIZATION
-// ============================================================
+    // Start worker in background (don't wait for it)
+    startWorker({
+      app,
+      prisma,
+      logger: automationLogger,
+      concurrency: 5,
+      queueName: "automation",
+    }).then(() => {
+      console.log("✅ Worker started successfully");
+    }).catch(err => {
+      console.error("❌ Worker failed to start:", err.message);
+    });
 
-  /* ------------------------------------------------------------
-     4. AUTOMATION MODULE INITIALIZATION
-     – Registers controllers/routes
-     – Loads tasks/profiles
-     – Starts scheduler
-  ------------------------------------------------------------ */
-  const initAutomationModule = require("./modules/automation");
+    // Don't wait - let it start in background
+    console.log("⏳ Worker starting in background...");
+  } catch (err) {
+    console.error("❌ Worker initialization error:", err.message);
+  }
 
-  const automation = await initAutomationModule({
-    app,
-    prismaClient: prisma,
-    logger: automationLogger,
-    config: {},
-  });
+  /* ✅ 6. START BACKUP WORKERS (Non-blocking) */
+  console.log("📋 Step 6/6: Starting Backup Workers...");
+  try {
+    require("./modules/backup/worker/runner");
+    require("./modules/backup/worker/restoreQueue");
+    require("./modules/backup/worker/retentionQueue");
+    console.log("✅ Backup workers started (backup, restore, retention)");
+  } catch (err) {
+    console.error("❌ Backup worker initialization error:", err.message);
+    console.warn("⚠️ Continuing without backup worker functionality...");
+  }
 
-  app.locals.scheduler = automation.scheduler;
-
-  console.log("⚙️ Automation module initialized successfully");
-
-  /* ------------------------------------------------------------
-     5. START BACKGROUND WORKER
-     – Processes queued jobs (task.run, profile.run)
-     – Required for actual automation execution
-  ------------------------------------------------------------ */
-  const startWorker = require("./modules/automation/worker/worker");
-
-  await startWorker({
-    app,
-    prisma,
-    logger: automationLogger,
-    concurrency: 5, // number of parallel jobs per worker
-    queueName: "automation",
-  });
-
-  console.log("👷 Worker started – Automation engine is live!");
+  const elapsed = Date.now() - startTime;
+  console.log(`\n✅ Initialization complete in ${elapsed}ms`);
+  console.log("🚀 Server ready to accept requests!\n");
 }
 
 /* ================================================================
@@ -335,15 +497,18 @@ async function init() {
 ================================================================ */
 app.use((err, req, res, next) => {
   console.error("💥 Backend Error:", err);
-  res.error(err.message || "Internal Server Error", 500);
+  res.status(err.statusCode || 500).json({ error: err.message || "Internal Server Error" });
 });
 
 /* ================================================================
-   INIT IS CALLED HERE (IMPORTANT!)
+   START INITIALIZATION (Non-blocking)
+   – Calls init() but doesn't block server startup
+   – Server starts immediately and listens for requests
+   – Modules initialize in the background
 ================================================================ */
 init()
-  .then(() => console.log("✅ Backend initialized."))
-  .catch(err => console.error("❌ INIT FAILED:", err));
+  .then(() => console.log("✅ All modules initialized."))
+  .catch(err => console.error("❌ Critical init error:", err.message));
 
 /* ================================================================
    EXPORT APP (NOT INIT)

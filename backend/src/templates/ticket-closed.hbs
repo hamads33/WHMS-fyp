@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Ticket #{{ticket_id}} Closed</title>
+<style>body{margin:0;padding:0;background:#f4f4f7;font-family:'Segoe UI',Arial,sans-serif;color:#333}.wrapper{width:100%;background:#f4f4f7;padding:32px 0}.container{max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)}.header{background:#6b7280;padding:28px 40px;text-align:center}.header h1{color:#fff;margin:0;font-size:22px;font-weight:600}.body{padding:36px 40px}.body p{font-size:15px;line-height:1.7;margin:0 0 16px}.btn{display:inline-block;background:#4f46e5;color:#fff!important;text-decoration:none;padding:13px 32px;border-radius:5px;font-size:15px;font-weight:600;margin:8px 0 16px}.info-box{background:#f8f9fc;border-left:4px solid #6b7280;border-radius:4px;padding:14px 18px;margin:16px 0;font-size:14px;line-height:1.7}.footer{background:#f8f9fc;padding:20px 40px;text-align:center;font-size:12px;color:#888;border-top:1px solid #eef0f4}</style>
+</head><body>
+<div class="wrapper"><div class="container">
+  <div class="header"><h1>{{company_name}}</h1></div>
+  <div class="body">
+    <h2 style="font-size:20px;margin:0 0 16px">Ticket #{{ticket_id}} Closed</h2>
+    <p>Hi {{client_name}},</p>
+    <p>Your support ticket has been marked as <strong>closed</strong>. We hope your issue was resolved to your satisfaction.</p>
+    <div class="info-box">
+      Subject: <strong>{{ticket_subject}}</strong><br/>
+      Closed On: {{closed_at}}<br/>
+      {{#if close_reason}}Resolution: {{close_reason}}{{/if}}
+    </div>
+    <p>If you feel this issue is not fully resolved, you can reopen the ticket within <strong>{{reopen_days}} days</strong>.</p>
+    <p style="text-align:center"><a href="{{ticket_url}}" class="btn">View Ticket</a></p>
+    <p>We value your feedback. Please let us know how we did: <a href="{{feedback_url}}">Leave a Review</a></p>
+    <p>Regards,<br/><strong>{{company_name}} Support Team</strong></p>
+  </div>
+  <div class="footer"><p>&copy; {{year}} {{company_name}}. All rights reserved.</p>{{#if footer_text}}<p>{{footer_text}}</p>{{/if}}</div>
+</div></div>
+</body></html>
