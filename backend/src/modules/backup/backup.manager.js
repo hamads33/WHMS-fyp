@@ -189,7 +189,7 @@ async function performBackupJob(backupId, jobPayload = {}) {
     /* ---------------------------------------
        3. DATABASE DUMP (TEMP FILE LOGIC)
     ---------------------------------------- */
-    if (rec.type === "db" || rec.type === "full") {
+    if (rec.type === "database" || rec.type === "full") {
       await recordStep(rec.id, "db_dump_started", "started");
 
       // FIX: Use your pgDumptofile utility to create a physical temp file
@@ -205,6 +205,17 @@ async function performBackupJob(backupId, jobPayload = {}) {
     if (archiveFiles.length === 0) {
       throw new Error("No files selected for backup");
     }
+
+    /* ---------------------------------------
+       3.5. COLLECT FILE BACKUP METADATA
+    ---------------------------------------- */
+    const fileBackupMeta =
+      rec.type === "files" || rec.type === "full" || rec.type === "config"
+        ? {
+            fileCount: filePaths.length,
+            paths: filePaths.slice(0, 50), // cap to avoid bloating JSON
+          }
+        : null;
 
     /* ---------------------------------------
        4. CREATE ARCHIVE & UPLOAD
@@ -245,13 +256,21 @@ async function performBackupJob(backupId, jobPayload = {}) {
       console.warn("stat() failed:", err.message);
     }
 
+    // Prepare metadata
+    let metadata = { type: rec.type };
+    if (fileBackupMeta) {
+      metadata.fileCount = fileBackupMeta.fileCount;
+      metadata.paths = fileBackupMeta.paths;
+    }
+
     await prisma.backup.update({
       where: { id: rec.id },
       data: {
         status: "success",
         finishedAt: new Date(),
         filePath: remotePath,
-        sizeBytes,
+        sizeBytes: sizeBytes ? BigInt(sizeBytes) : null,
+        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : null,
       },
     });
 

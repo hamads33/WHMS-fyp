@@ -21,7 +21,15 @@ async function performRestoreJob(backupId, payload = {}) {
     if (!backup) throw new Error("Backup not found");
 
     // Use provided destination or default to a restore directory
-    let { destination, restoreFiles = true, restoreDb = false } = payload;
+    let { destination, restoreFiles, restoreDb } = payload;
+
+    // Set default restore flags based on backup type
+    if (restoreFiles === undefined) {
+      restoreFiles = backup.type === "files" || backup.type === "full" || backup.type === "config";
+    }
+    if (restoreDb === undefined) {
+      restoreDb = backup.type === "database" || backup.type === "full";
+    }
     
     // Handle null, undefined, or empty string
     if (!destination || typeof destination !== 'string' || destination.trim() === '') {
@@ -73,7 +81,7 @@ async function performRestoreJob(backupId, payload = {}) {
     // Ensure destination directory exists
     await fse.ensureDir(destination);
 
-    await extractTarGzStream(archiveStream, destination);
+    await extractTarGzStream(archiveStream, destination, { restoreFiles, restoreDb });
 
     await prisma.backupStepLog.create({ 
       data: { backupId, step: "restore_finished", status: "success" } 
@@ -91,10 +99,10 @@ async function performRestoreJob(backupId, payload = {}) {
   }
 }
 
-async function extractTarGzStream(stream, destination) {
+async function extractTarGzStream(stream, destination, { restoreFiles = true, restoreDb = true } = {}) {
   return new Promise((resolve, reject) => {
     const extract = tar.extract();
-    
+
     extract.on("entry", async (header, entryStream, next) => {
       // FIX: Validate header.name exists
       if (!header.name || typeof header.name !== 'string') {
@@ -104,14 +112,29 @@ async function extractTarGzStream(stream, destination) {
         return;
       }
 
+      // Filter entries based on restore flags
+      const isDbFile = header.name === "db.sql" || header.name.endsWith("/db.sql");
+      if (isDbFile && !restoreDb) {
+        console.log(`[restore] Skipping db.sql (restoreDb=false)`);
+        entryStream.resume();
+        next();
+        return;
+      }
+      if (!isDbFile && !restoreFiles) {
+        console.log(`[restore] Skipping file entry (restoreFiles=false): ${header.name}`);
+        entryStream.resume();
+        next();
+        return;
+      }
+
       // FIX: Sanitize the path to prevent path traversal
       const sanitizedName = header.name.replace(/^(\.\.(\/|\\|$))+/, '');
       const destPath = path.join(destination, sanitizedName);
-      
+
       // FIX: Ensure we're still within the destination directory
       const normalizedDest = path.normalize(destination);
       const normalizedPath = path.normalize(destPath);
-      
+
       if (!normalizedPath.startsWith(normalizedDest)) {
         console.warn(`[restore] Skipping entry outside destination:`, header.name);
         entryStream.resume();

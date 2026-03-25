@@ -144,8 +144,12 @@ router.get("/", authGuard, async (req, res) => {
    GET BACKUP DETAIL
 --------------------------------------------------------------------------- */
 router.get("/:id", authGuard, async (req, res) => {
+  const backupId = Number(req.params.id);
+  if (!Number.isInteger(backupId)) {
+    return res.status(400).json({ success: false, error: "Invalid backup ID" });
+  }
   const b = await prisma.backup.findUnique({
-    where: { id: req.params.id },
+    where: { id: backupId },
   });
 
   if (!b) {
@@ -177,8 +181,12 @@ router.get("/:id", authGuard, async (req, res) => {
 --------------------------------------------------------------------------- */
 router.get("/:id/download", authGuard, async (req, res) => {
   try {
+    const backupId = Number(req.params.id);
+    if (!Number.isInteger(backupId)) {
+      return res.status(400).json({ success: false, error: "Invalid backup ID" });
+    }
     const b = await prisma.backup.findUnique({
-      where: { id: req.params.id },
+      where: { id: backupId },
     });
 
     if (!b) {
@@ -248,8 +256,12 @@ router.post(
   validate(RestoreBackupInputSchema),
   async (req, res) => {
     try {
+      const backupId = Number(req.params.id);
+      if (!Number.isInteger(backupId)) {
+        return res.status(400).json({ success: false, error: "Invalid backup ID" });
+      }
       const b = await prisma.backup.findUnique({
-        where: { id: req.params.id },
+        where: { id: backupId },
       });
 
       if (!b) {

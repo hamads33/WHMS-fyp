@@ -15,14 +15,14 @@ const worker = new Worker("backup_retention", async (job) => {
     where: {
       status: "success",
       finishedAt: { not: null },
-      deleted: false // optional field; if you don't have it, use another flag
     }
   });
 
   for (const b of expired) {
     try {
-      // skip if retentionDays not set
+      // skip if retentionDays not set or zero
       const keepDays = b.retentionDays || 0;
+      if (keepDays <= 0) continue;
       if (!b.finishedAt) continue;
       const expiration = new Date(b.finishedAt);
       expiration.setDate(expiration.getDate() + keepDays);
@@ -54,8 +54,9 @@ const worker = new Worker("backup_retention", async (job) => {
         continue;
       }
 
-      // mark backup deleted (soft delete)
-      await prisma.backup.update({ where: { id: b.id }, data: { deleted: true }});
+      // hard delete: remove step logs first (FK safety), then the record
+      await prisma.backupStepLog.deleteMany({ where: { backupId: b.id } });
+      await prisma.backup.delete({ where: { id: b.id } });
 
       await prisma.backupStepLog.create({ data: { backupId: b.id, step: "retention_delete_success", status: "success" } });
       eventBus.emit("backup.retention.deleted", { backupId: b.id });

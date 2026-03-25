@@ -8,12 +8,8 @@
  */
 function auditContextMiddleware() {
   return (req, res, next) => {
-    // Extract client IP
-    const ip =
-      req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
-      req.ip ||
-      req.connection.remoteAddress ||
-      null;
+    // Extract client IP (req.ip is already normalized by app-level middleware)
+    const ip = req.ip || null;
 
     // Extract user agent
     const userAgent = req.headers["user-agent"] || null;

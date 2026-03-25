@@ -297,4 +297,152 @@ router.get("/type-distribution", authGuard, async (req, res) => {
   }
 });
 
+/* --------------------------------------------------------------------------
+   TIMELINE EVENTS (recent backup activity feed)
+   GET /api/backups/analytics/timeline-events?limit=20
+--------------------------------------------------------------------------- */
+router.get("/timeline-events", authGuard, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const admin = isAdmin(req.user);
+    const where = admin ? {} : { createdById: req.user.id };
+
+    const backups = await prisma.backup.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        type: true,
+        sizeBytes: true,
+        createdAt: true,
+        finishedAt: true,
+        errorMessage: true,
+      },
+    });
+
+    const events = backups.map((b) => ({
+      id: b.id,
+      name: b.name,
+      type: b.type || "full",
+      status: b.status,
+      sizeBytes: Number(b.sizeBytes || 0),
+      sizeMB: Number((Number(b.sizeBytes || 0) / (1024 ** 2)).toFixed(2)),
+      createdAt: b.createdAt,
+      finishedAt: b.finishedAt,
+      duration: b.finishedAt
+        ? Math.round((new Date(b.finishedAt) - new Date(b.createdAt)) / 1000)
+        : null,
+      errorMessage: b.errorMessage || null,
+    }));
+
+    return res.json({ success: true, data: { events } });
+  } catch (err) {
+    console.error("Timeline events error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* --------------------------------------------------------------------------
+   SCHEDULE HEATMAP
+   GET /api/backups/analytics/schedule-heatmap?weeks=8
+--------------------------------------------------------------------------- */
+router.get("/schedule-heatmap", authGuard, async (req, res) => {
+  try {
+    const weeks = Math.min(parseInt(req.query.weeks) || 8, 26);
+    const admin = isAdmin(req.user);
+    const where = admin ? {} : { createdById: req.user.id };
+
+    const startDate = new Date(Date.now() - weeks * 7 * 86400000);
+
+    const backups = await prisma.backup.findMany({
+      where: { ...where, createdAt: { gte: startDate } },
+      select: { createdAt: true, status: true },
+    });
+
+    const dayMap = {};
+    backups.forEach((b) => {
+      const key = b.createdAt.toISOString().split("T")[0];
+      if (!dayMap[key]) {
+        dayMap[key] = { date: key, count: 0, successful: 0, failed: 0 };
+      }
+      dayMap[key].count++;
+      if (b.status === "success") dayMap[key].successful++;
+      if (b.status === "failed") dayMap[key].failed++;
+    });
+
+    return res.json({ success: true, data: Object.values(dayMap) });
+  } catch (err) {
+    console.error("Schedule heatmap error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* --------------------------------------------------------------------------
+   LIFECYCLE STATS
+   GET /api/backups/analytics/lifecycle-stats
+--------------------------------------------------------------------------- */
+router.get("/lifecycle-stats", authGuard, async (req, res) => {
+  try {
+    const admin = isAdmin(req.user);
+    const where = admin ? {} : { createdById: req.user.id };
+
+    const now = new Date();
+
+    const allBackups = await prisma.backup.findMany({
+      where,
+      select: {
+        status: true,
+        createdAt: true,
+        retentionDays: true,
+        finishedAt: true,
+      },
+    });
+
+    let created = allBackups.length;
+    let stored = 0;
+    let retained = 0;
+    let expiring = 0;
+    let deleted = 0;
+    let running = 0;
+    let failed = 0;
+
+    allBackups.forEach((b) => {
+      if (b.status === "running" || b.status === "queued") {
+        running++;
+        return;
+      }
+      if (b.status === "failed") {
+        failed++;
+        return;
+      }
+      if (b.status === "success") {
+        stored++;
+        const retention = b.retentionDays || 30;
+        const ref = b.finishedAt || b.createdAt;
+        const expiresAt = new Date(new Date(ref).getTime() + retention * 86400000);
+        const daysLeft = Math.ceil((expiresAt - now) / 86400000);
+
+        if (daysLeft < 0) {
+          deleted++;
+        } else if (daysLeft <= 7) {
+          expiring++;
+        } else {
+          retained++;
+        }
+      }
+    });
+
+    return res.json({
+      success: true,
+      data: { created, stored, retained, expiring, deleted, running, failed },
+    });
+  } catch (err) {
+    console.error("Lifecycle stats error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

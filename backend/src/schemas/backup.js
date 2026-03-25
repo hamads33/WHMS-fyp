@@ -49,6 +49,18 @@ exports.CreateBackupInputSchema = z
       })
       .optional(),
   })
+  .refine(
+    (data) => {
+      if (data.type === "files" || data.type === "config") {
+        return Array.isArray(data.files) && data.files.length > 0;
+      }
+      return true;
+    },
+    {
+      message: "At least one file path is required for files/config backup type",
+      path: ["files"],
+    }
+  )
   .openapi("CreateBackupInput");
 
 exports.RestoreBackupInputSchema = z
