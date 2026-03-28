@@ -1,0 +1,77 @@
+11edbe5 - Muhammad Khalis, 2 weeks ago : folder error fixed
+d2345ba - Muhammad Khalis, 2 weeks ago : Merge branch 'main' of https://github.com/hamads33/WHMS-fyp
+b02b7d9 - Muhammad Khalis, 2 weeks ago : client dashboard screens added
+d8cc8bb - Hammad Iftikhar, 2 weeks ago : billing and invoicing finalized, client layout added
+9d39dfd - Muhammad Khalis, 2 weeks ago : Client Screen components added
+6f699ba - Hammad Iftikhar, 2 weeks ago : db backup tar files deleted
+a19af7c - hamads33, 3 weeks ago : backup controller made comaptible with workflow
+b5012a2 - hamads33, 3 weeks ago : backup
+fb0edb6 - hamads33, 5 weeks ago : Billing and Invoicing backend initiated
+db9c679 - hamads33, 3 months ago : Frontend screens pushed
+2d6190b - hamads33, 3 months ago : Test Scripts added + fixes
+2f91e55 - hamads33, 3 months ago : Final Backup before demo Incase anything goes wrong
+6c729d9 - hamads33, 3 months ago : Backup before workflow fixes
+b238b9c - hamads33, 3 months ago : Marketplace fixed for demo + other work in backend
+ca66ad0 - hamads33, 3 months ago : vm2 vunerability fix+converted into presentable format for part 1
+d977205 - Muhammad Khalis, 3 months ago : Automation + workflow module frontend added+initial work of marketplace module and developer dashboard
+fa75e2d - Muhammad Khalis, 3 months ago : Resolve merge conflict in bun.lock
+7a45b73 - Muhammad Khalis, 3 months ago : frontend modified
+8fdb74c - hamads33, 3 months ago : Project Modules enhanced for part-1 demo
+4796463 - hamads33, 3 months ago : Initial Services and Order Module lifecycle made
+cba8739 - hamads33, 3 months ago : feat(domains): complete domain lifecycle, dns, admin renewal, sync with full integration test
+f62d0d2 - hamads33, 3 months ago : Automation Module validation parameters softened+Separate dir for builtin actions+Changes made in Plugin Engine
+9640d9b - hamads33, 3 months ago : Automation Module Backend made comapatible with workflow builder
+6db9247 - Muhammad Khalis, 3 months ago : automation module ui + workflow Builder added+partial frontendtobackend wiring
+a051b02 - hamads33, 3 months ago : Fix backend bugs and stabilize backup module
+205880e - Muhammad Khalis, 3 months ago : frontend upgraded
+d9b2401 - Hammad bin Iftikhar, 3 months ago : comments added in automation module for better understanding
+905252c - Hammad bin Iftikhar, 3 months ago : dependency approval pipeline+manifest schema updated to a more moderate version
+81d7336 - Hammad bin Iftikhar, 3 months ago : Clean Marketplace ZIP Upload Pipeline created
+ba3735b - Hammad bin Iftikhar, 3 months ago : ddd architecture not working for us marketplace scrapped
+b261267 - Hammad bin Iftikhar, 3 months ago : Merge branch 'main' of https://github.com/hamads33/WHMS-fyp
+4995c4e - Hammad bin Iftikhar, 3 months ago : Plugin module upgraded
+2a9e507 - Muhammad Khalis, 3 months ago : Initial admin and client screens setup types defined and auth +impersonation connected to backend
+a38e464 - Muhammad Khalis, 3 months ago : next.js project initialization+shadcn,tailwindcss setup
+aa5ae75 - Muhammad-khalis, 3 months ago : Scrapped old frontend folder
+5141745 - Hammad bin Iftikhar, 3 months ago : Bug fixed in auth+backup module upgraded
+3ec5ea7 - Hammad bin Iftikhar, 4 months ago : Partial upgrade of marketplace module to DDD architecture
+84d08c4 - Hammad bin Iftikhar, 4 months ago : prisma schema cleaned + new marketplace seed file added
+47486d7 - Hammad bin Iftikhar, 4 months ago : bug fixes
+fc6d95b - Hammad bin Iftikhar, 4 months ago : Marketplace Module backend added
+52b2197 - Hammad bin Iftikhar, 4 months ago : Ui Improved automation section
+cdcd92e - Hammad bin Iftikhar, 4 months ago : fixes applied in frontend automation module
+54bc958 - Hammad bin Iftikhar, 4 months ago : Wasm plugin compatibility added
+023c088 - Muhammad-khalis, 4 months ago : Fix automation module: profiles, tasks, shadcn UI upgrade
+349a35c - Hammad bin Iftikhar, 4 months ago : VM Sandboxing added+ Js plugin support
+3040fc3 - Hammad bin Iftikhar, 4 months ago : Refractored automation module to support modular monolithic architecture
+ebb8f26 - Hammad bin Iftikhar, 4 months ago : Plugin Sandboxing + edited stateless plugin engine to partial statefull plugin engine
+d2b789e - Hammad bin Iftikhar, 4 months ago : Stateless Plugin Engine Added with POC frontend
+7a3c803 - Hammad bin Iftikhar, 4 months ago : Initiation of Crons and Plugin backend
+408cc1a - Hammad bin Iftikhar, 4 months ago : Backup module(frontend)+Domain Module (frontend+backend) + automation frontend (starter) added
+4e0add0 - Hammad bin Iftikhar, 4 months ago : Domain Module Screens added + WHOIS Backend
+3d298d0 - Muhammad-khalis, 4 months ago : Frontend custom blocks added + Initial work on modules screens
+951564e - Hammad bin Iftikhar, 4 months ago : Admin Screens added in frontend + Passwordless auth added in backend
+c5c4493 - Muhammad-khalis, 5 months ago : Merge: apply transferred changes from local-backup-before-push
+d4ce7c3 - Muhammad-khalis, 5 months ago : WIP: backup of transferred files before syncing with origin
+b55b1aa - Hammad bin Iftikhar, 5 months ago : modularity added + client module initial work
+99de5fe - Hammad bin Iftikhar, 5 months ago : Normalize folder name to lowercase: backend
+14d7aee - Hammad bin Iftikhar, 5 months ago : Temp rename Backend -> backend_tmp to force lowercase normalization
+0bc0a7a - Hammad bin Iftikhar, 5 months ago : Normalize folder names to lowercase: backend, misc
+550d5f9 - Hammad bin Iftikhar, 5 months ago : Temp rename to force case-sensitive normalization
+7e098ae - Hammad bin Iftikhar, 5 months ago : Remove stale lowercase backend folder (normalize folder structure)
+0862cc8 - Hammad bin Iftikhar, 5 months ago : Normalize folder name case: Backend
+5cdcf2b - Hammad bin Iftikhar, 5 months ago : api/v1/email/send endpoint issue solved
+ef6ef84 - Hammad bin Iftikhar, 5 months ago : docker-compose issue resolved
+8beae8e - Hammad bin Iftikhar, 5 months ago : SMTP Server (Mail Trap) Sandbox setup + Bug fixes in Docker Compose
+aebf543 - Muhammad-Khalis, 5 months ago : Email Module Added
+49daf37 - Muhammad-Khalis, 5 months ago : Delete react.svg
+a041a45 - Hammad bin Iftikhar, 5 months ago : sign-out bug fix
+0430ce7 - Hammad bin Iftikhar, 5 months ago : Landing Page + Server-Setup Script added
+edfbfa7 - Hammad bin Iftikhar, 5 months ago : auth divided into modules
+56c09f4 - Hammad bin Iftikhar, 6 months ago : Updated Readme and some minimal changes in code
+7e320af - Hammad bin Iftikhar, 6 months ago : Auth-service
+7a828eb - Hammad bin Iftikhar, 6 months ago : Add Backend folder with Postgres setup, update .gitignore
+1e4c48b - Hammad bin Iftikhar, 6 months ago : Moved frontend code into frontend/ folder
+c6c9389 - Hammad bin Iftikhar, 6 months ago : Resolved README.md merge conflict
+1f9509f - Hammad bin Iftikhar, 6 months ago : Initial Vite + React setup
+87d4099 - hamads33, 6 months ago : Initial commit
