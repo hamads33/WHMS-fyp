@@ -1,28 +1,51 @@
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
-const statusConfig = {
-  Active: 'bg-foreground/10 text-foreground border-foreground/20',
-  Suspended: 'bg-muted text-muted-foreground border-border',
-  Expired: 'bg-muted text-muted-foreground border-border',
-  Paid: 'bg-foreground/10 text-foreground border-foreground/20',
-  Unpaid: 'bg-muted text-muted-foreground border-border',
-  Overdue: 'bg-destructive/10 text-destructive border-destructive/20',
-  Open: 'bg-foreground/10 text-foreground border-foreground/20',
-  Answered: 'bg-muted text-muted-foreground border-border',
-  Closed: 'bg-muted text-muted-foreground border-border',
-  'Pending Transfer': 'bg-muted text-muted-foreground border-border',
-  Completed: 'bg-foreground/10 text-foreground border-foreground/20',
-  High: 'bg-destructive/10 text-destructive border-destructive/20',
-  Medium: 'bg-muted text-muted-foreground border-border',
-  Low: 'bg-muted text-muted-foreground border-border',
+// B&W status styling — no colors, just semantic meaning
+const STATUS_STYLES = {
+  // Positive / active
+  active:     'bg-accent text-accent-foreground',
+  paid:       'bg-accent text-accent-foreground',
+  completed:  'bg-accent text-accent-foreground',
+  open:       'border-foreground/30 text-foreground',
+  answered:   'border-foreground/30 text-foreground',
+
+  // In-progress / neutral
+  pending:    'bg-muted text-foreground border-border',
+  processing: 'bg-muted text-foreground border-border',
+  unpaid:     'bg-muted text-foreground border-border',
+  medium:     'bg-muted text-foreground border-border',
+
+  // Negative / error
+  overdue:    'text-destructive border-destructive',
+  high:       'text-destructive border-destructive',
+  suspended:  'text-destructive border-destructive',
+  failed:     'text-destructive border-destructive',
+  cancelled:  'text-destructive border-destructive',
+
+  // Verified / account state
+  verified:   'border-foreground/30 text-foreground',
+  unverified: 'bg-muted text-muted-foreground border-border',
+  disabled:   'text-destructive border-destructive',
+
+  // Inactive / muted
+  expired:    'bg-muted text-muted-foreground border-border',
+  closed:     'bg-muted text-muted-foreground border-border',
+  inactive:   'bg-muted text-muted-foreground border-border',
+  low:        'bg-muted text-muted-foreground border-border',
+  draft:      'bg-muted text-muted-foreground border-border',
+  'pending transfer': 'bg-muted text-muted-foreground border-border',
 }
 
 export function StatusBadge({ status, className }) {
+  if (!status) return null
+  const key = status.toLowerCase()
+  const styles = STATUS_STYLES[key] ?? 'bg-muted text-muted-foreground border-border'
+
   return (
     <Badge
       variant="outline"
-      className={cn('font-medium text-xs', statusConfig[status] ?? '', className)}
+      className={cn('font-medium text-xs capitalize', styles, className)}
     >
       {status}
     </Badge>
