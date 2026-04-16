@@ -38,3 +38,11 @@ Backend/dist/
 
 # Logs
 *.log
+
+# Backup files
+*.tar
+*.tar.gz
+*.tgz
+storage/backups/
+backend/storage/backups/
+backend/src/worker/storage/backups/
