@@ -149,6 +149,51 @@ const SettingsController = {
       return res.status(500).json({ error: err.message || "Failed to update setting" });
     }
   },
+
+  /**
+   * GET /api/admin/settings/notifications
+   * Returns all notification settings grouped by event type.
+   * Each notification defaults to enabled (true) if not explicitly set.
+   */
+  async getNotifications(req, res) {
+    try {
+      const NOTIFICATION_KEYS = [
+        'service.activated',
+        'service.suspended',
+        'service.terminated',
+        'billing.invoice_created',
+        'billing.payment_received',
+        'billing.payment_overdue',
+        'billing.refund_issued',
+        'order.placed',
+        'support.ticket_created',
+        'support.ticket_reply',
+        'support.ticket_closed',
+      ];
+
+      const prisma = require("../../../../prisma");
+      const rows = await prisma.systemSetting.findMany({
+        where: { key: { in: NOTIFICATION_KEYS.map(k => `notifications.${k}`) } },
+      });
+
+      // Build map of stored settings
+      const settingsMap = {};
+      for (const row of rows) {
+        const key = row.key.replace('notifications.', '');
+        settingsMap[key] = row.value !== false && row.value !== 'false';
+      }
+
+      // Build result with defaults
+      const result = {};
+      for (const key of NOTIFICATION_KEYS) {
+        result[key] = settingsMap[key] !== undefined ? settingsMap[key] : true;
+      }
+
+      return res.json({ success: true, notifications: result });
+    } catch (err) {
+      return res.status(500).json({ error: err.message || "Failed to fetch notification settings" });
+    }
+  },
 };
 
 module.exports = SettingsController;

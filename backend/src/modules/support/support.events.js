@@ -191,4 +191,77 @@ function onSupportEvent(eventBus, event, handler) {
   eventBus.on(event, handler);
 }
 
-module.exports = { SUPPORT_EVENTS, createSupportEmitter, onSupportEvent };
+/**
+ * Register email trigger listeners for support events.
+ * Call this during module initialization to wire support events to email notifications.
+ * @param {object} eventBus - platform event bus
+ */
+function registerEmailTriggers(eventBus) {
+  const emailTriggers = require('../../email/triggers/email.triggers');
+
+  // Ticket created notification
+  eventBus.on(SUPPORT_EVENTS.TICKET_CREATED, async ({ ticket, client, department }) => {
+    try {
+      if (client) {
+        await emailTriggers.fire('support.ticket_created', {
+          clientEmail: client.email,
+          clientName: client.name,
+          ticketId: ticket.ticketNumber,
+          subject: ticket.subject,
+          department: department?.name || 'Support',
+          priority: ticket.priority,
+          message: ticket.description,
+          ticketUrl: `${process.env.PORTAL_URL || 'https://portal.whms.local'}/support/tickets/${ticket.id}`,
+        });
+      }
+    } catch (err) {
+      console.error('[Support Events] Failed to send ticket_created email:', err.message);
+    }
+  });
+
+  // Ticket reply notification
+  eventBus.on(SUPPORT_EVENTS.TICKET_REPLY_ADDED, async ({ ticket, reply, author, isInternal }) => {
+    try {
+      if (ticket.client && !isInternal) {
+        await emailTriggers.fire('support.ticket_reply', {
+          clientEmail: ticket.client.email,
+          clientName: ticket.client.name,
+          ticketId: ticket.ticketNumber,
+          subject: ticket.subject,
+          status: ticket.status,
+          replyAuthor: author?.name || 'Support Team',
+          replyDate: reply.createdAt || new Date(),
+          replyMessage: reply.message,
+          ticketUrl: `${process.env.PORTAL_URL || 'https://portal.whms.local'}/support/tickets/${ticket.id}`,
+        });
+      }
+    } catch (err) {
+      console.error('[Support Events] Failed to send ticket_reply email:', err.message);
+    }
+  });
+
+  // Ticket closed notification
+  eventBus.on(SUPPORT_EVENTS.TICKET_CLOSED, async ({ ticket, closedBy, resolutionNote }) => {
+    try {
+      if (ticket.client) {
+        await emailTriggers.fire('support.ticket_closed', {
+          clientEmail: ticket.client.email,
+          clientName: ticket.client.name,
+          ticketId: ticket.ticketNumber,
+          subject: ticket.subject,
+          closedAt: new Date(),
+          reason: resolutionNote || 'Ticket resolved',
+          reopenDays: 7,
+          ticketUrl: `${process.env.PORTAL_URL || 'https://portal.whms.local'}/support/tickets/${ticket.id}`,
+          feedbackUrl: `${process.env.PORTAL_URL || 'https://portal.whms.local'}/support/tickets/${ticket.id}/feedback`,
+        });
+      }
+    } catch (err) {
+      console.error('[Support Events] Failed to send ticket_closed email:', err.message);
+    }
+  });
+
+  console.log('[Support Events] Email trigger listeners registered');
+}
+
+module.exports = { SUPPORT_EVENTS, createSupportEmitter, onSupportEvent, registerEmailTriggers };

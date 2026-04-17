@@ -81,7 +81,7 @@ async function createOrder(clientId, dto) {
 
   // Trigger "order_created" automation (optional)
   try {
-    await triggerServiceAutomation("order_created", snapshotData, order);
+    await triggerServiceAutomation("order_created", order.snapshot, order);
   } catch (err) {
     console.error("Failed to trigger order creation automation:", err.message);
   }
@@ -423,9 +423,6 @@ async function terminate(orderId, reason = "Admin action") {
  * Integrates with ServiceAutomation module for provisioning, webhooks, etc.
  */
 async function triggerServiceAutomation(event, snapshotData, orderData) {
-  // This would call the service automation module if available
-  // For now, this is a stub that can be integrated later
-
   const automationEventMap = {
     order_created: "create",
     order_activated: "create",
@@ -438,13 +435,19 @@ async function triggerServiceAutomation(event, snapshotData, orderData) {
   const serviceEvent = automationEventMap[event];
   if (!serviceEvent) return;
 
-  // TODO: Integrate with service automation service
-  // const automationService = require("../../services/services/service-automation.service");
-  // await automationService.executeEvent(snapshotData.service.id, serviceEvent, {
-  //   order: orderData,
-  //   service: snapshotData.service,
-  //   plan: snapshotData.plan,
-  // });
+  const serviceId = snapshotData?.service?.id;
+  if (!serviceId) return;
+
+  try {
+    const automationService = require("../../services/services/service-automation.service");
+    await automationService.executeEvent(serviceId, serviceEvent, {
+      order: orderData,
+      service: snapshotData.service,
+      plan: snapshotData.planData,
+    });
+  } catch (err) {
+    console.error("[ServiceAutomation] Failed to trigger event:", serviceEvent, err.message);
+  }
 }
 
 /**

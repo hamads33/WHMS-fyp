@@ -22,6 +22,7 @@ const {
   isDueForRenewal,
 } = require("../utils/billing.util");
 const provisioningHooks = require("../../provisioning/utils/provisioning-hooks");
+const emailTriggers = require("../../email/triggers/email.triggers");
 
 // ============================================================
 // INVOICE TYPE CONSTANTS
@@ -521,6 +522,33 @@ class BillingService {
       try {
         await invoiceService.markOverdue(invoice.id);
         results.markedOverdue++;
+
+        // Fetch full invoice with client for email trigger
+        const fullInvoice = await prisma.invoice.findUnique({
+          where: { id: invoice.id },
+          include: { client: true },
+        });
+
+        // Fire overdue notification email
+        if (fullInvoice && fullInvoice.client) {
+          try {
+            const daysOverdue = Math.floor(
+              (Date.now() - new Date(fullInvoice.dueDate).getTime()) / (1000 * 60 * 60 * 24)
+            );
+            await emailTriggers.fire('billing.payment_overdue', {
+              clientEmail: fullInvoice.client.email,
+              clientName: fullInvoice.client.name,
+              invoiceId: fullInvoice.invoiceNumber,
+              invoiceTotal: fullInvoice.total,
+              dueDate: fullInvoice.dueDate,
+              daysOverdue: Math.max(0, daysOverdue),
+              invoiceUrl: `${process.env.PORTAL_URL || 'https://portal.whms.local'}/invoices/${fullInvoice.id}`,
+              supportEmail: process.env.SUPPORT_EMAIL || 'support@whms.local',
+            });
+          } catch (emailErr) {
+            console.error(`Failed to send overdue email for invoice ${invoice.id}:`, emailErr.message);
+          }
+        }
 
         if (autoSuspend && invoice.orderId) {
           // Check order isn't already suspended

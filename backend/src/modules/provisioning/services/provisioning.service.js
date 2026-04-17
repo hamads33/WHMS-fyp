@@ -13,6 +13,7 @@
 const prisma = require("../../../../prisma");
 const vestaCPClient = require("../clients/vestacp-client");
 const { generateSecurePassword } = require("../utils/provisioning.util");
+const { encryptValue, decryptValue } = require("../../../utils/encryption");
 
 class ProvisioningService {
   /**
@@ -101,7 +102,7 @@ class ProvisioningService {
           orderId,
           clientId,
           username,
-          password: password, // ⚠️ TODO: encrypt this in production
+          password: encryptValue(password),
           controlPanel: "vestacp",
           status: "active",
           provisionedAt: new Date(),
@@ -411,7 +412,7 @@ class ProvisioningService {
         data: {
           hostingAccountId: account.id,
           email: fullEmail,
-          password: password, // ⚠️ TODO: encrypt
+          password: encryptValue(password),
           quota: emailData.quota || 100,
           status: "active",
         },

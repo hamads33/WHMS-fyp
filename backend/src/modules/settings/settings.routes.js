@@ -9,6 +9,7 @@ router.put("/settings/storage-paths", storagePathsCtrl.update);
 router.get("/settings", settingsCtrl.getAll);
 router.get("/settings/provisioning", settingsCtrl.getProvisioning);
 router.put("/settings/provisioning", settingsCtrl.setProvisioning);
+router.get("/settings/notifications", settingsCtrl.getNotifications);
 router.get("/settings/vestacp", settingsCtrl.getVestacp);
 router.put("/settings/vestacp", settingsCtrl.setVestacp);
 router.post("/settings/vestacp/test", settingsCtrl.testVestacp);

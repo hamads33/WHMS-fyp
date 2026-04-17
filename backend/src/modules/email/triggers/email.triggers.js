@@ -3,6 +3,7 @@
 // Central event-driven email trigger dispatcher.
 // Usage: emailTriggers.fire('user.registered', { ... })
 //
+const prisma = require('../../../../prisma');
 const { enqueueEmail } = require('../email.service');
 
 // ─────────────────────────────────────────────────────────────
@@ -312,6 +313,21 @@ function registerTrigger(eventName, config) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// CHECK NOTIFICATION ENABLED
+// ─────────────────────────────────────────────────────────────
+async function notificationEnabled(eventName) {
+  const key = `notifications.${eventName}`;
+  try {
+    const setting = await prisma.systemSetting.findUnique({ where: { key } });
+    if (setting === null) return true;
+    return setting.value !== false && setting.value !== 'false';
+  } catch (err) {
+    console.warn(`[EmailTrigger] Failed to check notification setting for ${eventName}:`, err.message);
+    return true;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // FIRE
 // ─────────────────────────────────────────────────────────────
 async function fire(eventName, data = {}) {
@@ -320,6 +336,13 @@ async function fire(eventName, data = {}) {
     console.warn(`[EmailTrigger] No trigger registered for event: ${eventName}`);
     return null;
   }
+
+  // Check if this notification is enabled
+  if (!(await notificationEnabled(eventName))) {
+    console.log(`[EmailTrigger] Notification disabled for event: ${eventName}`);
+    return null;
+  }
+
   try {
     const { to, toName, payload } = config.build(data);
     if (!to) throw new Error(`Trigger "${eventName}" build() returned no recipient`);

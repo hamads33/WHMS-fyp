@@ -7,6 +7,61 @@ const PasswordResetService = require("../auth/services/passwordReset.service");
 
 const SALT_ROUNDS = 12;
 
+// RFC 5321 / RFC 5322 simplified email regex
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Maximum field lengths enforced on every write
+const FIELD_LIMITS = {
+  email:    254,
+  password: 128,
+  company:  100,
+  phone:     30,
+  address:  255,
+  country:    3,
+  city:     100,
+  postal:    20,
+};
+
+/**
+ * Validate a client payload and return a map of field → message.
+ * `requirePassword` controls whether the password field is checked.
+ */
+function validateClientFields(body, { requirePassword = false } = {}) {
+  const { email, password, company, phone, address, country, city, postal } = body;
+  const fields = {};
+
+  if (email !== undefined) {
+    if (!email) {
+      fields.email = "Email is required";
+    } else if (!EMAIL_REGEX.test(email)) {
+      fields.email = "Must be a valid email address";
+    } else if (email.length > FIELD_LIMITS.email) {
+      fields.email = `Must be ${FIELD_LIMITS.email} characters or fewer`;
+    }
+  } else if (requirePassword) {
+    fields.email = "Email is required";
+  }
+
+  if (requirePassword) {
+    if (!password) {
+      fields.password = "Password is required";
+    } else if (password.length < 8) {
+      fields.password = "Must be at least 8 characters";
+    } else if (password.length > FIELD_LIMITS.password) {
+      fields.password = `Must be ${FIELD_LIMITS.password} characters or fewer`;
+    }
+  }
+
+  if (company  && company.length  > FIELD_LIMITS.company)  fields.company  = `Must be ${FIELD_LIMITS.company} characters or fewer`;
+  if (phone    && phone.length    > FIELD_LIMITS.phone)    fields.phone    = `Must be ${FIELD_LIMITS.phone} characters or fewer`;
+  if (address  && address.length  > FIELD_LIMITS.address)  fields.address  = `Must be ${FIELD_LIMITS.address} characters or fewer`;
+  if (country  && country.length  > FIELD_LIMITS.country)  fields.country  = `Must be ${FIELD_LIMITS.country} characters or fewer`;
+  if (city     && city.length     > FIELD_LIMITS.city)     fields.city     = `Must be ${FIELD_LIMITS.city} characters or fewer`;
+  if (postal   && postal.length   > FIELD_LIMITS.postal)   fields.postal   = `Must be ${FIELD_LIMITS.postal} characters or fewer`;
+
+  return fields;
+}
+
 const ClientsController = {
   // GET /api/admin/clients/stats
   async stats(req, res) {
@@ -148,8 +203,9 @@ const ClientsController = {
     try {
       const { email, password, company, phone, address, country, city, postal } = req.body;
 
-      if (!email || !password) {
-        return res.status(400).json({ error: "email and password are required" });
+      const fieldErrors = validateClientFields(req.body, { requirePassword: true });
+      if (Object.keys(fieldErrors).length > 0) {
+        return res.status(400).json({ error: "Validation failed", fields: fieldErrors });
       }
 
       const exists = await prisma.user.findUnique({ where: { email } });
@@ -195,6 +251,11 @@ const ClientsController = {
     try {
       const { id } = req.params;
       const { company, phone, address, country, city, postal } = req.body;
+
+      const fieldErrors = validateClientFields(req.body);
+      if (Object.keys(fieldErrors).length > 0) {
+        return res.status(400).json({ error: "Validation failed", fields: fieldErrors });
+      }
 
       const user = await prisma.user.findUnique({ where: { id } });
       if (!user) return res.status(404).json({ error: "Client not found" });

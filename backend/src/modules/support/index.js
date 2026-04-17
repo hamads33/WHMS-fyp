@@ -17,6 +17,7 @@
 const createSupportRouter = require("./support.routes");
 const ChatGateway          = require("./chats/chat.gateway");
 const prisma               = require("../../../prisma/index");
+const { registerEmailTriggers } = require("./support.events");
 
 const DEFAULT_DEPARTMENTS = [
   { name: "General Support",   slug: "general",   description: "General inquiries and support",         slaResponseTime: 480,  slaResolutionTime: 2880 },
@@ -60,6 +61,15 @@ function registerSupport(app, io, { authenticate, authorizeRoles }) {
 
   // 3. Attach Socket.io gateway at /support/chat namespace
   ChatGateway.attach(io);
+
+  // 4. Register email trigger listeners to event bus
+  try {
+    const eventBus = require("../../core/plugin-system/event.bus");
+    registerEmailTriggers(eventBus);
+    console.log("[Support Module] Email trigger listeners registered");
+  } catch (err) {
+    console.warn("[Support Module] Failed to register email triggers:", err.message);
+  }
 
   console.log("[Support Module] REST routes mounted at /api/support");
   console.log("[Support Module] WebSocket gateway active at /support/chat");

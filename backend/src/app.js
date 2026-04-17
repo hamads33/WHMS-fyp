@@ -117,26 +117,30 @@ allowedOrigins.push("http://127.0.0.1:3001");
 
 console.log("✅ Allowed Origins:", allowedOrigins);
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (mobile apps, Postman, server-side)
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, server-side)
+    if (!origin) return callback(null, true);
 
-      if (allowedOrigins.includes(origin)) {
-        console.log("✔ CORS Allowed:", origin);
-        return callback(null, true);
-      }
+    if (allowedOrigins.includes(origin)) {
+      console.log("✔ CORS Allowed:", origin);
+      return callback(null, true);
+    }
 
-      console.log("✖ CORS Blocked:", origin);
-      return callback(null, false);
-    },
+    console.log("✖ CORS Blocked:", origin);
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-client-token"],
+};
 
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-client-token"],
-  })
-);
+app.use(cors(corsOptions));
+
+// Explicitly handle OPTIONS preflight before any auth guards reach the route handlers.
+// Without this, complex preflight requests (those with custom headers or non-simple
+// methods) can fall through to an auth-guarded route handler and receive 401.
+app.options("/{*path}", cors(corsOptions));
 
 console.log("Google Client ID:", process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 const { registerBackupAuditHooks } = require("./modules/backup/bootstrap");

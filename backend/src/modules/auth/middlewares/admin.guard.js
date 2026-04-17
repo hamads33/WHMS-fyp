@@ -33,7 +33,7 @@ function adminGuard(options = {}) {
       ////////////////////////////////////////////////////////////
       // DEBUG MODE (DEV ONLY)
       ////////////////////////////////////////////////////////////
-      if (debugBypass === true) {
+      if (debugBypass === true && process.env.NODE_ENV !== 'production') {
         console.warn("⚠️ adminGuard DEBUG MODE ENABLED");
         req.user.mfaVerified = true;
         return next();

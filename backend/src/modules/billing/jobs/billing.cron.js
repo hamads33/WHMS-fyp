@@ -12,15 +12,16 @@
 const cron = require("node-cron");
 const BillingService = require("../services/billing.service");
 const invoiceService = require("../services/invoice.service");
+const emailTriggers = require("../../email/triggers/email.triggers");
+const prisma = require("../../../../prisma");
 
 /**
  * Emit a billing event for external notification services (FR-13)
- * Replace this with your actual event emitter / webhook dispatcher
+ * Fires email notifications based on event type
  */
 function emitBillingEvent(event, payload) {
-  // TODO: hook into your existing Webhook / notification system
-  // e.g. webhookService.dispatch(event, payload)
   console.log(`[BILLING EVENT] ${event}`, JSON.stringify(payload));
+  // Email notifications are handled per-invoice in processOverdueInvoices
 }
 
 /**

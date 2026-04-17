@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "nodemon src/server.js",
     "dev": "nodemon src/server.js",
     "prisma:generate": "npx prisma generate",
     "prisma:migrate": "npx prisma migrate dev",
@@ -53,7 +53,7 @@
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "node-fetch": "^2.7.0",
-    "nodemailer": "^7.0.10",
+    "nodemailer": "^8.0.5",
     "openpgp": "^6.2.2",
     "otplib": "^12.0.1",
     "pdfkit": "^0.18.0",
@@ -78,7 +78,7 @@
   "devDependencies": {
     "cross-env": "^10.1.0",
     "jest": "^30.2.0",
-    "nodemon": "^3.1.10",
+    "nodemon": "^3.1.14",
     "openapi-typescript": "^7.10.1",
     "supertest": "^7.1.4"
   }
