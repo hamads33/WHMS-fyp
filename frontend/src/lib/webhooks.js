@@ -1,33 +1,40 @@
 import { apiFetch } from "@/lib/api/client";
 
+const BASE = "/api/admin/server-management/webhooks";
+
 export const WebhooksAPI = {
   list() {
-    return apiFetch("/api/webhooks");
+    return apiFetch(BASE);
   },
 
   create(data) {
-    return apiFetch("/api/webhooks", {
+    return apiFetch(BASE, {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  toggle(id, active) {
-    return apiFetch(`/api/webhooks/${id}`, {
+  update(id, data) {
+    return apiFetch(`${BASE}/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ active }),
+      body: JSON.stringify(data),
     });
   },
 
   remove(id) {
-    return apiFetch(`/api/webhooks/${id}`, {
+    return apiFetch(`${BASE}/${id}`, {
       method: "DELETE",
     });
   },
 
-  test(id) {
-    return apiFetch(`/api/webhooks/${id}/test`, {
-      method: "POST",
+  getSettings() {
+    return apiFetch(`${BASE}/settings`);
+  },
+
+  updateSettings(enabledEvents) {
+    return apiFetch(`${BASE}/settings`, {
+      method: "PUT",
+      body: JSON.stringify({ enabledEvents }),
     });
   },
 };

@@ -3,6 +3,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { AuthAPI } from "@/lib/api/auth";
+import { ImpersonationAPI } from "@/lib/impersonation";
 import { useRouter } from "next/navigation";
 
 const AuthContext = createContext(null);
@@ -32,7 +33,11 @@ export function AuthProvider({ children }) {
       // Only update state if we got valid session data
       if (data) {
         setSession(data);
-        setUser(data.user || null);
+        // Merge portals array into user object so canAccessPortal() works
+        const userWithPortals = data.user
+          ? { ...data.user, portals: data.portals || data.user.portals || [] }
+          : null;
+        setUser(userWithPortals);
         setPortal(data.portal || null);
         setImpersonating(data.impersonating || false);
         setImpersonator(data.impersonator || null);
@@ -44,6 +49,7 @@ export function AuthProvider({ children }) {
         setImpersonating(false);
         setImpersonator(null);
       }
+      return data;
     } catch (err) {
       // Don't log 401 errors as they're expected when not logged in
       if (err.message !== "UNAUTHENTICATED") {
@@ -78,14 +84,19 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     try {
       const response = await AuthAPI.login(email, password);
-      
+
+      // MFA required — return early so the login page can redirect to /mfa-verify
+      if (response?.requiresMFA) {
+        return response;
+      }
+
       // Reload session after login
       await loadSession();
-      
+
       // Redirect to appropriate portal
       const defaultPortal = getDefaultPortal(response.user?.roles || []);
       router.push(defaultPortal);
-      
+
       return response;
     } catch (err) {
       throw err;
@@ -125,14 +136,14 @@ export function AuthProvider({ children }) {
   
   const startImpersonation = async (targetUserId, reason) => {
     try {
-      const response = await AuthAPI.startImpersonation(targetUserId, reason);
-      
-      // Reload session with impersonated user
+      const response = await ImpersonationAPI.start({ targetUserId, reason });
+
+      // Backend always sets portal = "client" during impersonation.
+      // Always redirect to client dashboard — the client layout allows
+      // impersonating admins regardless of the target user's roles.
       await loadSession();
-      
-      // Redirect to client portal
       router.push("/client/dashboard");
-      
+
       return response;
     } catch (err) {
       throw err;
@@ -141,12 +152,11 @@ export function AuthProvider({ children }) {
 
   const stopImpersonation = async (sessionId) => {
     try {
-      await AuthAPI.stopImpersonation(sessionId);
-      
-      // Reload session as admin
+      await ImpersonationAPI.stop({ sessionId });
+
+      // Backend already restored the admin cookie — just reload session
       await loadSession();
-      
-      // Redirect back to admin
+
       router.push("/admin/dashboard");
     } catch (err) {
       throw err;
@@ -280,7 +290,7 @@ function getDefaultPortal(roles) {
     return "/reseller/dashboard";
   }
   if (roles.includes("developer")) {
-    return "/developer/dashboard";
+    return "/developer";
   }
   if (roles.includes("client")) {
     return "/client/dashboard";

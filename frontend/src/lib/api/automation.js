@@ -64,16 +64,17 @@ export const AutomationAPI = {
   },
 
   // POST /api/automation/profiles/:profileId/run
-runProfile(profileId) {
-  if (!profileId) {
-    throw new Error("profileId is required");
-  }
+  runProfile(profileId) {
+    if (!profileId) throw new Error("profileId is required");
+    return apiFetch(`${BASE}/profiles/${Number(profileId)}/run`, { method: "POST" });
+  },
 
-  return apiFetch(`${BASE}/profiles/${Number(profileId)}/run`, {
-    method: "POST",
-  });
-}
-  ,
+  // GET /api/automation/profiles/:profileId/runs
+  listProfileRuns(profileId, params = {}) {
+    if (!profileId) throw new Error("profileId is required");
+    const q = new URLSearchParams(params).toString();
+    return apiFetch(`${BASE}/profiles/${profileId}/runs${q ? `?${q}` : ""}`);
+  },
   /* =====================================================
      TASKS (FIXED SIGNATURES)
   ===================================================== */

@@ -1,4 +1,3 @@
-// src/app/(admin)/admin/domains/lib/domain.api.js
 import { apiFetch } from './client'
 
 /* ======================================================
@@ -16,25 +15,24 @@ export function getDomains(filters = {}) {
   if (filters.limit) params.append('limit', filters.limit)
   
   const query = params.toString()
-  return apiFetch(`
-    /domains${query ? `?${query}` : ''}`)
+  return apiFetch(`/domains${query ? `?${query}` : ''}`)
 }
 
 /**
  * Get single domain by ID
  */
 export function getDomainById(id) {
-  return apiFetch(`
-    /domains/${id}`)
+  return apiFetch(`/domains/${id}`)
 }
 
 /**
  * Check domain availability
  */
 export function checkDomainAvailability(domain, registrar = 'mock') {
-  return apiFetch(
-    `/domains/check?domain=${encodeURIComponent(domain)}&registrar=${registrar}`
-  )
+  return apiFetch('/domains/check', {
+    method: 'POST',
+    body: JSON.stringify({ domain, registrar }),
+  })
 }
 
 /**
@@ -78,7 +76,7 @@ export function renewDomain(domainId, years = 1) {
  * Transfer domain to another registrar
  */
 export function transferDomain(payload) {
-  return apiFetch('/api/domains/transfer', {
+  return apiFetch('/domains/transfer', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
@@ -166,7 +164,7 @@ export function adminRenewDomain(domainId, payload) {
 export function adminOverrideDomain(domainId, changes) {
   return apiFetch(`/admin/domains/${domainId}/override`, {
     method: 'PATCH',
-    body: JSON.stringify(changes),
+    body: JSON.stringify({ changes }),
   })
 }
 

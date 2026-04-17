@@ -1,120 +1,135 @@
 // lib/constants/permissions.js
+// Keys MUST match backend src/modules/auth/rbac/permissions.json exactly.
 
-/**
- * System Permissions
- */
 export const PERMISSIONS = {
-  // Admin Portal
-  ADMIN_ACCESS: "admin.access",
-  ADMIN_MANAGE_STAFF: "admin.manage.staff",
-  ADMIN_SETTINGS: "admin.settings.update",
-  
-  // User Management
-  USERS_VIEW: "users.view",
-  USERS_CREATE: "users.create",
-  USERS_EDIT: "users.edit",
-  USERS_DELETE: "users.delete",
-  USERS_MANAGE_ROLES: "users.manage.roles",
-  
-  // Roles & Permissions
-  ROLES_VIEW: "roles.view",
-  ROLES_CREATE: "roles.create",
-  ROLES_EDIT: "roles.edit",
-  ROLES_DELETE: "roles.delete",
-  PERMISSIONS_MANAGE: "permissions.manage",
-  
-  // Impersonation
-  IMPERSONATION_START: "impersonation.start",
-  IMPERSONATION_STOP: "impersonation.stop",
-  IMPERSONATION_VIEW: "impersonation.list",
-  
-  // IP Rules
-  IP_RULES_VIEW: "ip_rules.view",
-  IP_RULES_CREATE: "ip_rules.create",
-  IP_RULES_EDIT: "ip_rules.edit",
-  IP_RULES_DELETE: "ip_rules.delete",
-  
-  // Audit Logs
-  AUDIT_LOGS_VIEW: "audit.logs.view",
-  AUDIT_LOGS_EXPORT: "audit.logs.export",
-  
-  // API Keys
-  API_KEYS_CREATE: "api_keys.create",
-  API_KEYS_VIEW: "api_keys.view",
-  API_KEYS_REVOKE: "api_keys.revoke",
-  
-  // Client Portal
-  CLIENT_ACCESS: "client.area.access",
-  CLIENT_BILLING_VIEW: "billing.invoices.view",
-  CLIENT_BILLING_PAY: "billing.invoices.pay",
-  CLIENT_SUPPORT: "support.tickets.create",
-  
-  // Reseller Portal
-  RESELLER_ACCESS: "reseller.dashboard.access",
-  RESELLER_MANAGE_CLIENTS: "reseller.clients.manage",
-  RESELLER_VIEW_REVENUE: "reseller.revenue.view",
-  
-  // Developer Portal
-  DEVELOPER_ACCESS: "developer.console.access",
-  DEVELOPER_PLUGINS_UPLOAD: "plugins.upload",
-  DEVELOPER_PLUGINS_UPDATE: "plugins.update",
-  DEVELOPER_PLUGINS_DELETE: "plugins.delete",
+  // ── Admin portal ─────────────────────────────────────────
+  ADMIN_ACCESS:               "admin.access",
+  ADMIN_MANAGE_STAFF:         "admin.manage.staff",
+  ADMIN_SETTINGS:             "admin.settings.update",
+
+  // ── Users module ─────────────────────────────────────────
+  USERS_VIEW:                 "users.view",
+  USERS_DEACTIVATE:           "users.deactivate",
+  USERS_ROLES_ASSIGN:         "users.roles.assign",
+  USERS_IMPERSONATE:          "users.impersonate",
+  USERS_LOGOUT_FORCE:         "users.logout.force",
+
+  // ── Roles & permissions module ───────────────────────────
+  ROLES_VIEW:                 "roles.view",
+  ROLES_PERMISSIONS_ASSIGN:   "roles.permissions.assign",
+
+  // ── Services module ──────────────────────────────────────
+  SERVICES_VIEW:              "services.view",
+  SERVICES_MANAGE:            "services.manage",
+
+  // ── Orders module (admin) ────────────────────────────────
+  ORDERS_VIEW:                "orders.view",
+  ORDERS_MANAGE:              "orders.manage",
+
+  // ── Billing module (admin) ───────────────────────────────
+  BILLING_VIEW:               "billing.view",
+  BILLING_MANAGE:             "billing.manage",
+
+  // ── Backups module ───────────────────────────────────────
+  BACKUPS_VIEW:               "backups.view",
+  BACKUPS_MANAGE:             "backups.manage",
+
+  // ── Automation / Workflows ───────────────────────────────
+  AUTOMATION_VIEW:            "automation.view",
+  AUTOMATION_MANAGE:          "automation.manage",
+
+  // ── Impersonation logs ───────────────────────────────────
+  IMPERSONATION_LOGS_VIEW:    "impersonation.logs.view",
+
+  // ── IP Rules ─────────────────────────────────────────────
+  IP_RULES_VIEW:              "ip_rules.view",
+  IP_RULES_MANAGE:            "ip_rules.manage",
+
+  // ── Audit Logs ───────────────────────────────────────────
+  AUDIT_LOGS_VIEW:            "audit.logs.view",
+
+  // ── Plugins ──────────────────────────────────────────────
+  PLUGINS_MANAGE:             "plugins.manage",
+  PLUGINS_UPLOAD:             "plugins.upload",
+  PLUGINS_UPDATE:             "plugins.update",
+
+  // ── Sessions ─────────────────────────────────────────────
+  SESSIONS_VIEW:              "sessions.view",
+  SESSIONS_MANAGE:            "sessions.manage",
+
+  // ── Client portal ────────────────────────────────────────
+  CLIENT_ACCESS:              "client.area.access",
+  CLIENT_BILLING_VIEW:        "billing.invoices.view",
+  CLIENT_BILLING_PAY:         "billing.invoices.pay",
+  CLIENT_ORDERS_CREATE:       "orders.create",
+  CLIENT_ORDERS_READ:         "orders.read",
+  CLIENT_ORDERS_CANCEL:       "orders.cancel",
+  CLIENT_ORDERS_RENEW:        "orders.renew",
+
+  // ── Reseller portal ──────────────────────────────────────
+  RESELLER_ACCESS:            "reseller.dashboard.access",
+
+  // ── Developer portal ─────────────────────────────────────
+  DEVELOPER_ACCESS:           "developer.console.access",
 };
 
-/**
- * Permission Display Names
- */
+/** Human-readable labels for each permission key */
 export const PERMISSION_LABELS = {
-  [PERMISSIONS.ADMIN_ACCESS]: "Access Admin Portal",
-  [PERMISSIONS.ADMIN_MANAGE_STAFF]: "Manage Staff Accounts",
-  [PERMISSIONS.ADMIN_SETTINGS]: "Update System Settings",
-  
-  [PERMISSIONS.USERS_VIEW]: "View Users",
-  [PERMISSIONS.USERS_CREATE]: "Create Users",
-  [PERMISSIONS.USERS_EDIT]: "Edit Users",
-  [PERMISSIONS.USERS_DELETE]: "Delete Users",
-  [PERMISSIONS.USERS_MANAGE_ROLES]: "Manage User Roles",
-  
-  [PERMISSIONS.ROLES_VIEW]: "View Roles",
-  [PERMISSIONS.ROLES_CREATE]: "Create Roles",
-  [PERMISSIONS.ROLES_EDIT]: "Edit Roles",
-  [PERMISSIONS.ROLES_DELETE]: "Delete Roles",
-  [PERMISSIONS.PERMISSIONS_MANAGE]: "Manage Permissions",
-  
-  [PERMISSIONS.IMPERSONATION_START]: "Start Impersonation",
-  [PERMISSIONS.IMPERSONATION_STOP]: "Stop Impersonation",
-  [PERMISSIONS.IMPERSONATION_VIEW]: "View Impersonation Sessions",
-  
-  [PERMISSIONS.IP_RULES_VIEW]: "View IP Rules",
-  [PERMISSIONS.IP_RULES_CREATE]: "Create IP Rules",
-  [PERMISSIONS.IP_RULES_EDIT]: "Edit IP Rules",
-  [PERMISSIONS.IP_RULES_DELETE]: "Delete IP Rules",
-  
-  [PERMISSIONS.AUDIT_LOGS_VIEW]: "View Audit Logs",
-  [PERMISSIONS.AUDIT_LOGS_EXPORT]: "Export Audit Logs",
-  
-  [PERMISSIONS.API_KEYS_CREATE]: "Create API Keys",
-  [PERMISSIONS.API_KEYS_VIEW]: "View API Keys",
-  [PERMISSIONS.API_KEYS_REVOKE]: "Revoke API Keys",
-  
-  [PERMISSIONS.CLIENT_ACCESS]: "Access Client Portal",
-  [PERMISSIONS.CLIENT_BILLING_VIEW]: "View Invoices",
-  [PERMISSIONS.CLIENT_BILLING_PAY]: "Pay Invoices",
-  [PERMISSIONS.CLIENT_SUPPORT]: "Create Support Tickets",
-  
-  [PERMISSIONS.RESELLER_ACCESS]: "Access Reseller Portal",
-  [PERMISSIONS.RESELLER_MANAGE_CLIENTS]: "Manage Clients",
-  [PERMISSIONS.RESELLER_VIEW_REVENUE]: "View Revenue",
-  
-  [PERMISSIONS.DEVELOPER_ACCESS]: "Access Developer Console",
-  [PERMISSIONS.DEVELOPER_PLUGINS_UPLOAD]: "Upload Plugins",
-  [PERMISSIONS.DEVELOPER_PLUGINS_UPDATE]: "Update Plugins",
-  [PERMISSIONS.DEVELOPER_PLUGINS_DELETE]: "Delete Plugins",
+  [PERMISSIONS.ADMIN_ACCESS]:             "Access Admin Portal",
+  [PERMISSIONS.ADMIN_MANAGE_STAFF]:       "Manage Staff Accounts",
+  [PERMISSIONS.ADMIN_SETTINGS]:           "Update System Settings",
+
+  [PERMISSIONS.USERS_VIEW]:              "View Users",
+  [PERMISSIONS.USERS_DEACTIVATE]:        "Activate / Deactivate Users",
+  [PERMISSIONS.USERS_ROLES_ASSIGN]:      "Assign User Roles",
+  [PERMISSIONS.USERS_IMPERSONATE]:       "Impersonate Users",
+  [PERMISSIONS.USERS_LOGOUT_FORCE]:      "Force Logout Users",
+
+  [PERMISSIONS.ROLES_VIEW]:              "View Roles & Permissions",
+  [PERMISSIONS.ROLES_PERMISSIONS_ASSIGN]:"Assign Permissions to Roles",
+
+  [PERMISSIONS.SERVICES_VIEW]:           "View Services",
+  [PERMISSIONS.SERVICES_MANAGE]:         "Manage Services",
+
+  [PERMISSIONS.ORDERS_VIEW]:             "View All Orders",
+  [PERMISSIONS.ORDERS_MANAGE]:           "Manage Orders",
+
+  [PERMISSIONS.BILLING_VIEW]:            "View Billing Overview",
+  [PERMISSIONS.BILLING_MANAGE]:          "Manage Billing",
+
+  [PERMISSIONS.BACKUPS_VIEW]:            "View Backups",
+  [PERMISSIONS.BACKUPS_MANAGE]:          "Manage Backups",
+
+  [PERMISSIONS.AUTOMATION_VIEW]:         "View Automation & Workflows",
+  [PERMISSIONS.AUTOMATION_MANAGE]:       "Manage Automation & Workflows",
+
+  [PERMISSIONS.IMPERSONATION_LOGS_VIEW]: "View Impersonation Logs",
+
+  [PERMISSIONS.IP_RULES_VIEW]:           "View IP Rules",
+  [PERMISSIONS.IP_RULES_MANAGE]:         "Manage IP Rules",
+
+  [PERMISSIONS.AUDIT_LOGS_VIEW]:         "View Audit Logs",
+
+  [PERMISSIONS.PLUGINS_MANAGE]:          "Manage Plugins (Admin)",
+  [PERMISSIONS.PLUGINS_UPLOAD]:          "Upload Plugins",
+  [PERMISSIONS.PLUGINS_UPDATE]:          "Update Plugins",
+
+  [PERMISSIONS.SESSIONS_VIEW]:           "View Active Sessions",
+  [PERMISSIONS.SESSIONS_MANAGE]:         "Terminate Sessions",
+
+  [PERMISSIONS.CLIENT_ACCESS]:           "Access Client Portal",
+  [PERMISSIONS.CLIENT_BILLING_VIEW]:     "View Invoices",
+  [PERMISSIONS.CLIENT_BILLING_PAY]:      "Pay Invoices",
+  [PERMISSIONS.CLIENT_ORDERS_CREATE]:    "Create Orders",
+  [PERMISSIONS.CLIENT_ORDERS_READ]:      "View Own Orders",
+  [PERMISSIONS.CLIENT_ORDERS_CANCEL]:    "Cancel Orders",
+  [PERMISSIONS.CLIENT_ORDERS_RENEW]:     "Renew Orders",
+
+  [PERMISSIONS.RESELLER_ACCESS]:         "Access Reseller Portal",
+  [PERMISSIONS.DEVELOPER_ACCESS]:        "Access Developer Console",
 };
 
-/**
- * Permission Groups (for UI organization)
- */
+/** Grouped permissions for the RBAC management UI */
 export const PERMISSION_GROUPS = {
   admin: {
     label: "Admin Portal",
@@ -128,47 +143,56 @@ export const PERMISSION_GROUPS = {
     label: "User Management",
     permissions: [
       PERMISSIONS.USERS_VIEW,
-      PERMISSIONS.USERS_CREATE,
-      PERMISSIONS.USERS_EDIT,
-      PERMISSIONS.USERS_DELETE,
-      PERMISSIONS.USERS_MANAGE_ROLES,
+      PERMISSIONS.USERS_DEACTIVATE,
+      PERMISSIONS.USERS_ROLES_ASSIGN,
+      PERMISSIONS.USERS_IMPERSONATE,
+      PERMISSIONS.USERS_LOGOUT_FORCE,
     ],
   },
   roles: {
     label: "Roles & Permissions",
     permissions: [
       PERMISSIONS.ROLES_VIEW,
-      PERMISSIONS.ROLES_CREATE,
-      PERMISSIONS.ROLES_EDIT,
-      PERMISSIONS.ROLES_DELETE,
-      PERMISSIONS.PERMISSIONS_MANAGE,
+      PERMISSIONS.ROLES_PERMISSIONS_ASSIGN,
     ],
   },
-  impersonation: {
-    label: "Impersonation",
-    permissions: [
-      PERMISSIONS.IMPERSONATION_START,
-      PERMISSIONS.IMPERSONATION_STOP,
-      PERMISSIONS.IMPERSONATION_VIEW,
-    ],
+  services: {
+    label: "Services",
+    permissions: [PERMISSIONS.SERVICES_VIEW, PERMISSIONS.SERVICES_MANAGE],
+  },
+  orders: {
+    label: "Orders (Admin)",
+    permissions: [PERMISSIONS.ORDERS_VIEW, PERMISSIONS.ORDERS_MANAGE],
+  },
+  billing: {
+    label: "Billing (Admin)",
+    permissions: [PERMISSIONS.BILLING_VIEW, PERMISSIONS.BILLING_MANAGE],
+  },
+  backups: {
+    label: "Backups",
+    permissions: [PERMISSIONS.BACKUPS_VIEW, PERMISSIONS.BACKUPS_MANAGE],
+  },
+  automation: {
+    label: "Automation & Workflows",
+    permissions: [PERMISSIONS.AUTOMATION_VIEW, PERMISSIONS.AUTOMATION_MANAGE],
   },
   security: {
     label: "Security",
     permissions: [
+      PERMISSIONS.IMPERSONATION_LOGS_VIEW,
       PERMISSIONS.IP_RULES_VIEW,
-      PERMISSIONS.IP_RULES_CREATE,
-      PERMISSIONS.IP_RULES_EDIT,
-      PERMISSIONS.IP_RULES_DELETE,
+      PERMISSIONS.IP_RULES_MANAGE,
       PERMISSIONS.AUDIT_LOGS_VIEW,
-      PERMISSIONS.AUDIT_LOGS_EXPORT,
+      PERMISSIONS.SESSIONS_VIEW,
+      PERMISSIONS.SESSIONS_MANAGE,
     ],
   },
-  api: {
-    label: "API Access",
+  plugins: {
+    label: "Plugins",
     permissions: [
-      PERMISSIONS.API_KEYS_CREATE,
-      PERMISSIONS.API_KEYS_VIEW,
-      PERMISSIONS.API_KEYS_REVOKE,
+      PERMISSIONS.PLUGINS_MANAGE,
+      PERMISSIONS.PLUGINS_UPLOAD,
+      PERMISSIONS.PLUGINS_UPDATE,
     ],
   },
   client: {
@@ -177,24 +201,22 @@ export const PERMISSION_GROUPS = {
       PERMISSIONS.CLIENT_ACCESS,
       PERMISSIONS.CLIENT_BILLING_VIEW,
       PERMISSIONS.CLIENT_BILLING_PAY,
-      PERMISSIONS.CLIENT_SUPPORT,
+      PERMISSIONS.CLIENT_ORDERS_CREATE,
+      PERMISSIONS.CLIENT_ORDERS_READ,
+      PERMISSIONS.CLIENT_ORDERS_CANCEL,
+      PERMISSIONS.CLIENT_ORDERS_RENEW,
     ],
   },
   reseller: {
     label: "Reseller Portal",
-    permissions: [
-      PERMISSIONS.RESELLER_ACCESS,
-      PERMISSIONS.RESELLER_MANAGE_CLIENTS,
-      PERMISSIONS.RESELLER_VIEW_REVENUE,
-    ],
+    permissions: [PERMISSIONS.RESELLER_ACCESS],
   },
   developer: {
     label: "Developer Portal",
     permissions: [
       PERMISSIONS.DEVELOPER_ACCESS,
-      PERMISSIONS.DEVELOPER_PLUGINS_UPLOAD,
-      PERMISSIONS.DEVELOPER_PLUGINS_UPDATE,
-      PERMISSIONS.DEVELOPER_PLUGINS_DELETE,
+      PERMISSIONS.PLUGINS_UPLOAD,
+      PERMISSIONS.PLUGINS_UPDATE,
     ],
   },
 };

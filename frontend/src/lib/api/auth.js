@@ -18,6 +18,13 @@ export const AuthAPI = {
     });
   },
 
+  async registerDeveloper(data) {
+    return await apiFetch("/auth/register/developer", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
   async login(email, password) {
     return await apiFetch("/auth/login", {
       method: "POST",
