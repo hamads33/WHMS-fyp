@@ -12,6 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import { TaskFlow } from "@/components/automation/task-flow"
@@ -19,8 +21,17 @@ import { ActionPalette } from "@/components/automation/action-palette"
 import { TaskConfigDrawer } from "@/components/automation/task-config-drawer"
 import { ExecutionLogPanel } from "@/components/automation/execution-log-panel"
 
-import { Play, ArrowLeft } from "lucide-react"
+import {
+  Play,
+  ArrowLeft,
+  Wrench,
+  History,
+  XCircle,
+  CheckCircle2,
+  Loader2,
+} from "lucide-react"
 import { AutomationAPI } from "@/lib/api/automation"
+import { ConfirmDialog } from "@/components/automation/confirm-dialog"
 
 /* Route: app/(admin)/admin/automation/[profileId]/page.jsx */
 
@@ -34,6 +45,7 @@ export default function ProfileDetailPage() {
   const [showConfigDrawer, setShowConfigDrawer] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [deleteTaskTarget, setDeleteTaskTarget] = useState(null)
 
   /* Load Profile & Tasks */
   useEffect(() => {
@@ -108,10 +120,11 @@ export default function ProfileDetailPage() {
       )
     } catch (err) {
       console.error("Add task failed:", err)
-      alert(
+      showToast(
         err?.response?.data?.error?.message ||
         err.message ||
-        "Failed to add task"
+        "Failed to add task",
+        "error"
       )
     }
   }
@@ -138,7 +151,7 @@ export default function ProfileDetailPage() {
       }
     } catch (err) {
       console.error("Failed to remove task:", err)
-      alert(err?.message || "Failed to remove task")
+      showToast(err?.message || "Failed to remove task", "error")
     }
   }
 
@@ -167,50 +180,102 @@ export default function ProfileDetailPage() {
       setSelectedTaskId(null)
     } catch (err) {
       console.error("Failed to save task configuration:", err)
-      alert(err?.message || "Failed to save task configuration")
+      showToast(err?.message || "Failed to save task configuration", "error")
     }
+  }
+
+  const [toast, setToast] = useState(null)
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 3500)
   }
 
   const handleRunProfile = async () => {
     try {
       await AutomationAPI.runProfile(profileId)
-      alert("Profile execution started")
+      showToast("Profile run started")
     } catch (err) {
       console.error("Failed to run profile:", err)
-      alert(err?.message || "Failed to run profile")
+      showToast(err?.message || "Failed to run profile", "error")
     }
   }
 
   const handleRunTask = async (taskId) => {
     try {
       await AutomationAPI.runTask(taskId)
-      alert("Task execution started")
+      showToast("Task run started")
     } catch (err) {
       console.error("Failed to run task:", err)
-      alert(err?.message || "Failed to run task")
+      showToast(err?.message || "Failed to run task", "error")
     }
   }
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId)
 
-  /* Render */
+  /* Loading state */
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Loading profile...</p>
+      <div className="min-h-screen bg-background">
+        <div className="border-b bg-card">
+          <div className="container mx-auto px-4 py-5">
+            <Skeleton className="h-4 w-32 mb-4" />
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-8 max-w-6xl">
+          <div className="flex gap-2 mb-6">
+            <Skeleton className="h-9 w-32" />
+            <Skeleton className="h-9 w-36" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-5 w-20 mb-1" />
+                <Skeleton className="h-4 w-32" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-14 w-full rounded-lg" />
+                ))}
+              </CardContent>
+            </Card>
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <Skeleton className="h-5 w-24 mb-1" />
+                <Skeleton className="h-4 w-28" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {[1, 2].map((i) => (
+                  <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     )
   }
 
+  /* Error state */
   if (error) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-destructive mb-4">{error}</p>
-          <Link href="/admin/automation">
-            <Button variant="outline">Back to Profiles</Button>
-          </Link>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="max-w-sm w-full">
+          <CardContent className="pt-8 pb-8 text-center">
+            <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+              <XCircle className="w-7 h-7 text-destructive" />
+            </div>
+            <h3 className="font-semibold text-lg mb-1">Failed to Load Profile</h3>
+            <p className="text-sm text-muted-foreground mb-6">{error}</p>
+            <Link href="/admin/automation">
+              <Button variant="outline" className="gap-2">
+                <ArrowLeft className="w-4 h-4" />
+                Back to Profiles
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -225,39 +290,73 @@ export default function ProfileDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-start">
-          <div>
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-10 border-b bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/70">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between gap-4">
+          {/* Left: back + info */}
+          <div className="flex items-center gap-4 min-w-0">
             <Link
               href="/admin/automation"
-              className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-2"
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
-              Back to Profiles
+              Profiles
             </Link>
-            <h1 className="text-3xl font-bold">{profile.name}</h1>
-            {profile.description && (
-              <p className="text-muted-foreground mt-1">
-                {profile.description}
-              </p>
-            )}
-            <p className="text-sm text-muted-foreground mt-2">
-              Schedule: <span className="font-mono">{profile.cron}</span>
-            </p>
+
+            <div className="w-px h-6 bg-border shrink-0" />
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg font-bold leading-tight truncate">
+                  {profile.name}
+                </h1>
+                <code className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded hidden sm:inline">
+                  {profile.cron}
+                </code>
+                <Badge
+                  className={
+                    profile.enabled
+                      ? "bg-emerald-100 text-emerald-700 border-emerald-200 font-medium text-xs"
+                      : "bg-gray-100 text-gray-500 border-gray-200 font-medium text-xs"
+                  }
+                  variant="outline"
+                >
+                  <span
+                    className={`mr-1 inline-block w-1.5 h-1.5 rounded-full ${
+                      profile.enabled ? "bg-emerald-500" : "bg-gray-400"
+                    }`}
+                  />
+                  {profile.enabled ? "Enabled" : "Disabled"}
+                </Badge>
+              </div>
+              {profile.description && (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {profile.description}
+                </p>
+              )}
+            </div>
           </div>
 
-          <Button onClick={handleRunProfile} className="gap-2">
+          {/* Right: run button */}
+          <Button onClick={handleRunProfile} className="gap-2 shrink-0">
             <Play className="w-4 h-4" />
             Run Profile
           </Button>
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-8">
+      {/* Content */}
+      <div className="container mx-auto px-4 py-8 max-w-6xl">
         <Tabs defaultValue="builder">
           <TabsList className="mb-6">
-            <TabsTrigger value="builder">Task Builder</TabsTrigger>
-            <TabsTrigger value="logs">Execution Logs</TabsTrigger>
+            <TabsTrigger value="builder" className="gap-2">
+              <Wrench className="w-4 h-4" />
+              Task Builder
+            </TabsTrigger>
+            <TabsTrigger value="logs" className="gap-2">
+              <History className="w-4 h-4" />
+              Execution History
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="builder">
@@ -278,7 +377,7 @@ export default function ProfileDetailPage() {
                   <TaskFlow
                     tasks={tasks}
                     onConfigure={handleConfigureTask}
-                    onRemove={handleRemoveTask}
+                    onRemove={(taskId) => setDeleteTaskTarget(tasks.find(t => t.id === taskId))}
                     onRunTask={handleRunTask}
                   />
                 </CardContent>
@@ -287,10 +386,35 @@ export default function ProfileDetailPage() {
           </TabsContent>
 
           <TabsContent value="logs">
-            <ExecutionLogPanel profileId={profileId} />
+            <Card>
+              <CardContent className="pt-6">
+                <ExecutionLogPanel profileId={profileId} />
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium text-white animate-in fade-in slide-in-from-bottom-4 duration-300 ${toast.type === "error" ? "bg-destructive" : "bg-green-600"}`}>
+          {toast.type === "error" ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Step delete confirmation */}
+      <ConfirmDialog
+        open={!!deleteTaskTarget}
+        onOpenChange={(open) => !open && setDeleteTaskTarget(null)}
+        title="Remove this step?"
+        description={`"${deleteTaskTarget?.displayName || deleteTaskTarget?.actionType || "This step"}" will be removed from the workflow.`}
+        confirmLabel="Remove Step"
+        onConfirm={() => {
+          handleRemoveTask(deleteTaskTarget?.id)
+          setDeleteTaskTarget(null)
+        }}
+      />
 
       {/* Config Drawer */}
       <TaskConfigDrawer
