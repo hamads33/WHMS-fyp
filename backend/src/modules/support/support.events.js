@@ -197,7 +197,7 @@ function onSupportEvent(eventBus, event, handler) {
  * @param {object} eventBus - platform event bus
  */
 function registerEmailTriggers(eventBus) {
-  const emailTriggers = require('../../email/triggers/email.triggers');
+  const emailTriggers = require('../email/triggers/email.triggers');
 
   // Ticket created notification
   eventBus.on(SUPPORT_EVENTS.TICKET_CREATED, async ({ ticket, client, department }) => {

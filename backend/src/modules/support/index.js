@@ -17,7 +17,7 @@
 const createSupportRouter = require("./support.routes");
 const ChatGateway          = require("./chats/chat.gateway");
 const prisma               = require("../../../prisma/index");
-const { registerEmailTriggers } = require("./support.events");
+const { registerEmailTriggers } = require("./support.events.js");
 
 const DEFAULT_DEPARTMENTS = [
   { name: "General Support",   slug: "general",   description: "General inquiries and support",         slaResponseTime: 480,  slaResolutionTime: 2880 },
