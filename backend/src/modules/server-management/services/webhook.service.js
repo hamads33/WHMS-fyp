@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const webhookRepo = require("../repositories/webhook.repository");
 const webhookSettings = require("./webhook-settings.service");
 
@@ -16,6 +17,29 @@ function err(msg, code = 400) {
   return e;
 }
 
+function _sign(secret, payload) {
+  return "sha256=" + crypto.createHmac("sha256", secret).update(payload).digest("hex");
+}
+
+async function _deliver(hook, payload) {
+  const headers = { "Content-Type": "application/json" };
+  if (hook.secret) {
+    headers["X-Webhook-Signature"] = _sign(hook.secret, payload);
+  }
+  headers["X-Webhook-Event"] = hook.events?.[0] ?? "unknown";
+
+  const res = await fetch(hook.url, {
+    method: "POST",
+    headers,
+    body: payload,
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} from ${hook.url}`);
+  }
+}
+
 async function emit(event, data) {
   const enabled = await webhookSettings.isEventEnabled(event);
   if (!enabled) return;
@@ -27,12 +51,7 @@ async function emit(event, data) {
 
   await Promise.allSettled(
     hooks.map((hook) =>
-      fetch(hook.url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
-        signal: AbortSignal.timeout(8000),
-      }).catch((e) => {
+      _deliver(hook, payload).catch((e) => {
         console.warn(`[Webhook] Delivery failed for ${hook.url}: ${e.message}`);
       })
     )

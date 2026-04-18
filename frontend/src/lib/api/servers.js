@@ -203,8 +203,10 @@ export function useServerMetrics(serverId, options = {}) {
       return data?.data ?? data
     },
     enabled: !!serverId,
-    refetchInterval: 5000,
-    staleTime: 0,
+    // Back off to 30s; stop entirely when tab is hidden to avoid battery/bandwidth waste
+    refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : 30_000),
+    refetchIntervalInBackground: false,
+    staleTime: 15_000,
     ...options,
   })
 }
@@ -476,8 +478,9 @@ export function useServerDashboard(options = {}) {
       const res = await ServersAPI.getDashboard()
       return res
     },
-    staleTime: 5000,
-    refetchInterval: 15000,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
     ...options,
   })
 }
@@ -501,8 +504,9 @@ export function useProvisioningJobs(params = {}, options = {}) {
       const data = await ServersAPI.listProvisioningJobs(params)
       return Array.isArray(data) ? data : (data?.data ?? [])
     },
-    staleTime: 10000,
-    refetchInterval: 15000,
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
     ...options,
   })
 }

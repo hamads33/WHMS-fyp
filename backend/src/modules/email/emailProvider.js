@@ -2,9 +2,7 @@
 // Fully dynamic — reads provider/SMTP settings from DB on every call.
 // Falls back to .env so the app works on first boot before settings are saved.
 const nodemailer = require('nodemailer');
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const prisma = require('../../db/prisma');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Load settings from DB, fall back to env vars
@@ -46,7 +44,7 @@ function makeSmtpTransport(cfg) {
     port:   cfg.smtpPort,
     secure,
     auth:   cfg.smtpUser ? { user: cfg.smtpUser, pass: cfg.smtpPass } : undefined,
-    tls:    { rejectUnauthorized: false },
+    tls:    { rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false' },
   });
 }
 

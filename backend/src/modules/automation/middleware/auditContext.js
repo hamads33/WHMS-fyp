@@ -26,6 +26,7 @@ module.exports = function auditContext() {
 
     // Populate audit context on request object
     req.auditContext = {
+      requestId: req.id || null,
       userId,
       ip: clientIp,
       userAgent

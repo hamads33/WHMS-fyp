@@ -1,13 +1,11 @@
 // src/worker/emailWorker.js
 const { Worker } = require('bullmq');
-const { PrismaClient } = require('@prisma/client');
 const { renderTemplateString } = require('../utils/templateRenderer');
 const { sendMail } = require('../modules/email/emailProvider');
 const { getBrandingVars } = require('../modules/email/email.service');
 const fs = require('fs');
 const path = require('path');
-
-const prisma = new PrismaClient();
+const prisma = require('../db/prisma');
 
 const connection = {
   host: process.env.REDIS_HOST || 'localhost',

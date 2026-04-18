@@ -363,8 +363,7 @@ const { auditContextMiddleware } = require('./middleware/audit-middleware');
 const app = express();
 
 // Initialize Prisma and Logger (your existing setup)
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../../db/prisma');
 const logger = require('./lib/logger');
 
 // Initialize audit service

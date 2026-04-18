@@ -8,19 +8,30 @@ const CPU_ALERT_THRESHOLD = 90;
 
 let _timer = null;
 let _webhookService = null;
+let _io = null;
 
 function setWebhookService(svc) {
   _webhookService = svc;
+}
+
+function setIo(io) {
+  _io = io;
 }
 
 async function _checkServer(server) {
   try {
     const driver = resolveDriver(server);
 
-    const [conn, metrics] = await Promise.all([
+    const [connResult, metricsResult] = await Promise.allSettled([
       driver.testConnection(),
       driver.getMetrics(),
     ]);
+
+    if (connResult.status === "rejected") throw connResult.reason;
+    if (metricsResult.status === "rejected") throw metricsResult.reason;
+
+    const conn = connResult.value;
+    const metrics = metricsResult.value;
 
     const record = await metricsRepo.create({
       serverId: server.id,
@@ -31,10 +42,36 @@ async function _checkServer(server) {
       uptime: metrics.uptime,
     });
 
+    // Recover offline server back to active
+    if (server.status === "offline") {
+      await serverRepo.update(server.id, { status: "active" });
+      await serverLogRepo.create({
+        serverId: server.id,
+        action: "SERVER_RECOVERED",
+        message: `[Monitor] Server "${server.name}" is back online`,
+      });
+      if (_io) {
+        _io.emit("server:status", { serverId: server.id, status: "active" });
+      }
+    }
+
+    // Broadcast real-time metrics to all connected admin clients
+    if (_io) {
+      _io.emit("server:metrics", {
+        serverId: server.id,
+        cpu: metrics.cpuUsage,
+        ram: metrics.ramUsage,
+        disk: metrics.diskUsage,
+        latency: conn.latency,
+        uptime: metrics.uptime,
+        recordedAt: record.recordedAt,
+      });
+    }
+
     if (metrics.cpuUsage >= CPU_ALERT_THRESHOLD) {
       await serverLogRepo.create({
         serverId: server.id,
-        action: "SERVER_UPDATED",
+        action: "HIGH_CPU_ALERT",
         message: `[Monitor] HIGH CPU: ${metrics.cpuUsage}% on "${server.name}"`,
       });
       if (_webhookService) {
@@ -49,9 +86,18 @@ async function _checkServer(server) {
   } catch (e) {
     await serverLogRepo.create({
       serverId: server.id,
-      action: "SERVER_UPDATED",
+      action: "SERVER_UNREACHABLE",
       message: `[Monitor] Server "${server.name}" unreachable: ${e.message}`,
     });
+
+    // Mark active server as offline
+    if (server.status === "active") {
+      await serverRepo.update(server.id, { status: "offline" }).catch(() => {});
+      if (_io) {
+        _io.emit("server:status", { serverId: server.id, status: "offline" });
+      }
+    }
+
     if (_webhookService) {
       _webhookService.emit("SERVER_DOWN", {
         server: { id: server.id, name: server.name },
@@ -63,8 +109,12 @@ async function _checkServer(server) {
 
 async function _tick() {
   try {
-    const servers = await serverRepo.findAll({ status: "active" });
-    await Promise.allSettled(servers.map(_checkServer));
+    // Check active servers + poll offline ones so we detect recovery
+    const [active, offline] = await Promise.all([
+      serverRepo.findAll({ status: "active" }),
+      serverRepo.findAll({ status: "offline" }),
+    ]);
+    await Promise.allSettled([...active, ...offline].map(_checkServer));
   } catch (e) {
     console.error("[ServerMonitor] tick error:", e.message);
   }
@@ -92,4 +142,4 @@ function stop() {
   }
 }
 
-module.exports = { start, stop, setWebhookService, getMetricsHistory, getLatestMetrics };
+module.exports = { start, stop, setWebhookService, setIo, getMetricsHistory, getLatestMetrics };

@@ -5,20 +5,12 @@ const cors = require("cors");
 const ip = require("ip");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
-const { PrismaClient } = require("@prisma/client");
 const swaggerSpec = require("./docs/swagger.config");
+const prisma = require("./db/prisma");
 
 const app = express();
-const prisma = new PrismaClient();
 app.set("trust proxy", true);
-// 🔧 FIX: Allow JSON.stringify(BigInt)
-BigInt.prototype.toJSON = function () {
-  return this.toString();
-};
-app.use((req, res, next) => {
-  console.log("➡ Request reached server");
-  next();
-});
+app.set("json replacer", (key, val) => (typeof val === "bigint" ? val.toString() : val));
 /* ================================================================
    GLOBAL MIDDLEWARES
    – JSON body limit
@@ -27,10 +19,9 @@ app.use((req, res, next) => {
 ================================================================ */
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
-
-// Debugging request origins (useful when testing CORS issues)
 app.use((req, res, next) => {
-  console.log("🌐 Incoming Origin:", req.headers.origin);
+  req.id = req.headers["x-request-id"] || crypto.randomUUID();
+  res.setHeader("x-request-id", req.id);
   next();
 });
 
@@ -115,20 +106,10 @@ allowedOrigins.push("http://127.0.0.1:5555");
 allowedOrigins.push("http://localhost:3001");
 allowedOrigins.push("http://127.0.0.1:3001");
 
-console.log("✅ Allowed Origins:", allowedOrigins);
-
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, server-side)
     if (!origin) return callback(null, true);
-
-    if (allowedOrigins.includes(origin)) {
-      console.log("✔ CORS Allowed:", origin);
-      return callback(null, true);
-    }
-
-    console.log("✖ CORS Blocked:", origin);
-    return callback(null, false);
+    return callback(null, allowedOrigins.includes(origin));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -142,7 +123,6 @@ app.use(cors(corsOptions));
 // methods) can fall through to an auth-guarded route handler and receive 401.
 app.options("/{*path}", cors(corsOptions));
 
-console.log("Google Client ID:", process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 const { registerBackupAuditHooks } = require("./modules/backup/bootstrap");
 // ======================= AUDIT MODULE =======================
 const { initAuditModule } = require("./modules/audit");
@@ -510,11 +490,9 @@ app.use((err, req, res, next) => {
    – Server starts immediately and listens for requests
    – Modules initialize in the background
 ================================================================ */
-init()
-  .then(() => console.log("✅ All modules initialized."))
-  .catch(err => console.error("❌ Critical init error:", err.message));
-
 /* ================================================================
-   EXPORT APP (NOT INIT)
+   EXPORT APP + INIT
+   server.js awaits init() before listening so no requests are
+   accepted until RBAC seeding and core modules are ready.
 ================================================================ */
-module.exports = app;
+module.exports = { app, init };
