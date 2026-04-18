@@ -26,10 +26,15 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 import { ImpersonationAPI } from "@/lib/impersonation";
 import { AuthAPI } from "@/lib/api/auth";
+import { useAuth } from "@/lib/context/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useRouter } from "next/navigation";
+import { ShieldOff } from "lucide-react";
 
 export default function ImpersonationPage() {
   const router = useRouter();
+  const { loadSession } = useAuth();
+  const { canImpersonate } = usePermissions();
 
   // State management
   const [users, setUsers] = useState([]);
@@ -99,25 +104,18 @@ export default function ImpersonationPage() {
         reason: reason.trim(),
       });
 
-      if (result.accessToken) {
-        localStorage.setItem("accessToken", result.accessToken);
-      }
-      if (result.refreshToken) {
-        localStorage.setItem("refreshToken", result.refreshToken);
-      }
-
       setIsConfirmOpen(false);
 
-      // ✅ FIX (ONLY CHANGE): role-aware redirect
-      const roles = result?.targetUser?.roles || [];
+      // Reload AuthContext — backend already set the impersonation cookie
+      await loadSession();
 
+      // Role-aware redirect
+      const roles = result?.targetUser?.roles || [];
       if (roles.includes("admin") || roles.includes("superadmin")) {
         router.push("/admin");
       } else {
-        router.push("/clients");
+        router.push("/client/dashboard");
       }
-
-      router.refresh();
     } catch (err) {
       console.error("Impersonation failed:", err);
       setError(err?.message || "Failed to start impersonation. Please try again.");
@@ -136,6 +134,18 @@ export default function ImpersonationPage() {
   // ------------------------------------------------------------------
   // RENDER
   // ------------------------------------------------------------------
+  if (!canImpersonate) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 gap-4 text-center">
+        <ShieldOff className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-semibold">Access Denied</h2>
+        <p className="text-muted-foreground text-sm max-w-sm">
+          You don&apos;t have permission to impersonate users. Contact your superadmin to request access.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto py-6 space-y-6">
       {/* Header */}

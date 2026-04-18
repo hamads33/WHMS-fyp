@@ -31,7 +31,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      await AuthAPI.requestPasswordReset(email);
+      await AuthAPI.requestPasswordReset(email, window.location.origin);
       setSuccess(true);
     } catch (err) {
       console.error("Password reset request error:", err);
@@ -48,7 +48,7 @@ export default function ForgotPasswordPage() {
   // Success state
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
@@ -86,7 +86,7 @@ export default function ForgotPasswordPage() {
 
   // Form state
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold">Forgot password?</CardTitle>

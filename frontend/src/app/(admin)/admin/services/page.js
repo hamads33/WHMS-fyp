@@ -1,1271 +1,788 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from "@/components/ui/tabs"
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Separator } from "@/components/ui/separator"
 import {
-  MoreHorizontal,
-  Plus,
-  RefreshCcw,
-  Search,
-  AlertCircle,
-  Edit2,
-  Trash2,
-  DollarSign,
-  Package,
-  Archive,
-  Copy,
-  Power,
-  TrendingUp,
-  Calendar,
-  CheckCircle2,
-  XCircle,
+  Plus, Search, RefreshCcw, MoreHorizontal, Pencil,
+  Trash2, Archive, CheckCircle, Eye, EyeOff, ExternalLink,
+  Package, FolderOpen, Download, Upload, Settings2, Radio,
 } from "lucide-react"
+import { AdminServicesAPI } from "@/lib/api/services"
+import { toast } from "sonner"
+import { usePermissions } from "@/hooks/usePermissions"
 
-/**
- * API Client for Services - Complete Implementation
- * Matches: Services Module API Documentation
- */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api"
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const ServicesAPI = {
-  // ========== SERVICES ==========
-
-  listServices: async () => {
-    const response = await fetch(`${API_BASE}/admin/services`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to list services")
-    return response.json()
-  },
-
-  getService: async (id) => {
-    const response = await fetch(`${API_BASE}/admin/services/${id}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to fetch service")
-    return response.json()
-  },
-
-  createService: async (data) => {
-    const response = await fetch(`${API_BASE}/admin/services`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-      body: JSON.stringify(data),
-    })
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || "Failed to create service")
-    }
-    return response.json()
-  },
-
-  updateService: async (id, data) => {
-    const response = await fetch(`${API_BASE}/admin/services/${id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-      body: JSON.stringify(data),
-    })
-    if (!response.ok) throw new Error("Failed to update service")
-    return response.json()
-  },
-
-  deactivateService: async (id) => {
-    const response = await fetch(`${API_BASE}/admin/services/${id}`, {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to deactivate service")
-    return response.json()
-  },
-
-  // ========== PLANS ==========
-
-  createPlan: async (serviceId, data) => {
-    const response = await fetch(`${API_BASE}/admin/services/${serviceId}/plans`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-      body: JSON.stringify(data),
-    })
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || "Failed to create plan")
-    }
-    return response.json()
-  },
-
-  updatePlan: async (planId, data) => {
-    const response = await fetch(`${API_BASE}/admin/plans/${planId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-      body: JSON.stringify(data),
-    })
-    if (!response.ok) throw new Error("Failed to update plan")
-    return response.json()
-  },
-
-  togglePlanStatus: async (planId) => {
-    const response = await fetch(`${API_BASE}/admin/plans/${planId}/toggle-status`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to toggle plan status")
-    return response.json()
-  },
-
-  activatePlan: async (planId) => {
-    const response = await fetch(`${API_BASE}/admin/plans/${planId}/activate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to activate plan")
-    return response.json()
-  },
-
-  deactivatePlan: async (planId) => {
-    const response = await fetch(`${API_BASE}/admin/plans/${planId}/deactivate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to deactivate plan")
-    return response.json()
-  },
-
-  // ========== PRICING ==========
-
-  createPricing: async (planId, data) => {
-    const response = await fetch(`${API_BASE}/admin/plans/${planId}/pricing`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-      body: JSON.stringify(data),
-    })
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || "Failed to create pricing")
-    }
-    return response.json()
-  },
-
-  updatePricing: async (pricingId, data) => {
-    const response = await fetch(`${API_BASE}/admin/pricing/${pricingId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-      body: JSON.stringify(data),
-    })
-    if (!response.ok) throw new Error("Failed to update pricing")
-    return response.json()
-  },
-
-  deletePricing: async (pricingId) => {
-    const response = await fetch(`${API_BASE}/admin/pricing/${pricingId}`, {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to delete pricing")
-    return response.json()
-  },
+// Backend returns plain arrays for both endpoints
+function toArray(res) {
+  return Array.isArray(res) ? res : (res?.services ?? res?.groups ?? [])
 }
 
-function getAuthToken() {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("authToken") || ""
-  }
-  return ""
+function statusBadge(active, hidden) {
+  if (!active)
+    return <Badge variant="outline" className="text-xs font-normal text-muted-foreground">Inactive</Badge>
+  if (hidden)
+    return <Badge variant="outline" className="text-xs font-normal text-muted-foreground border-border">Hidden</Badge>
+  return <Badge variant="outline" className="text-xs font-normal text-foreground border-border">Active</Badge>
 }
 
-// ============================================================================
-// ADMIN SERVICES PAGE - MAIN COMPONENT
-// ============================================================================
+function lowestPrice(service) {
+  const prices = (service.plans ?? [])
+    .flatMap((p) => (p.pricing ?? []).map((pr) => parseFloat(pr.price || 0)))
+    .filter((n) => !isNaN(n) && n > 0)
+  if (!prices.length) return null
+  return Math.min(...prices)
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminServicesPage() {
+  const { canManageServices } = usePermissions()
+
+  const [tab, setTab] = useState("products")
   const [services, setServices] = useState([])
+  const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [expandedServiceId, setExpandedServiceId] = useState(null)
 
-  // Dialogs
-  const [showServiceDialog, setShowServiceDialog] = useState(false)
-  const [showPlanDialog, setShowPlanDialog] = useState(false)
-  const [showPricingDialog, setShowPricingDialog] = useState(false)
+  // Filters
+  const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [groupFilter, setGroupFilter] = useState("all")
 
-  // Editing state
-  const [selectedService, setSelectedService] = useState(null)
-  const [selectedPlan, setSelectedPlan] = useState(null)
-  const [selectedPricing, setSelectedPricing] = useState(null)
-  const [formData, setFormData] = useState({})
-  const [actionLoading, setActionLoading] = useState(null)
-  const [successMessage, setSuccessMessage] = useState(null)
+  // Selection
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkSubmitting, setBulkSubmitting] = useState(false)
 
-  // Load services
-  const loadServices = useCallback(async () => {
+  // Confirm dialogs
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [activateTarget, setActivateTarget] = useState(null)
+  const [hardDeleteTarget, setHardDeleteTarget] = useState(null)
+  const [bulkDeactivateOpen, setBulkDeactivateOpen] = useState(false)
+  const [bulkActivateOpen, setBulkActivateOpen] = useState(false)
+  const [bulkHardDeleteOpen, setBulkHardDeleteOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+
+  const loadData = useCallback(async () => {
     setLoading(true)
-    setError(null)
+    setSelectedIds(new Set())
     try {
-      const res = await ServicesAPI.listServices()
-      setServices(Array.isArray(res) ? res : res.data || [])
-    } catch (err) {
-      setError(err.message || "Failed to load services")
+      const [sRes, gRes] = await Promise.all([
+        AdminServicesAPI.listServices(),
+        AdminServicesAPI.listGroups(),
+      ])
+      setServices(toArray(sRes))
+      setGroups(toArray(gRes))
+    } catch {
+      toast.error("Failed to load services")
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => {
-    loadServices()
-  }, [loadServices])
+  useEffect(() => { loadData() }, [loadData])
 
-  // Filter services
-  const filteredServices = services.filter((service) => {
-    return (
-      service.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      service.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (service.description || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase())
-    )
+  // ── Filter ────────────────────────────────────────────────────────────────
+
+  const filtered = services.filter((s) => {
+    const q = search.toLowerCase()
+    if (q && !s.name.toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false
+    if (statusFilter === "active" && (!s.active || s.hidden)) return false
+    if (statusFilter === "inactive" && s.active) return false
+    if (statusFilter === "hidden" && !s.hidden) return false
+    if (groupFilter === "ungrouped" && s.groupId) return false
+    if (groupFilter !== "all" && groupFilter !== "ungrouped" && s.groupId !== groupFilter) return false
+    return true
   })
 
-  // ========== SERVICE OPERATIONS ==========
+  // ── Stats ─────────────────────────────────────────────────────────────────
 
-  const handleCreateService = async () => {
-    if (!formData.code || !formData.name || !formData.description) {
-      setError("All fields are required")
-      return
-    }
+  const stats = {
+    total: services.length,
+    active: services.filter((s) => s.active && !s.hidden).length,
+    inactive: services.filter((s) => !s.active).length,
+    hidden: services.filter((s) => s.hidden).length,
+  }
 
-    setActionLoading("service")
+  // ── Selection ─────────────────────────────────────────────────────────────
+
+  const selectedList = [...selectedIds]
+  const someSelected = selectedList.length > 0
+  const allSelected = filtered.length > 0 && filtered.every((s) => selectedIds.has(s.id))
+  const allSelectedInactive = someSelected && selectedList.every(
+    (id) => services.find((s) => s.id === id)?.active === false
+  )
+
+  const toggleSelect = (id) => setSelectedIds((prev) => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const toggleAll = () => {
+    if (allSelected) setSelectedIds(new Set())
+    else setSelectedIds(new Set(filtered.map((s) => s.id)))
+  }
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+
+  const handleToggleVisibility = async (service) => {
     try {
-      await ServicesAPI.createService(formData)
-      setSuccessMessage("Service created successfully")
-      await loadServices()
-      setShowServiceDialog(false)
-      setFormData({})
-      setTimeout(() => setSuccessMessage(null), 3000)
-    } catch (err) {
-      setError(err.message || "Failed to create service")
-    } finally {
-      setActionLoading(null)
-    }
+      await AdminServicesAPI.toggleServiceVisibility(service.id)
+      toast.success(`Service ${service.hidden ? "shown" : "hidden"}`)
+      loadData()
+    } catch { toast.error("Failed to update visibility") }
   }
 
-  const handleUpdateService = async () => {
-    if (!selectedService) return
-
-    setActionLoading("service-update")
+  const handleDeactivate = async () => {
+    if (!deactivateTarget) return
+    setSubmitting(true)
     try {
-      await ServicesAPI.updateService(selectedService.id, formData)
-      setSuccessMessage("Service updated successfully")
-      await loadServices()
-      setShowServiceDialog(false)
-      setFormData({})
-      setSelectedService(null)
-      setTimeout(() => setSuccessMessage(null), 3000)
-    } catch (err) {
-      setError(err.message || "Failed to update service")
-    } finally {
-      setActionLoading(null)
-    }
+      await AdminServicesAPI.deleteService(deactivateTarget.id)
+      toast.success("Service deactivated")
+      setDeactivateTarget(null)
+      loadData()
+    } catch { toast.error("Failed to deactivate") } finally { setSubmitting(false) }
   }
 
-  const handleDeactivateService = async (serviceId) => {
-    if (!confirm("Are you sure? This will deactivate the service.")) return
-
-    setActionLoading(`deactivate-${serviceId}`)
+  const handleActivate = async () => {
+    if (!activateTarget) return
+    setSubmitting(true)
     try {
-      await ServicesAPI.deactivateService(serviceId)
-      setSuccessMessage("Service deactivated successfully")
-      await loadServices()
-      setTimeout(() => setSuccessMessage(null), 3000)
-    } catch (err) {
-      setError(err.message || "Failed to deactivate service")
-    } finally {
-      setActionLoading(null)
-    }
+      await AdminServicesAPI.updateService(activateTarget.id, { active: true })
+      toast.success("Service activated")
+      setActivateTarget(null)
+      loadData()
+    } catch { toast.error("Failed to activate") } finally { setSubmitting(false) }
   }
 
-  // ========== PLAN OPERATIONS ==========
-
-  const handleCreatePlan = async () => {
-    if (!selectedService || !formData.name) {
-      setError("Plan name is required")
-      return
-    }
-
-    setActionLoading("plan")
+  const handleHardDelete = async () => {
+    if (!hardDeleteTarget) return
+    setSubmitting(true)
     try {
-      await ServicesAPI.createPlan(selectedService.id, formData)
-      setSuccessMessage("Plan created successfully")
-      await loadServices()
-      setShowPlanDialog(false)
-      setFormData({})
-      setSelectedPlan(null)
-      setTimeout(() => setSuccessMessage(null), 3000)
-    } catch (err) {
-      setError(err.message || "Failed to create plan")
-    } finally {
-      setActionLoading(null)
-    }
+      await AdminServicesAPI.hardDeleteService(hardDeleteTarget.id)
+      toast.success("Service permanently deleted")
+      setHardDeleteTarget(null)
+      loadData()
+    } catch { toast.error("Failed to delete") } finally { setSubmitting(false) }
   }
 
-  const handleUpdatePlan = async () => {
-    if (!selectedPlan) return
-
-    setActionLoading("plan-update")
+  const handleBulkDeactivate = async () => {
+    setBulkSubmitting(true)
     try {
-      await ServicesAPI.updatePlan(selectedPlan.id, formData)
-      setSuccessMessage("Plan updated successfully")
-      await loadServices()
-      setShowPlanDialog(false)
-      setFormData({})
-      setSelectedPlan(null)
-      setTimeout(() => setSuccessMessage(null), 3000)
-    } catch (err) {
-      setError(err.message || "Failed to update plan")
-    } finally {
-      setActionLoading(null)
-    }
+      await AdminServicesAPI.bulkUpdateServices(selectedList, { active: false })
+      toast.success(`${selectedList.length} service(s) deactivated`)
+      setSelectedIds(new Set())
+      setBulkDeactivateOpen(false)
+      loadData()
+    } catch { toast.error("Bulk deactivate failed") } finally { setBulkSubmitting(false) }
   }
 
-  const handleTogglePlanStatus = async (planId) => {
-    setActionLoading(`toggle-${planId}`)
+  const handleBulkActivate = async () => {
+    setBulkSubmitting(true)
     try {
-      await ServicesAPI.togglePlanStatus(planId)
-      setSuccessMessage("Plan status updated successfully")
-      await loadServices()
-      setTimeout(() => setSuccessMessage(null), 3000)
-    } catch (err) {
-      setError(err.message || "Failed to toggle plan status")
-    } finally {
-      setActionLoading(null)
-    }
+      await AdminServicesAPI.bulkUpdateServices(selectedList, { active: true })
+      toast.success(`${selectedList.length} service(s) activated`)
+      setSelectedIds(new Set())
+      setBulkActivateOpen(false)
+      loadData()
+    } catch { toast.error("Bulk activate failed") } finally { setBulkSubmitting(false) }
   }
 
-  // ========== PRICING OPERATIONS ==========
-
-  const handleCreatePricing = async () => {
-    if (!selectedPlan || !formData.cycle || !formData.price) {
-      setError("Billing cycle and price are required")
-      return
-    }
-
-    setActionLoading("pricing")
+  const handleBulkHardDelete = async () => {
+    setBulkSubmitting(true)
     try {
-      await ServicesAPI.createPricing(selectedPlan.id, {
-        cycle: formData.cycle,
-        price: parseFloat(formData.price),
-        currency: formData.currency || "USD",
-      })
-      setSuccessMessage("Pricing created successfully")
-      await loadServices()
-      setShowPricingDialog(false)
-      setFormData({})
-      setSelectedPricing(null)
-      setTimeout(() => setSuccessMessage(null), 3000)
-    } catch (err) {
-      setError(err.message || "Failed to create pricing")
-    } finally {
-      setActionLoading(null)
-    }
+      await AdminServicesAPI.bulkHardDeleteServices(selectedList)
+      toast.success(`${selectedList.length} service(s) deleted`)
+      setSelectedIds(new Set())
+      setBulkHardDeleteOpen(false)
+      loadData()
+    } catch { toast.error("Bulk delete failed") } finally { setBulkSubmitting(false) }
   }
 
-  const handleDeletePricing = async (pricingId) => {
-    if (!confirm("Delete this pricing?")) return
-
-    setActionLoading(`delete-pricing-${pricingId}`)
+  const handleExport = async () => {
     try {
-      await ServicesAPI.deletePricing(pricingId)
-      setSuccessMessage("Pricing deleted successfully")
-      await loadServices()
-      setTimeout(() => setSuccessMessage(null), 3000)
-    } catch (err) {
-      setError(err.message || "Failed to delete pricing")
-    } finally {
-      setActionLoading(null)
+      const data = await AdminServicesAPI.exportServices()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `services-${Date.now()}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success("Export downloaded")
+    } catch { toast.error("Export failed") }
+  }
+
+  // ── Grouped rows for WHMCS-style table ────────────────────────────────────
+
+  const groupedRows = (() => {
+    const rows = []
+    const servicesInGroups = new Set()
+
+    // Groups that have matching services
+    for (const g of groups) {
+      const members = filtered.filter((s) => s.groupId === g.id)
+      if (!members.length) continue
+      rows.push({ type: "header", group: g })
+      members.forEach((s) => { rows.push({ type: "service", service: s }); servicesInGroups.add(s.id) })
     }
-  }
 
-  // ========== DIALOG HANDLERS ==========
-
-  const openServiceDialog = (service = null) => {
-    if (service) {
-      setSelectedService(service)
-      setFormData({
-        code: service.code,
-        name: service.name,
-        description: service.description,
-        active: service.active,
-      })
-    } else {
-      setSelectedService(null)
-      setFormData({
-        code: "",
-        name: "",
-        description: "",
-        active: true,
-      })
+    // Ungrouped
+    const ungrouped = filtered.filter((s) => !servicesInGroups.has(s.id))
+    if (ungrouped.length) {
+      rows.push({ type: "header", group: { id: null, name: "Ungrouped", icon: null } })
+      ungrouped.forEach((s) => rows.push({ type: "service", service: s }))
     }
-    setShowServiceDialog(true)
-  }
 
-  const openPlanDialog = (service, plan = null) => {
-    setSelectedService(service)
-    if (plan) {
-      setSelectedPlan(plan)
-      setFormData({
-        name: plan.name,
-        description: plan.description,
-        position: plan.position || 0,
-      })
-    } else {
-      setSelectedPlan(null)
-      setFormData({
-        name: "",
-        description: "",
-        position: 0,
-      })
-    }
-    setShowPlanDialog(true)
-  }
+    return rows
+  })()
 
-  const openPricingDialog = (service, plan) => {
-    setSelectedService(service)
-    setSelectedPlan(plan)
-    setFormData({
-      cycle: "monthly",
-      price: "",
-      currency: "USD",
-    })
-    setShowPricingDialog(true)
-  }
-
-  // ========== JSX ==========
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5">
+
       {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Services</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage hosting services, plans, and pricing
-          </p>
-        </div>
-        <Button onClick={() => openServiceDialog()}>
-          <Plus className="w-4 h-4 mr-2" />
-          New Service
-        </Button>
-      </div>
-
-      {/* Messages */}
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="w-4 h-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {successMessage && (
-        <Alert className="bg-green-100 border-green-200">
-          <CheckCircle2 className="w-4 h-4 text-green-600" />
-          <AlertDescription className="text-green-800">
-            {successMessage}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Search */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name, code, or description..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+      <div className="flex items-start justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-xl border border-border bg-primary flex items-center justify-center shadow-sm shrink-0">
+            <Package className="h-6 w-6 text-primary-foreground" />
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Services List */}
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : filteredServices.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Package className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No services found</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4">
-          {filteredServices.map((service) => (
-            <ServiceCard
-              key={service.id}
-              service={service}
-              isExpanded={expandedServiceId === service.id}
-              onToggleExpand={(id) =>
-                setExpandedServiceId(
-                  expandedServiceId === id ? null : id
-                )
-              }
-              onEdit={openServiceDialog}
-              onDeactivate={handleDeactivateService}
-              onAddPlan={openPlanDialog}
-              onEditPlan={openPlanDialog}
-              onAddPricing={openPricingDialog}
-              onTogglePlanStatus={handleTogglePlanStatus}
-              onDeletePricing={handleDeletePricing}
-              actionLoading={actionLoading}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Service Dialog */}
-      <ServiceDialog
-        isOpen={showServiceDialog}
-        service={selectedService}
-        formData={formData}
-        onFormChange={setFormData}
-        onSave={selectedService ? handleUpdateService : handleCreateService}
-        onClose={() => {
-          setShowServiceDialog(false)
-          setSelectedService(null)
-          setFormData({})
-        }}
-        isLoading={actionLoading?.startsWith("service")}
-      />
-
-      {/* Plan Dialog */}
-      <PlanDialog
-        isOpen={showPlanDialog}
-        plan={selectedPlan}
-        service={selectedService}
-        formData={formData}
-        onFormChange={setFormData}
-        onSave={selectedPlan ? handleUpdatePlan : handleCreatePlan}
-        onClose={() => {
-          setShowPlanDialog(false)
-          setSelectedPlan(null)
-          setFormData({})
-        }}
-        isLoading={actionLoading?.startsWith("plan")}
-      />
-
-      {/* Pricing Dialog */}
-      <PricingDialog
-        isOpen={showPricingDialog}
-        plan={selectedPlan}
-        formData={formData}
-        onFormChange={setFormData}
-        onSave={handleCreatePricing}
-        onClose={() => {
-          setShowPricingDialog(false)
-          setSelectedPlan(null)
-          setFormData({})
-        }}
-        isLoading={actionLoading === "pricing"}
-      />
-    </div>
-  )
-}
-
-// ============================================================================
-// SERVICE CARD COMPONENT
-// ============================================================================
-
-function ServiceCard({
-  service,
-  isExpanded,
-  onToggleExpand,
-  onEdit,
-  onDeactivate,
-  onAddPlan,
-  onEditPlan,
-  onAddPricing,
-  onTogglePlanStatus,
-  onDeletePricing,
-  actionLoading,
-}) {
-  const totalPlans = service.plans?.length || 0
-  const activePlans = service.plans?.filter((p) => p.active).length || 0
-
-  return (
-    <Card className="hover:shadow-lg transition-shadow">
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 cursor-pointer" onClick={() => onToggleExpand(service.id)}>
-            <div className="flex items-center gap-3 mb-2">
-              <CardTitle className="flex items-center gap-2">
-                <Package className="w-5 h-5" />
-                {service.name}
-              </CardTitle>
-              <Badge
-                variant="outline"
-                className={
-                  service.active
-                    ? "bg-green-100 text-green-800"
-                    : "bg-gray-100 text-gray-800"
-                }
-              >
-                {service.active ? "Active" : "Inactive"}
-              </Badge>
+          <div>
+            <div className="flex items-center gap-2.5 mb-0.5">
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">Products &amp; Services</h1>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-border bg-secondary text-foreground">
+                <Radio className="h-2.5 w-2.5" /> {stats.active} active
+              </span>
             </div>
-            <CardDescription>{service.description}</CardDescription>
-            <p className="text-xs text-muted-foreground mt-2">
-              Code: <span className="font-mono font-semibold">{service.code}</span>
+            <p className="text-sm text-muted-foreground">
+              {stats.total} product{stats.total !== 1 ? "s" : ""}
+              {stats.inactive > 0 && ` · ${stats.inactive} inactive`}
+              {stats.hidden > 0 && ` · ${stats.hidden} hidden`}
             </p>
           </div>
-
-          <ServiceMenu
-            service={service}
-            onEdit={() => onEdit(service)}
-            onDeactivate={() => onDeactivate(service.id)}
-            isLoading={actionLoading?.startsWith(service.id)}
-          />
         </div>
-      </CardHeader>
-
-      {/* Expanded Content */}
-      {isExpanded && (
-        <>
-          <Separator />
-          <CardContent className="pt-6 space-y-6">
-            {/* Plans Section */}
-            <PlansSection
-              service={service}
-              onAddPlan={() => onAddPlan(service)}
-              onEditPlan={(plan) => onEditPlan(service, plan)}
-              onAddPricing={(plan) => onAddPricing(service, plan)}
-              onTogglePlanStatus={onTogglePlanStatus}
-              onDeletePricing={onDeletePricing}
-              actionLoading={actionLoading}
-            />
-
-            {/* Service Stats */}
-            <div className="border-t pt-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Total Plans</p>
-                  <p className="text-2xl font-bold">{totalPlans}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Active Plans</p>
-                  <p className="text-2xl font-bold text-green-600">{activePlans}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Created</p>
-                  <p className="text-xs font-mono">
-                    {new Date(service.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </>
-      )}
-    </Card>
-  )
-}
-
-// ============================================================================
-// SERVICE MENU (Dropdown)
-// ============================================================================
-
-function ServiceMenu({ service, onEdit, onDeactivate, isLoading }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={isLoading}>
-          <MoreHorizontal className="w-4 h-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onEdit} className="gap-2">
-          <Edit2 className="w-4 h-4" />
-          Edit Service
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={onDeactivate}
-          className="text-destructive gap-2"
-        >
-          <Archive className="w-4 h-4" />
-          Deactivate
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-// ============================================================================
-// PLANS SECTION
-// ============================================================================
-
-function PlansSection({
-  service,
-  onAddPlan,
-  onEditPlan,
-  onAddPricing,
-  onTogglePlanStatus,
-  onDeletePricing,
-  actionLoading,
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm">
-          Plans ({service.plans?.length || 0})
-        </h3>
-        <Button size="sm" variant="outline" onClick={onAddPlan}>
-          <Plus className="w-4 h-4 mr-1" />
-          Add Plan
-        </Button>
-      </div>
-
-      {!service.plans || service.plans.length === 0 ? (
-        <div className="text-center py-6 bg-muted/30 rounded-lg">
-          <p className="text-sm text-muted-foreground">No plans yet</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {service.plans.map((plan) => (
-            <PlanRow
-              key={plan.id}
-              plan={plan}
-              onEdit={() => onEditPlan(plan)}
-              onAddPricing={() => onAddPricing(plan)}
-              onToggleStatus={() => onTogglePlanStatus(plan.id)}
-              onDeletePricing={onDeletePricing}
-              isLoading={actionLoading?.startsWith(plan.id)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ============================================================================
-// PLAN ROW COMPONENT
-// ============================================================================
-
-function PlanRow({
-  plan,
-  onEdit,
-  onAddPricing,
-  onToggleStatus,
-  onDeletePricing,
-  isLoading,
-}) {
-  return (
-    <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <p className="font-medium text-sm">{plan.name}</p>
-            <Badge
-              variant="outline"
-              size="sm"
-              className={
-                plan.active
-                  ? "bg-green-100 text-green-800"
-                  : "bg-gray-100 text-gray-800"
-              }
-            >
-              {plan.active ? "Active" : "Inactive"}
-            </Badge>
-          </div>
-          {plan.description && (
-            <p className="text-xs text-muted-foreground">{plan.description}</p>
+        <div className="flex items-center gap-1.5 p-1.5 rounded-xl border border-border bg-card shadow-sm shrink-0">
+          <Button variant="ghost" size="sm" onClick={loadData} disabled={loading} className="gap-1.5 h-8 text-xs">
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+          {canManageServices && (
+            <>
+              <div className="h-5 w-px bg-border" />
+              <Button asChild size="sm" className="gap-1.5 h-8 text-xs rounded-lg">
+                <Link href="/admin/services/new">
+                  <Plus className="h-3.5 w-3.5" /> Add Product
+                </Link>
+              </Button>
+            </>
           )}
         </div>
-        <PlanMenu
-          plan={plan}
-          onEdit={onEdit}
-          onToggleStatus={onToggleStatus}
-          isLoading={isLoading}
-        />
       </div>
 
-      {/* Pricing Section */}
-      <div className="space-y-2 mt-4">
-        {plan.pricing && plan.pricing.length > 0 ? (
-          <div className="space-y-1">
-            {plan.pricing.map((price) => (
-              <PricingRow
-                key={price.id}
-                pricing={price}
-                onDelete={() => onDeletePricing(price.id)}
-                isLoading={actionLoading?.startsWith(`delete-pricing-${price.id}`)}
+      {/* Tabs */}
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="products">Products</TabsTrigger>
+          <TabsTrigger value="groups">Product Groups</TabsTrigger>
+          <TabsTrigger value="batch">Import / Export</TabsTrigger>
+        </TabsList>
+
+        {/* ══ Products tab ══════════════════════════════════════════════════ */}
+        <TabsContent value="products" className="space-y-4 mt-4">
+
+          {/* Filter bar */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative flex-1 min-w-[200px] max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search products…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
               />
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground italic">No pricing set</p>
-        )}
-      </div>
-
-      <Button
-        size="sm"
-        variant="outline"
-        className="w-full mt-3"
-        onClick={onAddPricing}
-      >
-        <Plus className="w-3 h-3 mr-1" />
-        Add Pricing
-      </Button>
-    </div>
-  )
-}
-
-// ============================================================================
-// PLAN MENU (Dropdown)
-// ============================================================================
-
-function PlanMenu({ plan, onEdit, onToggleStatus, isLoading }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={isLoading}>
-          <MoreHorizontal className="w-4 h-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onEdit} className="gap-2">
-          <Edit2 className="w-4 h-4" />
-          Edit Plan
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onToggleStatus} className="gap-2">
-          <Power className="w-4 h-4" />
-          {plan.active ? "Deactivate" : "Activate"}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-// ============================================================================
-// PRICING ROW
-// ============================================================================
-
-function PricingRow({ pricing, onDelete, isLoading }) {
-  const formatPrice = (amount) => {
-    if (!amount) return "$0.00"
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: pricing.currency || "USD",
-    }).format(amount)
-  }
-
-  const getCycleName = (cycle) => {
-    const cycles = {
-      monthly: "Monthly",
-      quarterly: "Quarterly",
-      semi_annually: "Semi-Annual",
-      annually: "Annual",
-    }
-    return cycles[cycle] || cycle
-  }
-
-  return (
-    <div className="flex items-center justify-between text-xs bg-muted px-3 py-2 rounded">
-      <div className="flex items-center gap-2">
-        <Calendar className="w-3 h-3 text-muted-foreground" />
-        <span className="text-muted-foreground">{getCycleName(pricing.cycle)}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="font-semibold flex items-center gap-1">
-          <DollarSign className="w-3 h-3" />
-          {formatPrice(pricing.price)}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onDelete}
-          disabled={isLoading}
-          className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-        >
-          <Trash2 className="w-3 h-3" />
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-// ============================================================================
-// DIALOGS
-// ============================================================================
-
-function ServiceDialog({
-  isOpen,
-  service,
-  formData,
-  onFormChange,
-  onSave,
-  onClose,
-  isLoading,
-}) {
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{service ? "Edit Service" : "Create Service"}</DialogTitle>
-          <DialogDescription>
-            {service
-              ? "Update service details"
-              : "Add a new service to your catalog"}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="code">Service Code</Label>
-            <Input
-              id="code"
-              placeholder="e.g., shared_hosting"
-              value={formData.code || ""}
-              onChange={(e) => onFormChange({ ...formData, code: e.target.value })}
-              disabled={isLoading || !!service}
-              maxLength={50}
-            />
-            <p className="text-xs text-muted-foreground">
-              3-50 characters, alphanumeric with _ and -
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="name">Service Name</Label>
-            <Input
-              id="name"
-              placeholder="e.g., Shared Hosting"
-              value={formData.name || ""}
-              onChange={(e) => onFormChange({ ...formData, name: e.target.value })}
-              disabled={isLoading}
-              maxLength={255}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              placeholder="Describe the service..."
-              rows={3}
-              value={formData.description || ""}
-              onChange={(e) =>
-                onFormChange({ ...formData, description: e.target.value })
-              }
-              disabled={isLoading}
-              maxLength={1000}
-            />
-            <p className="text-xs text-muted-foreground">
-              {(formData.description || "").length}/1000
-            </p>
-          </div>
-
-          {service && (
-            <div className="space-y-2">
-              <Label htmlFor="active">Status</Label>
-              <Select
-                value={formData.active ? "active" : "inactive"}
-                onValueChange={(value) =>
-                  onFormChange({ ...formData, active: value === "active" })
-                }
-                disabled={isLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>
-            Cancel
-          </Button>
-          <Button onClick={onSave} disabled={isLoading}>
-            {isLoading ? "Saving..." : "Save Service"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function PlanDialog({
-  isOpen,
-  plan,
-  service,
-  formData,
-  onFormChange,
-  onSave,
-  onClose,
-  isLoading,
-}) {
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{plan ? "Edit Plan" : "Create Plan"}</DialogTitle>
-          <DialogDescription>
-            {service && `for ${service.name}`}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="plan-name">Plan Name</Label>
-            <Input
-              id="plan-name"
-              placeholder="e.g., Basic, Professional, Enterprise"
-              value={formData.name || ""}
-              onChange={(e) => onFormChange({ ...formData, name: e.target.value })}
-              disabled={isLoading}
-              maxLength={100}
-            />
-            <p className="text-xs text-muted-foreground">
-              2-100 characters, unique per service
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="plan-description">Description</Label>
-            <Textarea
-              id="plan-description"
-              placeholder="Who is this plan for?"
-              rows={2}
-              value={formData.description || ""}
-              onChange={(e) =>
-                onFormChange({ ...formData, description: e.target.value })
-              }
-              disabled={isLoading}
-              maxLength={500}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="position">Display Position</Label>
-            <Input
-              id="position"
-              type="number"
-              min="0"
-              value={formData.position || 0}
-              onChange={(e) =>
-                onFormChange({ ...formData, position: parseInt(e.target.value) })
-              }
-              disabled={isLoading}
-            />
-            <p className="text-xs text-muted-foreground">
-              Lower numbers appear first
-            </p>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>
-            Cancel
-          </Button>
-          <Button onClick={onSave} disabled={isLoading}>
-            {isLoading ? "Saving..." : "Save Plan"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function PricingDialog({
-  isOpen,
-  plan,
-  formData,
-  onFormChange,
-  onSave,
-  onClose,
-  isLoading,
-}) {
-  const billingCycles = [
-    { value: "monthly", label: "Monthly" },
-    { value: "quarterly", label: "Quarterly" },
-    { value: "semi_annually", label: "Semi-Annual" },
-    { value: "annually", label: "Annual" },
-  ]
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add Pricing</DialogTitle>
-          <DialogDescription>
-            {plan && `for ${plan.name} plan`}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="billing-cycle">Billing Cycle</Label>
-            <Select
-              value={formData.cycle || "monthly"}
-              onValueChange={(value) =>
-                onFormChange({ ...formData, cycle: value })
-              }
-              disabled={isLoading}
-            >
-              <SelectTrigger>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-36">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {billingCycles.map((cycle) => (
-                  <SelectItem key={cycle.value} value={cycle.value}>
-                    {cycle.label}
-                  </SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="hidden">Hidden</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={groupFilter} onValueChange={setGroupFilter}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="All groups" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All groups</SelectItem>
+                <SelectItem value="ungrouped">Ungrouped</SelectItem>
+                {groups.length > 0 && <Separator className="my-1" />}
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="price">Price</Label>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">$</span>
-              <Input
-                id="price"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="9.99"
-                value={formData.price || ""}
-                onChange={(e) =>
-                  onFormChange({ ...formData, price: e.target.value })
-                }
-                disabled={isLoading}
-                className="flex-1"
-              />
+          {/* Bulk action bar */}
+          {someSelected && canManageServices && (
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-secondary border border-border rounded-xl">
+              <span className="text-xs font-semibold text-foreground">{selectedList.length} selected</span>
+              <div className="h-4 w-px bg-border" />
+              {allSelectedInactive ? (
+                <Button size="sm" variant="outline" onClick={() => setBulkActivateOpen(true)} disabled={bulkSubmitting} className="h-7 text-xs gap-1.5">
+                  <CheckCircle className="h-3.5 w-3.5" /> Activate
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => setBulkDeactivateOpen(true)} disabled={bulkSubmitting} className="h-7 text-xs gap-1.5">
+                  <Archive className="h-3.5 w-3.5" /> Deactivate
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setBulkHardDeleteOpen(true)} disabled={bulkSubmitting} className="h-7 text-xs gap-1.5 text-destructive hover:text-destructive border-destructive/30">
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </Button>
+              <Button size="sm" variant="ghost" className="ml-auto text-xs h-7" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Minimum 2 decimal places (e.g., 9.99)
+          )}
+
+          {/* Table */}
+          <Card className="overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-10 pl-4">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={toggleAll}
+                      aria-label="Select all"
+                      disabled={loading || filtered.length === 0}
+                    />
+                  </TableHead>
+                  <TableHead>Product Name</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-center">Plans</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-16 text-right pr-4">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell colSpan={8} className="py-3 px-4">
+                        <Skeleton className="h-5 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : groupedRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-16 text-center">
+                      <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                        <Package className="h-10 w-10 opacity-25" />
+                        <p className="text-sm">
+                          {search || statusFilter !== "all" || groupFilter !== "all"
+                            ? "No products match your filters"
+                            : "No products yet"}
+                        </p>
+                        {!search && statusFilter === "all" && groupFilter === "all" && canManageServices && (
+                          <Button size="sm" asChild>
+                            <Link href="/admin/services/new">
+                              <Plus className="h-4 w-4 mr-1" /> Add first product
+                            </Link>
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  groupedRows.map((row, idx) => {
+                    if (row.type === "header") {
+                      const g = row.group
+                      const count = filtered.filter((s) =>
+                        g.id ? s.groupId === g.id : !s.groupId
+                      ).length
+                      return (
+                        <TableRow key={`hdr-${g.id ?? "ungrouped"}`}
+                          className="bg-muted/50 hover:bg-muted/50 border-t-2 border-border">
+                          <TableCell colSpan={8} className="py-2 pl-4">
+                            <div className="flex items-center gap-2">
+                              <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm font-semibold">{g.name}</span>
+                              <Badge variant="outline" className="text-xs px-1.5 py-0 ml-1">
+                                {count}
+                              </Badge>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    }
+
+                    const s = row.service
+                    const low = lowestPrice(s)
+                    return (
+                      <TableRow key={s.id} className={selectedIds.has(s.id) ? "bg-primary/5" : ""}>
+                        <TableCell className="pl-4">
+                          <Checkbox
+                            checked={selectedIds.has(s.id)}
+                            onCheckedChange={() => toggleSelect(s.id)}
+                            aria-label={`Select ${s.name}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Link
+                            href={`/admin/services/${s.id}`}
+                            className="font-medium text-sm hover:underline hover:text-primary"
+                          >
+                            {s.name}
+                          </Link>
+                          {s.tagline && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">
+                              {s.tagline}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                            {s.code}
+                          </code>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-xs text-muted-foreground capitalize">
+                            {s.moduleType || s.paymentType || "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center text-sm text-muted-foreground">
+                          {s.plans?.length ?? 0}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {low != null ? `$${low.toFixed(2)}/mo` : "—"}
+                        </TableCell>
+                        <TableCell>{statusBadge(s.active, s.hidden)}</TableCell>
+                        <TableCell className="text-right pr-4">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="outline" size="sm" className="h-7 text-xs px-2.5" asChild>
+                              <Link href={`/admin/services/${s.id}`}>
+                                <Settings2 className="h-3.5 w-3.5 mr-1" /> Edit
+                              </Link>
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/admin/services/${s.id}`} className="flex items-center gap-2">
+                                    <ExternalLink className="h-3.5 w-3.5" /> View / Edit
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="gap-2"
+                                  onClick={() => handleToggleVisibility(s)}
+                                >
+                                  {s.hidden
+                                    ? <><Eye className="h-3.5 w-3.5" /> Show in store</>
+                                    : <><EyeOff className="h-3.5 w-3.5" /> Hide from store</>}
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                {s.active ? (
+                                  <DropdownMenuItem
+                                    className="gap-2 text-muted-foreground focus:text-foreground"
+                                    onClick={() => setDeactivateTarget(s)}
+                                  >
+                                    <Archive className="h-3.5 w-3.5" /> Deactivate
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    onClick={() => setActivateTarget(s)}
+                                  >
+                                    <CheckCircle className="h-3.5 w-3.5" /> Activate
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="gap-2 text-destructive focus:text-destructive"
+                                  onClick={() => setHardDeleteTarget(s)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Delete permanently
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+        </TabsContent>
+
+        {/* ══ Groups tab ════════════════════════════════════════════════════ */}
+        <TabsContent value="groups" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {groups.length} group{groups.length !== 1 ? "s" : ""} — organize products for your store
             </p>
+            <Button variant="outline" asChild>
+              <Link href="/admin/services/groups">
+                <FolderOpen className="h-4 w-4 mr-2" /> Manage Groups
+              </Link>
+            </Button>
           </div>
+          <Card className="overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="pl-4">Group Name</TableHead>
+                  <TableHead>Slug</TableHead>
+                  <TableHead className="text-center">Products</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right pr-4">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell colSpan={5} className="py-3 px-4">
+                        <Skeleton className="h-5 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : groups.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
+                      No groups configured.{" "}
+                      <Link href="/admin/services/groups" className="underline">
+                        Create one
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  groups.map((g) => {
+                    const count = services.filter((s) => s.groupId === g.id).length
+                    return (
+                      <TableRow key={g.id}>
+                        <TableCell className="pl-4 font-medium text-sm">{g.name}</TableCell>
+                        <TableCell>
+                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                            {g.slug}
+                          </code>
+                        </TableCell>
+                        <TableCell className="text-center text-sm text-muted-foreground">{count}</TableCell>
+                        <TableCell>
+                          {g.active !== false
+                            ? <Badge variant="outline" className="text-xs text-foreground border-border">Active</Badge>
+                            : <Badge variant="secondary" className="text-xs">Inactive</Badge>}
+                        </TableCell>
+                        <TableCell className="text-right pr-4">
+                          <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+                            <Link href="/admin/services/groups">
+                              <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+        </TabsContent>
 
-          <div className="space-y-2">
-            <Label htmlFor="currency">Currency</Label>
-            <Select
-              value={formData.currency || "USD"}
-              onValueChange={(value) =>
-                onFormChange({ ...formData, currency: value })
-              }
-              disabled={isLoading}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="USD">USD</SelectItem>
-                <SelectItem value="EUR">EUR</SelectItem>
-                <SelectItem value="GBP">GBP</SelectItem>
-                <SelectItem value="CAD">CAD</SelectItem>
-                <SelectItem value="AUD">AUD</SelectItem>
-              </SelectContent>
-            </Select>
+        {/* ══ Import / Export tab ═══════════════════════════════════════════ */}
+        <TabsContent value="batch" className="mt-4">
+          <div className="grid gap-4 sm:grid-cols-2 max-w-2xl">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Download className="h-4 w-4" /> Export Products
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Download all products, plans, and pricing as a JSON backup.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={handleExport}
+                  disabled={services.length === 0}
+                >
+                  Export {services.length} product{services.length !== 1 ? "s" : ""}
+                </Button>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Upload className="h-4 w-4" /> Import Products
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Import products from a JSON file exported from this or another instance.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full" variant="outline" asChild>
+                  <Link href="/admin/services/import">
+                    Go to Import
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
           </div>
-        </div>
+        </TabsContent>
+      </Tabs>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>
-            Cancel
-          </Button>
-          <Button onClick={onSave} disabled={isLoading}>
-            {isLoading ? "Creating..." : "Add Pricing"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {/* ── Confirm dialogs ──────────────────────────────────────────────── */}
+
+      <AlertDialog open={!!deactivateTarget} onOpenChange={(o) => !o && setDeactivateTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{deactivateTarget?.name}</strong> will be set to inactive. Existing orders are not affected. You can re-activate it at any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeactivate} disabled={submitting}
+              className="bg-amber-600 hover:bg-amber-700">
+              {submitting ? "Deactivating…" : "Deactivate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!activateTarget} onOpenChange={(o) => !o && setActivateTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Activate product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{activateTarget?.name}</strong> will be set to active and available for new orders.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleActivate} disabled={submitting}>
+              {submitting ? "Activating…" : "Activate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!hardDeleteTarget} onOpenChange={(o) => !o && setHardDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently delete product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{hardDeleteTarget?.name}</strong> and all its plans, pricing, features, and configuration will be permanently removed. <strong>This cannot be undone.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleHardDelete} disabled={submitting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {submitting ? "Deleting…" : "Delete permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeactivateOpen} onOpenChange={setBulkDeactivateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate {selectedList.length} product(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The selected products will be set to inactive. Existing orders are not affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkSubmitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDeactivate} disabled={bulkSubmitting}
+              className="bg-amber-600 hover:bg-amber-700">
+              {bulkSubmitting ? "Deactivating…" : "Deactivate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkActivateOpen} onOpenChange={setBulkActivateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Activate {selectedList.length} product(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The selected products will be set to active and available for new orders.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkSubmitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkActivate} disabled={bulkSubmitting}>
+              {bulkSubmitting ? "Activating…" : "Activate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkHardDeleteOpen} onOpenChange={setBulkHardDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedList.length} product(s) permanently?</AlertDialogTitle>
+            <AlertDialogDescription>
+              All selected products and their plans, pricing, and configuration will be permanently removed. <strong>This cannot be undone.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkSubmitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkHardDelete} disabled={bulkSubmitting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {bulkSubmitting ? "Deleting…" : "Delete permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }

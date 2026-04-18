@@ -31,6 +31,7 @@ export default function MFAVerificationPage() {
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [expired, setExpired] = useState(false);
 
   const inputRefs = useRef([]);
 
@@ -94,24 +95,21 @@ export default function MFAVerificationPage() {
 
     try {
       await AuthAPI.verifyMFALogin(userId, verificationCode);
-      
-      // Reload session to get updated user data
-      await loadSession();
-      
-      // Redirect to dashboard
-      router.push("/dashboard");
+
+      // Reload session and redirect to the correct portal
+      const sessionData = await loadSession();
+      const portalPath = sessionData?.portal === "admin" ? "/admin/dashboard" : "/client/dashboard";
+      router.push(portalPath);
 
     } catch (err) {
-      console.error("MFA verification error:", err);
-      const errorMessage = 
-        err.response?.data?.error || 
-        err.message || 
-        "Invalid code. Please try again.";
-      setError(errorMessage);
-      
-      // Clear code on error
-      setCode(["", "", "", "", "", ""]);
-      inputRefs.current[0]?.focus();
+      const msg = err.message || "";
+      if (msg === "UNAUTHENTICATED" || msg.toLowerCase().includes("session") || msg.toLowerCase().includes("expired")) {
+        setExpired(true);
+      } else {
+        setError("Invalid code. Please try again.");
+        setCode(["", "", "", "", "", ""]);
+        inputRefs.current[0]?.focus();
+      }
     } finally {
       setLoading(false);
     }
@@ -129,8 +127,32 @@ export default function MFAVerificationPage() {
     await handleVerify(fullCode);
   }
 
+  // Session expired — show a clean redirect prompt
+  if (expired) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-sm text-center">
+          <CardHeader>
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
+              <Shield className="h-10 w-10 text-amber-600" />
+            </div>
+            <CardTitle className="text-xl font-bold">Session Expired</CardTitle>
+            <CardDescription>
+              Your login session has expired. Please sign in again.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" onClick={() => router.push("/admin/login")}>
+              Back to Sign In
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
@@ -188,7 +210,7 @@ export default function MFAVerificationPage() {
               <p className="text-sm text-muted-foreground">
                 Don&apos;t have access to your authenticator?
               </p>
-              <Link href="/login" className="text-sm text-primary hover:underline">
+              <Link href="/admin/login" className="text-sm text-primary hover:underline">
                 Back to Login
               </Link>
             </div>

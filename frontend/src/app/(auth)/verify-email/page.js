@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -19,7 +19,7 @@ import { Loader2, CheckCircle2, XCircle, Mail } from "lucide-react";
 import { AuthAPI } from "@/lib/api/auth";
 import { useAuth } from "@/lib/context/AuthContext";
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { loadSession } = useAuth();
@@ -48,18 +48,13 @@ export default function VerifyEmailPage() {
       await AuthAPI.verifyEmail(verificationToken);
       setVerified(true);
 
-      // Try to load session (in case user is already logged in)
-      try {
-        await loadSession();
-        // If session loads successfully, redirect to dashboard
-        setTimeout(() => {
-          router.push("/dashboard");
-        }, 2000);
-      } catch (err) {
-        // User not logged in, redirect to login page
-        setTimeout(() => {
-          router.push("/login?verified=true");
-        }, 3000);
+      // Reload session and redirect to the correct portal
+      const sessionData = await loadSession();
+      if (sessionData?.user) {
+        const portalPath = sessionData.portal === "admin" ? "/admin/dashboard" : "/client/dashboard";
+        setTimeout(() => router.push(portalPath), 2000);
+      } else {
+        setTimeout(() => router.push("/login?verified=true"), 3000);
       }
 
     } catch (err) {
@@ -94,7 +89,7 @@ export default function VerifyEmailPage() {
   // Verifying state
   if (verifying) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
@@ -113,7 +108,7 @@ export default function VerifyEmailPage() {
   // Success state
   if (verified) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
@@ -148,7 +143,7 @@ export default function VerifyEmailPage() {
   // Error state (when token verification failed)
   if (error && token) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
@@ -183,7 +178,7 @@ export default function VerifyEmailPage() {
 
   // Waiting for verification (no token)
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
@@ -237,5 +232,24 @@ export default function VerifyEmailPage() {
         </CardFooter>
       </Card>
     </div>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            </div>
+            <CardTitle>Loading...</CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+    }>
+      <VerifyEmailContent />
+    </Suspense>
   );
 }
