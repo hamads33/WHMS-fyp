@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const http           = require("http");
 const { Server }     = require("socket.io");
-const app            = require("./app"); // app.js already runs init()
+const { app, init }  = require("./app");
 const PORT           = process.env.PORT || 4000;
 
 /* ================================================================
@@ -19,13 +19,9 @@ const allowedOrigins = [
 ];
 
 async function start() {
-  console.log("⏳ Waiting for system initialization...");
-
   try {
-    /* ----------------------------------------------------------------
-       Create an HTTP server wrapping the Express app so that
-       Socket.io can share the same port.
-    ---------------------------------------------------------------- */
+    await init();
+
     const server = http.createServer(app);
 
     const io = new Server(server, {
@@ -36,6 +32,17 @@ async function start() {
       },
       path: "/socket.io",
     });
+
+    /* ----------------------------------------------------------------
+       Wire Socket.io to server-management real-time monitor
+    ---------------------------------------------------------------- */
+    try {
+      const serverMonitor = require("./modules/server-management/services/server-monitor.service");
+      serverMonitor.setIo(io);
+      console.log("✅ Socket.io wired to server monitor");
+    } catch (err) {
+      console.warn("[server] Could not wire Socket.io to server monitor:", err.message);
+    }
 
     /* ----------------------------------------------------------------
        Register the Support module (REST routes + WebSocket gateway)

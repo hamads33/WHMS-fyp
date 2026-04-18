@@ -1,10 +1,8 @@
 // src/modules/email/email.service.js
 const { Queue } = require('bullmq');
 const IORedis = require('ioredis');
-const { PrismaClient } = require('@prisma/client');
 const { v4: uuidv4 } = require('uuid');
-
-const prisma = new PrismaClient();
+const prisma = require('../../db/prisma');
 const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,

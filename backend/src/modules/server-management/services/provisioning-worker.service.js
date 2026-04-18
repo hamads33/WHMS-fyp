@@ -6,9 +6,19 @@ const webhookService = require("./webhook.service");
 
 const MAX_ATTEMPTS = 3;
 const POLL_INTERVAL_MS = 5000;
+const JOB_TIMEOUT_MS = 30_000;
 
 let _running = false;
 let _timer = null;
+
+function _withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Job timed out after ${ms}ms: ${label}`)), ms)
+    ),
+  ]);
+}
 
 async function _processJob(job) {
   await jobRepo.update(job.id, {
@@ -22,7 +32,7 @@ async function _processJob(job) {
     switch (job.type) {
       case "create_account": {
         const { userId, domain, username, password } = job.payload;
-        await driver.createAccount({ domain, username, password });
+        await _withTimeout(driver.createAccount({ domain, username, password }), JOB_TIMEOUT_MS, "createAccount");
         const account = await accountRepo.create({ serverId: job.serverId, userId, domain, status: "active" });
         await serverLogRepo.create({
           serverId: job.serverId,
@@ -35,11 +45,11 @@ async function _processJob(job) {
 
       case "suspend_account": {
         const { accountId, domain } = job.payload;
-        await driver.suspendAccount(domain);
+        await _withTimeout(driver.suspendAccount(domain), JOB_TIMEOUT_MS, "suspendAccount");
         const account = await accountRepo.update(accountId, { status: "suspended" });
         await serverLogRepo.create({
           serverId: job.serverId,
-          action: "ACCOUNT_PROVISIONED",
+          action: "ACCOUNT_SUSPENDED",
           message: `[Queue] Account "${domain}" suspended`,
         });
         webhookService.emit("ACCOUNT_SUSPENDED", { serverId: job.serverId, account });
@@ -48,11 +58,11 @@ async function _processJob(job) {
 
       case "terminate_account": {
         const { accountId, domain } = job.payload;
-        await driver.terminateAccount(domain);
+        await _withTimeout(driver.terminateAccount(domain), JOB_TIMEOUT_MS, "terminateAccount");
         const account = await accountRepo.update(accountId, { status: "terminated" });
         await serverLogRepo.create({
           serverId: job.serverId,
-          action: "ACCOUNT_PROVISIONED",
+          action: "ACCOUNT_TERMINATED",
           message: `[Queue] Account "${domain}" terminated`,
         });
         webhookService.emit("ACCOUNT_TERMINATED", { serverId: job.serverId, account });
@@ -77,10 +87,22 @@ async function _processJob(job) {
     if (failed) {
       await serverLogRepo.create({
         serverId: job.serverId,
-        action: "ACCOUNT_PROVISIONED",
-        message: `[Queue] Job ${job.id} failed after ${attempts} attempts: ${e.message}`,
+        action: "JOB_FAILED",
+        message: `[Queue] Job ${job.id} (${job.type}) failed after ${attempts} attempts: ${e.message}`,
       });
     }
+  }
+}
+
+async function _recoverStuckJobs() {
+  try {
+    const stuck = await jobRepo.findStuck();
+    for (const job of stuck) {
+      await jobRepo.update(job.id, { status: "pending", lastError: "Recovered from stuck state" });
+      console.warn(`[ProvisioningWorker] Recovered stuck job ${job.id} (${job.type})`);
+    }
+  } catch (e) {
+    console.error("[ProvisioningWorker] stuck-job recovery error:", e.message);
   }
 }
 
@@ -88,16 +110,10 @@ async function _tick() {
   if (_running) return;
   _running = true;
   try {
+    await _recoverStuckJobs();
     const pending = await jobRepo.findPending();
     for (const job of pending) {
       await _processJob(job);
-    }
-    // pick up previously-failed jobs that still have retries left
-    const retryable = await jobRepo.findFailed();
-    for (const job of retryable) {
-      if (job.attempts < MAX_ATTEMPTS) {
-        await _processJob(job);
-      }
     }
   } catch (e) {
     console.error("[ProvisioningWorker] tick error:", e.message);

@@ -1,3 +1,8 @@
 const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
-module.exports = prisma
+
+const globalForPrisma = globalThis
+if (!globalForPrisma.prisma) {
+  globalForPrisma.prisma = new PrismaClient()
+}
+
+module.exports = globalForPrisma.prisma

@@ -126,18 +126,27 @@ exports.updateAccountQuotas = async (req, res) => {
 // GET /servers/dashboard — servers enriched with latest metrics + sparkline history
 exports.getDashboard = async (req, res) => {
   try {
-    const servers = await prisma.server.findMany({
-      include: {
-        group: true,
-        _count: { select: { accounts: true } },
-        metricsHistory: {
-          orderBy: { recordedAt: "desc" },
-          take: 12,
-          select: { cpuUsage: true, ramUsage: true, diskUsage: true, latency: true, uptime: true },
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const skip  = Math.max(parseInt(req.query.skip)  || 0, 0);
+    const sparkPoints = Math.min(parseInt(req.query.points) || 12, 24);
+
+    const [servers, totalCount] = await Promise.all([
+      prisma.server.findMany({
+        include: {
+          group: true,
+          _count: { select: { accounts: true } },
+          metricsHistory: {
+            orderBy: { recordedAt: "desc" },
+            take: sparkPoints,
+            select: { cpuUsage: true, ramUsage: true, diskUsage: true, latency: true, uptime: true },
+          },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip,
+      }),
+      prisma.server.count(),
+    ]);
 
     const enriched = servers.map((server) => {
       const history = [...server.metricsHistory].reverse(); // chronological
@@ -179,6 +188,7 @@ exports.getDashboard = async (req, res) => {
     res.json({
       data:  enriched,
       stats: { total, online, offline, maintenance, avgCpu, avgRam, avgDisk },
+      pagination: { total: totalCount, limit, skip },
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -189,16 +199,26 @@ exports.getDashboard = async (req, res) => {
 exports.getAllAccounts = async (req, res) => {
   try {
     const { serverId, status } = req.query;
-    const accounts = await prisma.serverManagedAccount.findMany({
-      where: {
-        ...(serverId && { serverId }),
-        ...(status   && { status }),
-      },
-      include: { server: { select: { id: true, name: true, hostname: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 500,
-    });
-    res.json({ data: accounts, total: accounts.length });
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    const skip  = Math.max(parseInt(req.query.skip)  || 0, 0);
+
+    const where = {
+      ...(serverId && { serverId }),
+      ...(status   && { status }),
+    };
+
+    const [accounts, total] = await Promise.all([
+      prisma.serverManagedAccount.findMany({
+        where,
+        include: { server: { select: { id: true, name: true, hostname: true } } },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip,
+      }),
+      prisma.serverManagedAccount.count({ where }),
+    ]);
+
+    res.json({ data: accounts, total, pagination: { limit, skip } });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

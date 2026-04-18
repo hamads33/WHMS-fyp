@@ -41,8 +41,17 @@ async function findFailed() {
   });
 }
 
+async function findStuck() {
+  const cutoff = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes ago
+  return prisma.provisioningJob.findMany({
+    where: { status: "running", updatedAt: { lt: cutoff } },
+    include,
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 async function update(id, data) {
   return prisma.provisioningJob.update({ where: { id }, data });
 }
 
-module.exports = { create, findById, findAll, findPending, findFailed, update };
+module.exports = { create, findById, findAll, findPending, findFailed, findStuck, update };

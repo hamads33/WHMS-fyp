@@ -58,7 +58,7 @@ class VestaCPClient {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        rejectUnauthorized: false, // For self-signed certs (demo only)
+        rejectUnauthorized: process.env.VESTACP_REJECT_UNAUTHORIZED !== 'false',
       };
 
       const req = this.protocol.request(options, (res) => {
