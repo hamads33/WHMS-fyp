@@ -116,16 +116,26 @@ export function BackupDetails() {
             </Button>
             <Button
               variant="outline"
-              onClick={() =>
+              onClick={() => {
+                const restorePayload = {
+                  destination: "/restore",
+                };
+                // Set restore flags based on backup type
+                if (type === "database") {
+                  restorePayload.restoreDb = true;
+                  restorePayload.restoreFiles = false;
+                } else if (type === "files" || type === "config") {
+                  restorePayload.restoreFiles = true;
+                  restorePayload.restoreDb = false;
+                } else if (type === "full") {
+                  restorePayload.restoreFiles = true;
+                  restorePayload.restoreDb = true;
+                }
                 backupApi(`/backups/${id}/restore`, {
                   method: "POST",
-                  body: JSON.stringify({
-                    restoreFiles: true,
-                    restoreDb: false,
-                    destination: "/restore",
-                  }),
-                })
-              }
+                  body: JSON.stringify(restorePayload),
+                });
+              }}
               className="gap-2"
             >
               <RotateCcw className="w-4 h-4" />

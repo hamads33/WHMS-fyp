@@ -16,6 +16,7 @@ import { CheckCircle2, XCircle, Loader2, Clock } from "lucide-react";
 
 export function BackupLogsViewer({ backupId }) {
   const { logs, status, loading } = useBackupLogs(backupId);
+  const [hideFailed, setHideFailed] = useState(true);
 
   if (loading) {
     return (
@@ -78,10 +79,24 @@ export function BackupLogsViewer({ backupId }) {
       {/* Logs Card */}
       <Card>
         <CardHeader>
-          <CardTitle>Execution Logs</CardTitle>
-          <CardDescription>
-            Detailed step-by-step execution timeline
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Execution Logs</CardTitle>
+              <CardDescription>
+                Detailed step-by-step execution timeline
+              </CardDescription>
+            </div>
+            <button
+              onClick={() => setHideFailed(!hideFailed)}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                hideFailed
+                  ? 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              {hideFailed ? '✓ Hide Failed' : 'Show All'}
+            </button>
+          </div>
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[400px] pr-4">
@@ -91,13 +106,25 @@ export function BackupLogsViewer({ backupId }) {
                   No logs available yet
                 </div>
               ) : (
-                logs.map((log, index) => (
-                  <LogEntry
-                    key={log.id}
-                    log={log}
-                    isLast={index === logs.length - 1}
-                  />
-                ))
+                (() => {
+                  const filteredLogs = hideFailed
+                    ? logs.filter(log => log.status !== 'failed' && log.status !== 'error')
+                    : logs;
+
+                  return filteredLogs.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No successful logs to display
+                    </div>
+                  ) : (
+                    filteredLogs.map((log, index) => (
+                      <LogEntry
+                        key={log.id}
+                        log={log}
+                        isLast={index === filteredLogs.length - 1}
+                      />
+                    ))
+                  );
+                })()
               )}
             </div>
           </ScrollArea>
