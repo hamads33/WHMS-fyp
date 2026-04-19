@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { BroadcastBanner } from "@/components/broadcast-banner";
 import { useAuth } from "@/lib/context/AuthContext";
 import { Toaster } from "@/components/ui/toaster";
 import { Loader2 } from "lucide-react";
+import { ClientBroadcastAPI } from "@/lib/api/broadcast";
 
 export default function AdminLayout({ children }) {
   const router = useRouter();
+  const [notifications, setNotifications] = useState([]);
   const {
     user,
     loading,
@@ -17,7 +20,7 @@ export default function AdminLayout({ children }) {
     isAdmin,
     impersonating,
     impersonator,
-    loadSession,
+    stopImpersonation,
   } = useAuth();
 
   // Check authentication and authorization
@@ -25,15 +28,24 @@ export default function AdminLayout({ children }) {
     if (loading) return;
 
     if (!isAuthenticated) {
-      router.push("/login");
+      router.push("/admin/login");
       return;
     }
 
     if (!isAdmin) {
-      router.push("/unauthorized");
+      // If impersonating, redirect to client portal instead of unauthorized
+      router.push(impersonating ? "/client/dashboard" : "/unauthorized");
       return;
     }
-  }, [isAuthenticated, isAdmin, loading, router]);
+  }, [isAuthenticated, isAdmin, impersonating, loading, router]);
+
+  // Fetch broadcast notifications
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    ClientBroadcastAPI.getNotifications()
+      .then(res => setNotifications(res.data || []))
+      .catch(() => {});
+  }, [isAuthenticated]);
 
   // Loading state
   if (loading) {
@@ -57,31 +69,6 @@ export default function AdminLayout({ children }) {
     return null; // Will redirect
   }
 
-  // Stop impersonation handler
-  async function handleStopImpersonation() {
-    try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/auth/impersonate/stop`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ 
-            sessionId: user.sessionId // If you track session IDs
-          }),
-        }
-      );
-
-      if (response.ok) {
-        await loadSession();
-        router.push("/admin/dashboard");
-      }
-    } catch (error) {
-      console.error("Failed to stop impersonation:", error);
-    }
-  }
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -101,13 +88,22 @@ export default function AdminLayout({ children }) {
           </div>
 
           <button
-            onClick={handleStopImpersonation}
+            onClick={() => stopImpersonation()}
             className="bg-background text-foreground px-3 py-1 rounded font-medium hover:bg-accent transition-colors"
           >
             Stop Impersonation
           </button>
         </div>
       )}
+
+      {/* Broadcast Notifications Banner */}
+      <BroadcastBanner
+        broadcasts={notifications}
+        onDismiss={async (id) => {
+          await ClientBroadcastAPI.dismiss(id);
+          setNotifications(prev => prev.filter(n => n.id !== id));
+        }}
+      />
 
       {/* Main Admin Layout */}
       <div className="flex flex-1 overflow-hidden">
@@ -116,7 +112,7 @@ export default function AdminLayout({ children }) {
         <div className="flex flex-1 flex-col overflow-hidden">
           <AdminHeader />
 
-          <main className="flex-1 overflow-y-auto bg-background p-6">
+          <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-950 p-6">
             {children}
           </main>
         </div>
