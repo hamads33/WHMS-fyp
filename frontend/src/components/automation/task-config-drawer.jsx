@@ -57,7 +57,7 @@ export function TaskConfigDrawer({ task, isOpen, onClose, onSave }) {
         <div key={task.id}>
           <SheetHeader>
             <SheetTitle>{task.displayName}</SheetTitle>
-            <SheetDescription>{task.actionType}</SheetDescription>
+            <SheetDescription>Configure step settings</SheetDescription>
           </SheetHeader>
 
           <div className="py-4 space-y-6">
