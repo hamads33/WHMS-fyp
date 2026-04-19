@@ -16,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { AlertCircle, Plus, Trash2, Edit, Play, Loader2, CheckCircle } from 'lucide-react';
+import { ConfirmDialog } from '@/components/automation/confirm-dialog';
 
 // ===== TOAST COMPONENT =====
 const Toast = ({ message, type, onClose }) => {
@@ -57,6 +58,7 @@ export default function WorkflowsListPage() {
   const [toast, setToast] = useState(null);
   const [isDeleting, setIsDeleting] = useState(null);
   const [isExecuting, setIsExecuting] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   // ===== LOAD WORKFLOWS =====
   const loadWorkflows = useCallback(async () => {
@@ -136,10 +138,6 @@ export default function WorkflowsListPage() {
   // ===== DELETE WORKFLOW =====
   const handleDelete = useCallback(
     async (workflowId, workflowName) => {
-      if (!window.confirm(`Are you sure you want to delete "${workflowName}"?`)) {
-        return;
-      }
-
       try {
         setIsDeleting(workflowId);
         console.log('🗑️ Deleting workflow:', workflowId);
@@ -393,7 +391,7 @@ export default function WorkflowsListPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDelete(workflow.id, workflow.name)}
+                          onClick={() => setDeleteTarget(workflow)}
                           disabled={isDeleting === workflow.id}
                           className="gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
                         >
@@ -436,6 +434,19 @@ export default function WorkflowsListPage() {
           </div>
         </Card>
       )}
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete workflow?"
+        description={`"${deleteTarget?.name || ""}" and all its run history will be permanently deleted. This cannot be undone.`}
+        confirmLabel="Delete Workflow"
+        onConfirm={() => {
+          handleDelete(deleteTarget?.id, deleteTarget?.name)
+          setDeleteTarget(null)
+        }}
+      />
     </div>
   );
 }

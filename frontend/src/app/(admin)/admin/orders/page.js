@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { usePermissions } from "@/hooks/usePermissions"
 import {
   Card,
   CardContent,
@@ -70,128 +71,10 @@ import {
   Zap,
   TrendingDown,
   Users,
+  Radio,
+  ShoppingCart,
 } from "lucide-react"
-
-/**
- * API Client for Orders - Complete Implementation
- * Matches: Orders Module API Documentation
- */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api"
-
-const OrdersAPI = {
-  // ========== ADMIN ORDERS ==========
-
-  listOrders: async (filters = {}) => {
-    const params = new URLSearchParams()
-    if (filters.status) params.append("status", filters.status)
-    if (filters.clientId) params.append("clientId", filters.clientId)
-    if (filters.limit) params.append("limit", filters.limit)
-    if (filters.offset) params.append("offset", filters.offset)
-
-    const response = await fetch(`${API_BASE}/admin/orders?${params}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to list orders")
-    return response.json()
-  },
-
-  getOrder: async (id) => {
-    const response = await fetch(`${API_BASE}/admin/orders/${id}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to fetch order")
-    return response.json()
-  },
-
-  getStats: async () => {
-    const response = await fetch(`${API_BASE}/admin/orders/stats`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to fetch stats")
-    return response.json()
-  },
-
-  // ========== ORDER ACTIONS ==========
-
-  activateOrder: async (id) => {
-    const response = await fetch(`${API_BASE}/admin/orders/${id}/activate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to activate order")
-    return response.json()
-  },
-
-  renewOrder: async (id) => {
-    const response = await fetch(`${API_BASE}/admin/orders/${id}/renew`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to renew order")
-    return response.json()
-  },
-
-  suspendOrder: async (id) => {
-    const response = await fetch(`${API_BASE}/admin/orders/${id}/suspend`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to suspend order")
-    return response.json()
-  },
-
-  resumeOrder: async (id) => {
-    const response = await fetch(`${API_BASE}/admin/orders/${id}/resume`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to resume order")
-    return response.json()
-  },
-
-  terminateOrder: async (id) => {
-    const response = await fetch(`${API_BASE}/admin/orders/${id}/terminate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-    })
-    if (!response.ok) throw new Error("Failed to terminate order")
-    return response.json()
-  },
-}
-
-function getAuthToken() {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("authToken") || ""
-  }
-  return ""
-}
+import { AdminOrdersAPI } from "@/lib/api/orders"
 
 // ============================================================================
 // ORDER STATUS HELPERS
@@ -200,31 +83,31 @@ function getAuthToken() {
 const ORDER_STATUS_CONFIG = {
   pending: {
     label: "Pending",
-    color: "bg-yellow-100 text-yellow-800",
+    color: "bg-muted text-muted-foreground",
     icon: "⏳",
     actions: ["activate", "view"],
   },
   active: {
     label: "Active",
-    color: "bg-green-100 text-green-800",
+    color: "bg-accent text-accent-foreground",
     icon: "✓",
     actions: ["renew", "suspend", "terminate", "view"],
   },
   suspended: {
     label: "Suspended",
-    color: "bg-orange-100 text-orange-800",
+    color: "bg-muted text-muted-foreground",
     icon: "⏸",
     actions: ["resume", "terminate", "view"],
   },
   terminated: {
     label: "Terminated",
-    color: "bg-red-100 text-red-800",
+    color: "text-destructive",
     icon: "✕",
     actions: ["view"],
   },
   cancelled: {
     label: "Cancelled",
-    color: "bg-gray-100 text-gray-800",
+    color: "bg-muted text-muted-foreground",
     icon: "◯",
     actions: ["view"],
   },
@@ -235,6 +118,7 @@ const ORDER_STATUS_CONFIG = {
 // ============================================================================
 
 export default function AdminOrdersPage() {
+  const { canManageOrders } = usePermissions()
   const [orders, setOrders] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -244,6 +128,7 @@ export default function AdminOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [showDetailsDialog, setShowDetailsDialog] = useState(false)
   const [actionLoading, setActionLoading] = useState(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState(null)
   const [activeTab, setActiveTab] = useState("all")
 
@@ -256,12 +141,12 @@ export default function AdminOrdersPage() {
       if (statusFilter !== "all") filters.status = statusFilter
 
       const [ordersRes, statsRes] = await Promise.all([
-        OrdersAPI.listOrders(filters),
-        OrdersAPI.getStats(),
+        AdminOrdersAPI.listOrders(filters),
+        AdminOrdersAPI.getOrderStats(),
       ])
 
-      setOrders(Array.isArray(ordersRes) ? ordersRes : ordersRes.data || [])
-      setStats(statsRes)
+      setOrders(ordersRes.orders || [])
+      setStats(statsRes.stats)
     } catch (err) {
       setError(err.message || "Failed to load orders")
     } finally {
@@ -280,7 +165,7 @@ export default function AdminOrdersPage() {
       order.id.toLowerCase().includes(searchLower) ||
       order.clientId.toLowerCase().includes(searchLower) ||
       order.client?.email?.toLowerCase().includes(searchLower) ||
-      order.snapshot?.snapshot?.service?.name?.toLowerCase().includes(searchLower)
+      order.snapshot?.service?.name?.toLowerCase().includes(searchLower)
     )
   })
 
@@ -289,11 +174,16 @@ export default function AdminOrdersPage() {
     totalOrders: orders.length,
     activeRevenue: orders
       .filter((o) => o.status === "active")
-      .reduce((sum, o) => sum + parseFloat(o.snapshot?.snapshot?.pricing?.price || 0), 0),
+      .reduce((sum, o) => sum + parseFloat(o.snapshot?.pricing?.price || 0), 0),
     pendingCount: stats?.pending || 0,
     activeCount: stats?.active || 0,
     suspendedCount: stats?.suspended || 0,
   }
+
+  // Derived safe values
+  const suspendedPct = metrics.totalOrders > 0
+    ? ((metrics.suspendedCount / metrics.totalOrders) * 100).toFixed(1)
+    : "0.0"
 
   // ========== ORDER ACTIONS ==========
 
@@ -303,23 +193,23 @@ export default function AdminOrdersPage() {
       let result
       switch (action) {
         case "activate":
-          result = await OrdersAPI.activateOrder(orderId)
+          result = await AdminOrdersAPI.activateOrder(orderId)
           break
         case "renew":
-          result = await OrdersAPI.renewOrder(orderId)
+          result = await AdminOrdersAPI.renewOrder(orderId)
           break
         case "suspend":
-          result = await OrdersAPI.suspendOrder(orderId)
+          result = await AdminOrdersAPI.suspendOrder(orderId)
           break
         case "resume":
-          result = await OrdersAPI.resumeOrder(orderId)
+          result = await AdminOrdersAPI.resumeOrder(orderId)
           break
         case "terminate":
           if (!confirm("Are you sure? This action cannot be reversed.")) {
             setActionLoading(null)
             return
           }
-          result = await OrdersAPI.terminateOrder(orderId)
+          result = await AdminOrdersAPI.terminateOrder(orderId)
           break
         default:
           return
@@ -336,12 +226,16 @@ export default function AdminOrdersPage() {
   }
 
   const openOrderDetails = async (order) => {
+    setDetailsLoading(true)
+    setError(null)
     try {
-      const fullOrder = await OrdersAPI.getOrder(order.id)
+      const fullOrder = await AdminOrdersAPI.getOrder(order.id)
       setSelectedOrder(fullOrder)
       setShowDetailsDialog(true)
     } catch (err) {
       setError(err.message || "Failed to load order details")
+    } finally {
+      setDetailsLoading(false)
     }
   }
 
@@ -351,11 +245,11 @@ export default function AdminOrdersPage() {
     const rows = filteredOrders.map((o) => [
       o.id.substring(0, 8),
       o.client?.email || "Unknown",
-      o.snapshot?.snapshot?.service?.name || "Unknown",
-      o.snapshot?.snapshot?.plan?.name || "Unknown",
+      o.snapshot?.service?.name || "Unknown",
+      o.snapshot?.planData?.name || "Unknown",
       o.status,
       new Date(o.createdAt).toLocaleDateString(),
-      `$${o.snapshot?.snapshot?.pricing?.price || "0.00"}`,
+      `$${o.snapshot?.pricing?.price || "0.00"}`,
     ])
 
     const csv = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n")
@@ -372,23 +266,30 @@ export default function AdminOrdersPage() {
   // ========== JSX ==========
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Orders</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage client orders and subscriptions ({orders.length} total)
-          </p>
+      <div className="flex items-start justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-xl border border-border bg-primary flex items-center justify-center shadow-sm shrink-0">
+            <ShoppingCart className="h-6 w-6 text-primary-foreground" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5 mb-0.5">
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">Orders</h1>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-border bg-secondary text-foreground">
+                <Radio className="h-2.5 w-2.5" /> {metrics.activeCount} active
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">Client subscriptions &amp; service order management</p>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={exportToCSV} variant="outline">
-            <Download className="w-4 h-4 mr-2" />
-            Export CSV
+        <div className="flex items-center gap-1.5 p-1.5 rounded-xl border border-border bg-card shadow-sm shrink-0">
+          <Button onClick={exportToCSV} variant="ghost" size="sm" className="gap-1.5 h-8 text-xs">
+            <Download className="w-3.5 h-3.5" /> Export
           </Button>
-          <Button onClick={loadData} variant="outline">
-            <RefreshCcw className="w-4 h-4 mr-2" />
-            Refresh
+          <div className="h-5 w-px bg-border" />
+          <Button onClick={loadData} variant="ghost" size="sm" className="gap-1.5 h-8 text-xs">
+            <RefreshCcw className="w-3.5 h-3.5" /> Refresh
           </Button>
         </div>
       </div>
@@ -402,44 +303,18 @@ export default function AdminOrdersPage() {
       )}
 
       {successMessage && (
-        <Alert className="bg-green-100 border-green-200">
-          <CheckCircle2 className="w-4 h-4 text-green-600" />
-          <AlertDescription className="text-green-800">
-            {successMessage}
-          </AlertDescription>
+        <Alert className="bg-secondary border-border">
+          <CheckCircle2 className="w-4 h-4 text-foreground" />
+          <AlertDescription className="text-foreground">{successMessage}</AlertDescription>
         </Alert>
       )}
 
       {/* Key Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          label="Total Orders"
-          value={metrics.totalOrders}
-          subtext={`${metrics.activeCount} active`}
-          icon={Package}
-          color="bg-blue-100 text-blue-800"
-        />
-        <MetricCard
-          label="Active Orders"
-          value={metrics.activeCount}
-          subtext={`${metrics.pendingCount} pending activation`}
-          icon={Zap}
-          color="bg-green-100 text-green-800"
-        />
-        <MetricCard
-          label="Revenue (Active)"
-          value={`$${metrics.activeRevenue.toFixed(2)}`}
-          subtext={`${metrics.activeCount} subscriptions`}
-          icon={TrendingUp}
-          color="bg-emerald-100 text-emerald-800"
-        />
-        <MetricCard
-          label="Suspended"
-          value={metrics.suspendedCount}
-          subtext={`${((metrics.suspendedCount / metrics.totalOrders) * 100).toFixed(1)}% of total`}
-          icon={TrendingDown}
-          color="bg-orange-100 text-orange-800"
-        />
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <MetricCard label="Total Orders"     value={metrics.totalOrders}                    subtext={`${metrics.activeCount} active`}             icon={Package}    />
+        <MetricCard label="Active Orders"    value={metrics.activeCount}                    subtext={`${metrics.pendingCount} pending activation`} icon={Zap}        />
+        <MetricCard label="Revenue (Active)" value={`$${metrics.activeRevenue.toFixed(2)}`} subtext={`${metrics.activeCount} subscriptions`}      icon={TrendingUp} />
+        <MetricCard label="Suspended"        value={metrics.suspendedCount}                 subtext={`${suspendedPct}% of total`}                  icon={TrendingDown} destructive={metrics.suspendedCount > 0} />
       </div>
 
       {/* Tabs */}
@@ -465,6 +340,8 @@ export default function AdminOrdersPage() {
             onView={openOrderDetails}
             onAction={performAction}
             actionLoading={actionLoading}
+            detailsLoading={detailsLoading}
+            canManageOrders={canManageOrders}
           />
         </TabsContent>
 
@@ -481,6 +358,8 @@ export default function AdminOrdersPage() {
             onView={openOrderDetails}
             onAction={performAction}
             actionLoading={actionLoading}
+            detailsLoading={detailsLoading}
+            canManageOrders={canManageOrders}
           />
         </TabsContent>
 
@@ -497,6 +376,8 @@ export default function AdminOrdersPage() {
             onView={openOrderDetails}
             onAction={performAction}
             actionLoading={actionLoading}
+            detailsLoading={detailsLoading}
+            canManageOrders={canManageOrders}
           />
         </TabsContent>
 
@@ -513,6 +394,8 @@ export default function AdminOrdersPage() {
             onView={openOrderDetails}
             onAction={performAction}
             actionLoading={actionLoading}
+            detailsLoading={detailsLoading}
+            canManageOrders={canManageOrders}
           />
         </TabsContent>
 
@@ -523,6 +406,8 @@ export default function AdminOrdersPage() {
             onView={openOrderDetails}
             onAction={performAction}
             actionLoading={actionLoading}
+            detailsLoading={detailsLoading}
+            canManageOrders={canManageOrders}
           />
         </TabsContent>
       </Tabs>
@@ -549,22 +434,18 @@ export default function AdminOrdersPage() {
 // METRIC CARD COMPONENT
 // ============================================================================
 
-function MetricCard({ label, value, subtext, icon: Icon, color }) {
+function MetricCard({ label, value, subtext, icon: Icon, destructive }) {
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{label}</p>
-            <p className="text-3xl font-bold mt-2">{value}</p>
-            <p className="text-xs text-muted-foreground mt-1">{subtext}</p>
-          </div>
-          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg ${color}`}>
-            <Icon className="w-6 h-6" />
-          </div>
+    <div className="flex flex-col gap-2 px-4 py-3.5 rounded-2xl border border-border bg-card shadow-sm transition-all hover:shadow-md hover:-translate-y-px">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">{label}</p>
+        <div className="p-1.5 rounded-lg bg-secondary border border-border">
+          <Icon className="w-3.5 h-3.5 text-foreground" />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      <p className={`text-3xl font-bold tracking-tight leading-none ${destructive ? "text-destructive" : "text-foreground"}`}>{value}</p>
+      {subtext && <p className="text-[11px] text-muted-foreground">{subtext}</p>}
+    </div>
   )
 }
 
@@ -610,7 +491,7 @@ function SearchAndFilter({ searchTerm, setSearchTerm, statusFilter, setStatusFil
 // ORDERS TABLE COMPONENT
 // ============================================================================
 
-function OrdersTable({ orders, loading, onView, onAction, actionLoading }) {
+function OrdersTable({ orders, loading, onView, onAction, actionLoading, detailsLoading, canManageOrders }) {
   if (loading) {
     return (
       <Card>
@@ -658,6 +539,8 @@ function OrdersTable({ orders, loading, onView, onAction, actionLoading }) {
                   onView={() => onView(order)}
                   onAction={(action) => onAction(order.id, action)}
                   isLoading={actionLoading?.startsWith(order.id)}
+                  detailsLoading={detailsLoading}
+                  canManageOrders={canManageOrders}
                 />
               ))}
             </TableBody>
@@ -672,11 +555,11 @@ function OrdersTable({ orders, loading, onView, onAction, actionLoading }) {
 // ORDER ROW COMPONENT
 // ============================================================================
 
-function OrderRow({ order, onView, onAction, isLoading }) {
+function OrderRow({ order, onView, onAction, isLoading, detailsLoading, canManageOrders }) {
   const statusConfig = ORDER_STATUS_CONFIG[order.status]
-  const serviceName = order.snapshot?.snapshot?.service?.name || "Unknown"
-  const planName = order.snapshot?.snapshot?.plan?.name || "Unknown"
-  const price = order.snapshot?.snapshot?.pricing?.price || "0.00"
+  const serviceName = order.snapshot?.service?.name || "Unknown"
+  const planName = order.snapshot?.planData?.name || "Unknown"
+  const price = order.snapshot?.pricing?.price || "0.00"
   const clientEmail = order.client?.email || "Unknown"
 
   const formatDate = (date) => {
@@ -731,7 +614,8 @@ function OrderRow({ order, onView, onAction, isLoading }) {
           availableActions={availableActions}
           onAction={onAction}
           onView={onView}
-          isLoading={isLoading}
+          isLoading={isLoading || detailsLoading}
+          canManageOrders={canManageOrders}
         />
       </TableCell>
     </TableRow>
@@ -749,6 +633,7 @@ function OrderActionsMenu({
   onAction,
   onView,
   isLoading,
+  canManageOrders,
 }) {
   return (
     <DropdownMenu>
@@ -758,52 +643,48 @@ function OrderActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {availableActions.includes("view") && (
+        <DropdownMenuItem onClick={onView} className="gap-2">
+          <Eye className="w-4 h-4" />
+          View Details
+        </DropdownMenuItem>
+
+        {canManageOrders && (
           <>
-            <DropdownMenuItem onClick={onView} className="gap-2">
-              <Eye className="w-4 h-4" />
-              View Details
-            </DropdownMenuItem>
             <DropdownMenuSeparator />
+            {availableActions.includes("activate") && (
+              <DropdownMenuItem onClick={() => onAction("activate")} className="gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                Activate
+              </DropdownMenuItem>
+            )}
+            {availableActions.includes("renew") && (
+              <DropdownMenuItem onClick={() => onAction("renew")} className="gap-2">
+                <Calendar className="w-4 h-4" />
+                Renew
+              </DropdownMenuItem>
+            )}
+            {availableActions.includes("suspend") && (
+              <DropdownMenuItem onClick={() => onAction("suspend")} className="gap-2">
+                <Pause className="w-4 h-4" />
+                Suspend
+              </DropdownMenuItem>
+            )}
+            {availableActions.includes("resume") && (
+              <DropdownMenuItem onClick={() => onAction("resume")} className="gap-2">
+                <Play className="w-4 h-4" />
+                Resume
+              </DropdownMenuItem>
+            )}
+            {availableActions.includes("terminate") && (
+              <DropdownMenuItem
+                onClick={() => onAction("terminate")}
+                className="text-destructive gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Terminate
+              </DropdownMenuItem>
+            )}
           </>
-        )}
-
-        {availableActions.includes("activate") && (
-          <DropdownMenuItem onClick={() => onAction("activate")} className="gap-2">
-            <CheckCircle2 className="w-4 h-4" />
-            Activate
-          </DropdownMenuItem>
-        )}
-
-        {availableActions.includes("renew") && (
-          <DropdownMenuItem onClick={() => onAction("renew")} className="gap-2">
-            <Calendar className="w-4 h-4" />
-            Renew
-          </DropdownMenuItem>
-        )}
-
-        {availableActions.includes("suspend") && (
-          <DropdownMenuItem onClick={() => onAction("suspend")} className="gap-2">
-            <Pause className="w-4 h-4" />
-            Suspend
-          </DropdownMenuItem>
-        )}
-
-        {availableActions.includes("resume") && (
-          <DropdownMenuItem onClick={() => onAction("resume")} className="gap-2">
-            <Play className="w-4 h-4" />
-            Resume
-          </DropdownMenuItem>
-        )}
-
-        {availableActions.includes("terminate") && (
-          <DropdownMenuItem
-            onClick={() => onAction("terminate")}
-            className="text-destructive gap-2"
-          >
-            <Trash2 className="w-4 h-4" />
-            Terminate
-          </DropdownMenuItem>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -831,9 +712,9 @@ function OrderDetailsDialog({ isOpen, order, onClose, onAction, isLoading }) {
     })
   }
 
-  const snapshot = order.snapshot?.snapshot || {}
+  const snapshot = order.snapshot || {}
   const service = snapshot.service || {}
-  const plan = snapshot.plan || {}
+  const plan = snapshot.planData || {}
   const pricing = snapshot.pricing || {}
 
   return (
@@ -841,7 +722,7 @@ function OrderDetailsDialog({ isOpen, order, onClose, onAction, isLoading }) {
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Order Details</DialogTitle>
-          <DialogDescription>
+          <DialogDescription asChild>
             <div className="flex items-center gap-2 mt-2">
               Order ID: <span className="font-mono">{order.id}</span>
               <Badge className={statusConfig?.color}>
