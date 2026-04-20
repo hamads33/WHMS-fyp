@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Trash2, Send, Upload, Bell, FileText, Clock, Users, AlertTriangle, Info, Zap } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Trash2, Send, Upload, Bell, FileText, Clock, Users, AlertTriangle, Info, Zap, AlertCircle, RefreshCw, CheckCircle } from 'lucide-react'
 import { AdminBroadcastAPI } from '@/lib/api/broadcast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +17,14 @@ import { Separator } from '@/components/ui/separator'
 
 const TARGET_OPTIONS = ['ALL', 'CLIENTS', 'STAFF', 'DEVELOPERS']
 const SEVERITY_OPTIONS = ['INFO', 'WARNING', 'CRITICAL']
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+
+function toDatetimeLocalMin(date) {
+  const d = new Date(date.getTime() + 60000) // 1-min buffer
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 function statusBadge(status) {
   const map = {
@@ -34,15 +42,126 @@ function severityIcon(severity) {
   return <Info className="h-3.5 w-3.5 text-muted-foreground" />
 }
 
+// ── useSystemTime hook ─────────────────────────────────────────────────────
+
+function useSystemTime() {
+  const [source, setSource] = useState('loading') // 'loading' | 'auto' | 'manual'
+  const [capturedAt, setCapturedAt] = useState(null)
+  const [baseMs, setBaseMs] = useState(null)
+  const [manualInput, setManualInput] = useState('')
+
+  const fetchTime = useCallback(() => {
+    setSource('loading')
+    const start = Date.now()
+    AdminBroadcastAPI.getServerTime()
+      .then(res => {
+        setBaseMs(new Date(res.data.time).getTime())
+        setCapturedAt(start)
+        setSource('auto')
+      })
+      .catch(() => {
+        setSource('manual')
+      })
+  }, [])
+
+  useEffect(() => { fetchTime() }, [fetchTime])
+
+  function getNow() {
+    if (baseMs !== null && capturedAt !== null) {
+      return new Date(baseMs + (Date.now() - capturedAt))
+    }
+    return new Date()
+  }
+
+  function applyManual(isoString) {
+    const ms = new Date(isoString).getTime()
+    if (!isNaN(ms)) {
+      setBaseMs(ms)
+      setCapturedAt(Date.now())
+      setManualInput('')
+      setSource('auto')
+    }
+  }
+
+  return { source, getNow, manualInput, setManualInput, applyManual, refresh: fetchTime }
+}
+
+// ── SystemTimeBanner ───────────────────────────────────────────────────────
+
+function SystemTimeBanner({ st }) {
+  const { source, getNow, manualInput, setManualInput, applyManual, refresh } = st
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    if (source !== 'auto') return
+    const id = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [source])
+
+  if (source === 'loading') {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-2 border border-border rounded-lg">
+        <Clock className="h-4 w-4 animate-pulse" />
+        Detecting system time…
+      </div>
+    )
+  }
+
+  if (source === 'manual') {
+    return (
+      <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg space-y-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-amber-600">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          Could not auto-detect server time
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Set the current date and time manually to enable schedule validation.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            type="datetime-local"
+            value={manualInput}
+            onChange={e => setManualInput(e.target.value)}
+            className="h-8 text-xs flex-1"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => applyManual(manualInput)}
+            disabled={!manualInput}
+          >
+            Apply
+          </Button>
+          <Button size="sm" variant="ghost" onClick={refresh} title="Retry auto-detect">
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // source === 'auto'
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-2 border border-border rounded-lg">
+      <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
+      <span>
+        System time: <span className="font-medium text-foreground">{getNow().toLocaleString()}</span>
+      </span>
+      <button onClick={refresh} className="ml-auto hover:text-foreground transition-colors" title="Refresh time">
+        <RefreshCw className="h-3 w-3" />
+      </button>
+    </div>
+  )
+}
+
 // ── Notifications Tab ──────────────────────────────────────────────────────
 
-function NotificationsTab() {
+function NotificationsTab({ st }) {
   const [broadcasts, setBroadcasts] = useState([])
   const [loading, setLoading]       = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState('')
 
-  // Form state
   const [title, setTitle]               = useState('')
   const [content, setContent]           = useState('')
   const [targetAudience, setTarget]     = useState('ALL')
@@ -72,9 +191,33 @@ function NotificationsTab() {
     setScheduleType('immediate'); setPublishAt(''); setExpiresAt('')
   }
 
+  function validateDates() {
+    const now = st.getNow()
+
+    if (scheduleType === 'scheduled') {
+      if (!publishAt) return 'Publish date is required for scheduled notifications'
+      const pub = new Date(publishAt)
+      if (pub <= now) return `Publish date must be in the future (current time: ${now.toLocaleString()})`
+    }
+
+    if (expiresAt) {
+      const exp = new Date(expiresAt)
+      if (exp <= now) return `Expiry date must be in the future (current time: ${now.toLocaleString()})`
+      if (scheduleType === 'scheduled' && publishAt && exp <= new Date(publishAt)) {
+        return 'Expiry date must be after the publish date'
+      }
+    }
+
+    return null
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+
+    const dateError = validateDates()
+    if (dateError) { setError(dateError); return }
+
     setSubmitting(true)
     try {
       const fd = new FormData()
@@ -106,6 +249,8 @@ function NotificationsTab() {
     }
   }
 
+  const nowMin = st.source !== 'loading' ? toDatetimeLocalMin(st.getNow()) : undefined
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
 
@@ -119,8 +264,13 @@ function NotificationsTab() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <SystemTimeBanner st={st} />
+
             {error && (
-              <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive rounded text-sm">{error}</div>
+              <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive rounded text-sm flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                {error}
+              </div>
             )}
 
             <div className="space-y-1.5">
@@ -184,19 +334,23 @@ function NotificationsTab() {
               <div className="space-y-1.5">
                 <Label htmlFor="n-publish">Publish At *</Label>
                 <Input id="n-publish" type="datetime-local" value={publishAt}
+                  min={nowMin}
                   onChange={e => setPublishAt(e.target.value)} required />
+                <p className="text-xs text-muted-foreground">Must be a future date and time</p>
               </div>
             )}
 
             <div className="space-y-1.5">
               <Label htmlFor="n-expires">Expires At <span className="text-muted-foreground">(optional)</span></Label>
               <Input id="n-expires" type="datetime-local" value={expiresAt}
+                min={scheduleType === 'scheduled' && publishAt ? publishAt : nowMin}
                 onChange={e => setExpiresAt(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Must be a future date and time</p>
             </div>
 
             <Button type="submit" className="w-full" disabled={submitting}>
               <Send className="h-4 w-4 mr-2" />
-              {submitting ? 'Publishing...' : 'Publish Notification'}
+              {submitting ? 'Publishing…' : 'Publish Notification'}
             </Button>
           </form>
         </CardContent>
@@ -252,13 +406,12 @@ function NotificationsTab() {
 
 // ── Documents Tab ──────────────────────────────────────────────────────────
 
-function DocumentsTab() {
+function DocumentsTab({ st }) {
   const [documents, setDocuments]   = useState([])
   const [loading, setLoading]       = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState('')
 
-  // Form state
   const [title, setTitle]           = useState('')
   const [file, setFile]             = useState(null)
   const [targetAudience, setTarget] = useState('ALL')
@@ -283,14 +436,37 @@ function DocumentsTab() {
   function resetForm() {
     setTitle(''); setFile(null); setTarget('ALL')
     setScheduleType('immediate'); setPublishAt(''); setExpiresAt('')
-    // Reset file input
     const el = document.getElementById('doc-file')
     if (el) el.value = ''
+  }
+
+  function validateDates() {
+    const now = st.getNow()
+
+    if (scheduleType === 'scheduled') {
+      if (!publishAt) return 'Publish date is required for scheduled documents'
+      const pub = new Date(publishAt)
+      if (pub <= now) return `Publish date must be in the future (current time: ${now.toLocaleString()})`
+    }
+
+    if (expiresAt) {
+      const exp = new Date(expiresAt)
+      if (exp <= now) return `Expiry date must be in the future (current time: ${now.toLocaleString()})`
+      if (scheduleType === 'scheduled' && publishAt && exp <= new Date(publishAt)) {
+        return 'Expiry date must be after the publish date'
+      }
+    }
+
+    return null
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+
+    const dateError = validateDates()
+    if (dateError) { setError(dateError); return }
+
     setSubmitting(true)
     try {
       const fd = new FormData()
@@ -327,6 +503,8 @@ function DocumentsTab() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
 
+  const nowMin = st.source !== 'loading' ? toDatetimeLocalMin(st.getNow()) : undefined
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
 
@@ -340,8 +518,13 @@ function DocumentsTab() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <SystemTimeBanner st={st} />
+
             {error && (
-              <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive rounded text-sm">{error}</div>
+              <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive rounded text-sm flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                {error}
+              </div>
             )}
 
             <div className="space-y-1.5">
@@ -391,19 +574,23 @@ function DocumentsTab() {
               <div className="space-y-1.5">
                 <Label htmlFor="doc-publish">Publish At *</Label>
                 <Input id="doc-publish" type="datetime-local" value={publishAt}
+                  min={nowMin}
                   onChange={e => setPublishAt(e.target.value)} required />
+                <p className="text-xs text-muted-foreground">Must be a future date and time</p>
               </div>
             )}
 
             <div className="space-y-1.5">
               <Label htmlFor="doc-expires">Expires At <span className="text-muted-foreground">(optional)</span></Label>
               <Input id="doc-expires" type="datetime-local" value={expiresAt}
+                min={scheduleType === 'scheduled' && publishAt ? publishAt : nowMin}
                 onChange={e => setExpiresAt(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Must be a future date and time</p>
             </div>
 
             <Button type="submit" className="w-full" disabled={submitting}>
               <Upload className="h-4 w-4 mr-2" />
-              {submitting ? 'Publishing...' : 'Publish Document'}
+              {submitting ? 'Publishing…' : 'Publish Document'}
             </Button>
           </form>
         </CardContent>
@@ -473,6 +660,8 @@ function DocumentsTab() {
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function BroadcastPage() {
+  const st = useSystemTime()
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -493,11 +682,11 @@ export default function BroadcastPage() {
         </TabsList>
 
         <TabsContent value="notifications" className="mt-6">
-          <NotificationsTab />
+          <NotificationsTab st={st} />
         </TabsContent>
 
         <TabsContent value="documents" className="mt-6">
-          <DocumentsTab />
+          <DocumentsTab st={st} />
         </TabsContent>
       </Tabs>
     </div>

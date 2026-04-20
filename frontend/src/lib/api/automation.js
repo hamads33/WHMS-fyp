@@ -223,4 +223,67 @@ export const AutomationAPI = {
     }
     return apiFetch(`${BASE}/actions/${actionType}`);
   },
+
+  /* =====================================================
+     TEMPLATES (Preset Automations)
+  ===================================================== */
+
+  // GET /api/automation/templates
+  listTemplates() {
+    return apiFetch(`${BASE}/templates`);
+  },
+
+  // GET /api/automation/templates/:templateId
+  getTemplate(templateId) {
+    if (!templateId) {
+      throw new Error("templateId is required");
+    }
+    return apiFetch(`${BASE}/templates/${templateId}`);
+  },
+
+  // POST /api/automation/templates/:templateId/install
+  installTemplate(templateId) {
+    if (!templateId) {
+      throw new Error("templateId is required");
+    }
+    return apiFetch(`${BASE}/templates/${templateId}/install`, {
+      method: "POST",
+    });
+  },
+
+  /* =====================================================
+     WORKFLOWS (Event-Driven)
+  ===================================================== */
+
+  // GET /api/automation/workflows
+  listWorkflows() {
+    return apiFetch(`${BASE}/workflows`);
+  },
+
+  // GET /api/automation/workflows/:workflowId/history
+  listWorkflowRuns(workflowId, params = {}) {
+    if (!workflowId) {
+      throw new Error("workflowId is required");
+    }
+    const q = new URLSearchParams(params).toString();
+    return apiFetch(`${BASE}/workflows/${workflowId}/history${q ? `?${q}` : ""}`);
+  },
+
+  // GET /api/automation/workflows/:workflowId
+  getWorkflow(workflowId) {
+    if (!workflowId) {
+      throw new Error("workflowId is required");
+    }
+    return apiFetch(`${BASE}/workflows/${workflowId}`);
+  },
+
+  // POST /api/automation/workflows/:workflowId/run
+  runWorkflow(workflowId) {
+    if (!workflowId) {
+      throw new Error("workflowId is required");
+    }
+    return apiFetch(`${BASE}/workflows/${workflowId}/run`, {
+      method: "POST",
+    });
+  },
 };

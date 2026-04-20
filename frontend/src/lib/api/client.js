@@ -5,14 +5,24 @@ export function getErrorMessage(err) {
 }
 
 export async function apiFetch(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+
+  // Add Bearer token if available in localStorage
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("access_token") || localStorage.getItem("authToken");
+    if (token && !headers.Authorization) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  }
+
   const res = await fetch(
     `${process.env.NEXT_PUBLIC_API_URL}${path}`,
     {
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
+      headers,
       ...options,
     }
   );

@@ -1,6 +1,6 @@
 import { apiFetch } from "@/lib/api/client";
 
-const BASE = "/api/admin/server-management/webhooks";
+const BASE = "/admin/server-management/webhooks";
 
 export const WebhooksAPI = {
   list() {

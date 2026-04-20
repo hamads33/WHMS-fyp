@@ -6,6 +6,8 @@ import { useAuth } from '@/lib/context/AuthContext'
 import {
   Server, CreditCard, LifeBuoy, ArrowRight,
   ShoppingBag, AlertTriangle, FileText, PackageOpen,
+  Globe, ShieldCheck, ShieldOff, ExternalLink, Headphones,
+  TrendingUp, Zap,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,13 +16,13 @@ import { StatusBadge } from './status-badge'
 import { ClientBillingAPI } from '@/lib/api/billing'
 import { ClientOrdersAPI } from '@/lib/api/orders'
 
-// ── Skeleton helpers ────────────────────────────────────────────────────────
+// ── Skeleton helpers ─────────────────────────────────────────────────────────
 
 function SkeletonLine({ className = "" }) {
   return <div className={`h-3 rounded bg-muted animate-pulse ${className}`} />
 }
 
-// ── Stat card ───────────────────────────────────────────────────────────────
+// ── Summary stat card ────────────────────────────────────────────────────────
 
 function StatCard({ title, value, subtitle, icon: Icon, href, alert }) {
   return (
@@ -68,7 +70,7 @@ function StatCardSkeleton() {
   )
 }
 
-// ── Empty state ─────────────────────────────────────────────────────────────
+// ── Empty state ──────────────────────────────────────────────────────────────
 
 function EmptyState({ icon: Icon, title, description, action }) {
   return (
@@ -87,14 +89,99 @@ function EmptyState({ icon: Icon, title, description, action }) {
   )
 }
 
+// ── Domain mini-card ─────────────────────────────────────────────────────────
+
+function DomainCard({ order }) {
+  const serviceName = order.snapshot?.service?.name ?? order.serviceName ?? 'Hosting'
+  const planName    = order.snapshot?.planData?.name ?? order.planName ?? ''
+  const isSuspended = order.status === 'suspended'
+  const isPending   = order.status === 'pending'
+
+  // Derive a display domain from order data if available
+  const domain = order.domain ?? order.customFields?.domain ?? null
+
+  return (
+    <div className={`relative rounded-xl border p-4 transition-all hover:shadow-sm ${
+      isSuspended
+        ? 'border-yellow-200 dark:border-yellow-900/60 bg-yellow-50/40 dark:bg-yellow-950/20 border-l-4 border-l-yellow-400'
+        : 'border-border hover:border-accent/30'
+    }`}>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="min-w-0 flex-1">
+          {domain ? (
+            <p className="text-sm font-semibold font-mono truncate">{domain}</p>
+          ) : (
+            <p className="text-sm font-semibold truncate">{serviceName}</p>
+          )}
+          {planName && <p className="text-xs text-muted-foreground mt-0.5 truncate">{planName}</p>}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* SSL indicator */}
+          {!isSuspended && !isPending && (
+            <span title="SSL Active" className="text-green-500">
+              <ShieldCheck className="h-4 w-4" />
+            </span>
+          )}
+          {isSuspended && (
+            <span title="SSL Unknown" className="text-muted-foreground/40">
+              <ShieldOff className="h-4 w-4" />
+            </span>
+          )}
+          <StatusBadge status={order.status} />
+        </div>
+      </div>
+
+      {/* Info row */}
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+        <Server className="h-3 w-3 shrink-0" />
+        <span className="truncate">CyberPanel</span>
+        {order.snapshot?.planData?.name && (
+          <>
+            <span className="text-border">·</span>
+            <span className="truncate">{order.snapshot.planData.name}</span>
+          </>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" asChild className="flex-1 h-7 text-xs gap-1">
+          <Link href={`/client/orders/${order.id}`}>
+            <ExternalLink className="h-3 w-3" />
+            Details
+          </Link>
+        </Button>
+        <Button size="sm" variant="ghost" asChild className="flex-1 h-7 text-xs gap-1">
+          <Link href={`/client/support?subject=${encodeURIComponent(`Issue with ${domain ?? serviceName}`)}`}>
+            <Headphones className="h-3 w-3" />
+            Support
+          </Link>
+        </Button>
+      </div>
+
+      {/* Suspended CTA */}
+      {isSuspended && (
+        <div className="mt-2 pt-2 border-t border-yellow-200 dark:border-yellow-900/60">
+          <Button size="sm" variant="outline" asChild className="w-full h-7 text-xs border-yellow-300 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-950/30">
+            <Link href={`/client/support?subject=${encodeURIComponent(`Reactivation request for ${domain ?? serviceName}`)}`}>
+              Request Reactivation
+            </Link>
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export function DashboardContent() {
   const { user } = useAuth()
-  const [summary, setSummary] = useState(null)
+  const [summary, setSummary]   = useState(null)
   const [invoices, setInvoices] = useState([])
-  const [orders, setOrders] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [orders, setOrders]     = useState([])
+  const [loading, setLoading]   = useState(true)
 
   useEffect(() => {
     async function load() {
@@ -102,7 +189,7 @@ export function DashboardContent() {
         const [summaryData, invoicesData, ordersData] = await Promise.allSettled([
           ClientBillingAPI.getSummary(),
           ClientBillingAPI.listInvoices({ limit: 4 }),
-          ClientOrdersAPI.listOrders({ limit: 6 }),
+          ClientOrdersAPI.listOrders({ limit: 20 }),
         ])
         if (summaryData.status === 'fulfilled') setSummary(summaryData.value)
         if (invoicesData.status === 'fulfilled') {
@@ -122,6 +209,14 @@ export function DashboardContent() {
 
   const activeOrders   = orders.filter(o => o.status?.toLowerCase() === 'active').length
   const unpaidInvoices = invoices.filter(i => ['unpaid', 'overdue'].includes(i.status?.toLowerCase())).length
+
+  // Hosting orders: active + suspended (anything with a provisioned hosting account)
+  const hostingOrders = orders.filter(o => ['active', 'suspended', 'pending'].includes(o.status?.toLowerCase()))
+
+  // SSL overview: count active orders (assume SSL is active for active orders)
+  const sslActive  = orders.filter(o => o.status?.toLowerCase() === 'active').length
+  const sslTotal   = orders.filter(o => ['active', 'suspended'].includes(o.status?.toLowerCase())).length
+  const sslAlert   = sslTotal > 0 && sslActive < sslTotal
 
   const statCards = [
     {
@@ -147,11 +242,12 @@ export function DashboardContent() {
       alert:    !loading && unpaidInvoices > 0,
     },
     {
-      title:    'Support Tickets',
-      value:    '—',
-      subtitle: 'Coming soon',
-      icon:     LifeBuoy,
-      href:     '/client/support',
+      title:    'SSL Status',
+      value:    loading ? '—' : `${sslActive}/${sslTotal}`,
+      subtitle: loading ? null : (sslAlert ? 'Some domains need attention' : sslTotal === 0 ? 'No active hosting' : 'All secured'),
+      icon:     ShieldCheck,
+      href:     '/client/orders',
+      alert:    !loading && sslAlert,
     },
   ]
 
@@ -202,6 +298,81 @@ export function DashboardContent() {
           : statCards.map(card => <StatCard key={card.title} {...card} />)
         }
       </div>
+
+      {/* ── My Hosting ──────────────────────────────────────── */}
+      {(loading || hostingOrders.length > 0) && (
+        <Card className="overflow-hidden">
+          <CardHeader className="pb-3 border-b border-border">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  My Hosting
+                </CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  {loading ? 'Loading…' : `${hostingOrders.length} active service${hostingOrders.length !== 1 ? 's' : ''}`}
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" asChild className="text-xs h-8 -mr-2 gap-1">
+                <Link href="/client/orders">
+                  View all <ArrowRight className="h-3 w-3" />
+                </Link>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4">
+            {loading ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="rounded-xl border border-border p-4 space-y-3 animate-pulse">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1.5 flex-1">
+                        <div className="h-3.5 bg-muted rounded w-3/4" />
+                        <div className="h-2.5 bg-muted rounded w-1/2" />
+                      </div>
+                      <div className="h-5 w-14 bg-muted rounded" />
+                    </div>
+                    <div className="h-2.5 bg-muted rounded w-2/3" />
+                    <div className="flex gap-2">
+                      <div className="h-7 bg-muted rounded flex-1" />
+                      <div className="h-7 bg-muted rounded flex-1" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : hostingOrders.length === 0 ? (
+              <EmptyState
+                icon={Server}
+                title="No hosting services yet"
+                description="Order a hosting plan to see your domains and services here."
+                action={{ href: '/client/services', label: 'Browse Hosting Plans' }}
+              />
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {hostingOrders.slice(0, 6).map(order => (
+                  <DomainCard key={order.id} order={order} />
+                ))}
+              </div>
+            )}
+
+            {/* Upgrade CTA if client has services */}
+            {!loading && hostingOrders.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-border flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Zap className="h-4 w-4 text-primary/70" />
+                  <span>Need more resources?</span>
+                </div>
+                <Button size="sm" variant="outline" asChild className="gap-1.5">
+                  <Link href="/client/services">
+                    <TrendingUp className="h-3.5 w-3.5" />
+                    Upgrade Plan
+                  </Link>
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Main grid */}
       <div className="grid gap-6 lg:grid-cols-5">
@@ -282,10 +453,10 @@ export function DashboardContent() {
             ) : summary ? (
               <div className="divide-y divide-border">
                 {[
-                  { label: 'Total Invoiced',  value: summary.totalInvoiced ?? summary.totalBilled },
-                  { label: 'Total Paid',       value: summary.totalPaid },
-                  { label: 'Outstanding',      value: summary.outstanding ?? summary.unpaidAmount },
-                  { label: 'Currency',         value: summary.currency ?? 'USD', isText: true },
+                  { label: 'Total Invoiced', value: summary.totalInvoiced ?? summary.totalBilled },
+                  { label: 'Total Paid',     value: summary.totalPaid },
+                  { label: 'Outstanding',    value: summary.outstanding ?? summary.unpaidAmount },
+                  { label: 'Currency',       value: summary.currency ?? 'USD', isText: true },
                 ].map(({ label, value, isText }) => (
                   <div key={label} className="flex items-center justify-between py-2.5">
                     <span className="text-sm text-muted-foreground">{label}</span>
@@ -341,11 +512,11 @@ export function DashboardContent() {
             />
           ) : (
             <div className="divide-y divide-border">
-              {orders.map(order => {
+              {orders.slice(0, 8).map(order => {
                 const serviceName = order.snapshot?.service?.name ?? order.serviceName ?? `Order #${order.id}`
                 const planName    = order.snapshot?.planData?.name ?? order.planName ?? ''
                 return (
-                  <div key={order.id} className="flex items-center gap-4 px-6 py-4">
+                  <Link key={order.id} href={`/client/orders/${order.id}`} className="flex items-center gap-4 px-6 py-4 hover:bg-muted/40 transition-colors">
                     <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
                       <Server className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -354,7 +525,7 @@ export function DashboardContent() {
                       {planName && <p className="text-xs text-muted-foreground truncate">{planName}</p>}
                     </div>
                     <StatusBadge status={order.status} />
-                  </div>
+                  </Link>
                 )
               })}
             </div>

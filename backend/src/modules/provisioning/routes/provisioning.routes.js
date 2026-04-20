@@ -78,8 +78,35 @@ adminRouter.get("/accounts", ctrl.adminListAccounts);
 // Get account details
 adminRouter.get("/accounts/:username", ctrl.getAccount);
 
-// Manual provision trigger
+// Manual provision trigger (sync)
 adminRouter.post("/orders/:orderId/provision", ctrl.manualProvision);
+
+// Async provision trigger (queued)
+adminRouter.post("/orders/:orderId/provision-async", ctrl.provisionAccountAsync);
+
+// Get provisioning job status
+adminRouter.get("/jobs/:jobId", ctrl.getProvisioningStatus);
+
+// Async suspend (queued)
+adminRouter.post("/orders/:orderId/suspend-async", ctrl.suspendAccountAsync);
+
+// Async unsuspend (queued)
+adminRouter.post("/orders/:orderId/unsuspend-async", ctrl.unsuspendAccountAsync);
+
+// Async provision domain
+adminRouter.post("/accounts/:username/domains-async", ctrl.provisionDomainAsync);
+
+// Test CyberPanel SSH connection
+adminRouter.get("/test-connection", ctrl.testCyberPanelConnection);
+
+// Issue SSL (queued)
+adminRouter.post("/accounts/:username/ssl", ctrl.issueSSLAsync);
+
+// Create database (queued)
+adminRouter.post("/accounts/:username/databases-async", ctrl.createDatabaseAsync);
+
+// Create email (queued)
+adminRouter.post("/accounts/:username/emails-async", ctrl.createEmailAsync);
 
 // Suspend account
 adminRouter.post(

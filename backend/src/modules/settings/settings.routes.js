@@ -10,9 +10,12 @@ router.get("/settings", settingsCtrl.getAll);
 router.get("/settings/provisioning", settingsCtrl.getProvisioning);
 router.put("/settings/provisioning", settingsCtrl.setProvisioning);
 router.get("/settings/notifications", settingsCtrl.getNotifications);
-router.get("/settings/vestacp", settingsCtrl.getVestacp);
-router.put("/settings/vestacp", settingsCtrl.setVestacp);
-router.post("/settings/vestacp/test", settingsCtrl.testVestacp);
+
+// CyberPanel settings
+router.get("/settings/cyberpanel", settingsCtrl.getCyberPanel);
+router.put("/settings/cyberpanel", settingsCtrl.setCyberPanel);
+router.post("/settings/cyberpanel/test", settingsCtrl.testCyberPanel);
+
 router.get("/settings/:key", settingsCtrl.get);
 router.put("/settings/:key", settingsCtrl.set);
 

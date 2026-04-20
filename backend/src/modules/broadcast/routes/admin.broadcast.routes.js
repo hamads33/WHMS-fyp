@@ -51,6 +51,7 @@ const upload = multer({
 // Routes
 router.post('/', upload.single('file'), controller.createBroadcast);
 router.get('/', controller.listBroadcasts);
+router.get('/time', controller.getServerTime);
 router.get('/:id', controller.getBroadcast);
 router.put('/:id', controller.updateBroadcast);
 router.delete('/:id', controller.deleteBroadcast);

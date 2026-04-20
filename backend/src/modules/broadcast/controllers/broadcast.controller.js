@@ -148,6 +148,10 @@ exports.getEngagement = async (req, res) => {
   }
 };
 
+exports.getServerTime = async (req, res) => {
+  res.json({ success: true, data: { time: new Date().toISOString() } });
+};
+
 // CLIENT CONTROLLERS
 
 exports.getNotifications = async (req, res) => {

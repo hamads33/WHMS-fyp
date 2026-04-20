@@ -27,6 +27,8 @@ export const AdminBroadcastAPI = {
     }),
 
   getEngagement: (id) => apiFetch(`/admin/broadcasts/${id}/engagement`),
+
+  getServerTime: () => apiFetch('/admin/broadcasts/time'),
 }
 
 export const ClientBroadcastAPI = {

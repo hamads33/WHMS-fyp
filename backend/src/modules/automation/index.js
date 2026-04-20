@@ -92,6 +92,7 @@ module.exports = async function initAutomationModule({
   app,
   prismaClient,
   logger = automationLogger,
+  authGuard,
 }) {
   logger.info("⚙️ Initializing Automation Module...");
 
@@ -225,6 +226,7 @@ module.exports = async function initAutomationModule({
     const workflowErrorHandler = createWorkflowErrorHandler(logger);
 
     router.use(responseFormatter);
+    if (authGuard) router.use(authGuard);
     router.use(auditContext());
 
     // ============================================================

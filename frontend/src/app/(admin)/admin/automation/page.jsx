@@ -194,6 +194,7 @@ function StatCard({ label, value, icon: Icon, iconClass }) {
 
 export default function AutomationPage() {
   const [profiles, setProfiles] = useState([])
+  
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -201,22 +202,22 @@ export default function AutomationPage() {
   useEffect(() => {
     let active = true
 
-    async function loadProfiles() {
+    async function loadData() {
       setLoading(true)
       setError(null)
 
       try {
-        const res = await AutomationAPI.listProfiles()
+        const profilesRes = await AutomationAPI.listProfiles()
         if (!active) return
-        setProfiles(normalizeProfiles(res?.data ?? []))
+        setProfiles(normalizeProfiles(profilesRes?.data ?? []))
       } catch {
-        if (active) setError("Failed to load automation profiles")
+        if (active) setError("Failed to load automations")
       } finally {
         if (active) setLoading(false)
       }
     }
 
-    loadProfiles()
+    loadData()
     return () => {
       active = false
     }
@@ -335,6 +336,7 @@ export default function AutomationPage() {
       </div>
 
       <div className="container mx-auto px-4 py-8">
+<<<<<<< HEAD
         {/* Stats Row */}
         <div className="flex gap-4 mb-8">
           <StatCard
@@ -357,6 +359,46 @@ export default function AutomationPage() {
           />
         </div>
 
+=======
+        {/* Templates Shortcut */}
+        <Card className="mb-8 border-primary/20 bg-primary/5">
+          <CardContent className="pt-6 flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-foreground mb-1">Get Started Quickly</p>
+              <p className="text-sm text-muted-foreground">Browse preset automation templates to handle common tasks</p>
+            </div>
+            <Link href="/admin/automation/templates">
+              <Button variant="default" size="sm">
+                <Zap className="w-4 h-4 mr-2" />
+                Explore Templates
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        {/* Stats Row */}
+        <div className="flex gap-4 mb-8">
+          <StatCard
+            label="Total Profiles"
+            value={profiles.length}
+            icon={Zap}
+            iconClass="bg-secondary text-foreground border border-border"
+          />
+          <StatCard
+            label="Enabled"
+            value={enabledCount}
+            icon={CheckCircle2}
+            iconClass="bg-secondary text-foreground border border-border"
+          />
+          <StatCard
+            label="Last Run Failed"
+            value={failedCount}
+            icon={AlertCircle}
+            iconClass={failedCount > 0 ? "bg-destructive/10 text-destructive border border-destructive/30" : "bg-secondary text-muted-foreground border border-border"}
+          />
+        </div>
+
+>>>>>>> af16d6e (refactor: move business logic from controllers to services (API-first fixes))
         {/* Empty State */}
         {profiles.length === 0 && (
           <Card className="py-20 text-center">

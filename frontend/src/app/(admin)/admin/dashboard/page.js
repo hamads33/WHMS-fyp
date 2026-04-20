@@ -25,6 +25,7 @@ import { ServerHealthWidget } from "@/components/admin/dashboard/ServerHealthWid
 import { BackupTrendWidget } from "@/components/admin/dashboard/BackupTrendWidget";
 import { AutomationHealthWidget } from "@/components/admin/dashboard/AutomationHealthWidget";
 import { ActivityFeedWidget } from "@/components/admin/dashboard/ActivityFeedWidget";
+import { ProvisioningActivityFeed } from "@/components/admin/dashboard/ProvisioningActivityFeed";
 import { ClientGrowthChart } from "@/components/admin/dashboard/ClientGrowthChart";
 
 import { apiFetch } from "@/lib/api/client";
@@ -463,6 +464,9 @@ export default function DashboardPage() {
         <RecentOrdersCard  orders={statsData?.recentOrders  ?? []} loading={loadingA} />
         <RecentTicketsCard tickets={statsData?.recentTickets ?? []} loading={loadingA} />
       </div>
+
+      {/* ── Provisioning Activity Feed ────────────────────── */}
+      <ProvisioningActivityFeed />
 
       {/* ── Activity Feed + Quick Access ──────────────────── */}
       <div className="grid gap-4 xl:grid-cols-5">

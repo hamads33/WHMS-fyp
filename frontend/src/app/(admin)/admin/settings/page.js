@@ -1746,17 +1746,27 @@ function BillingTaxPanel() {
 function DomainRegistrarPanel() {
   const { toast } = useToast();
 
+  const asBool = (value, fallback = false) => {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true") return true;
+      if (normalized === "false") return false;
+    }
+    return fallback;
+  };
+
   // Porkbun
   const [pbKey,    setPbKey]    = useState("");
   const [pbSecret, setPbSecret] = useState("");
-  const [pbEnabled, setPbEnabled] = useState("false");
+  const [pbEnabled, setPbEnabled] = useState(false);
 
   // Namecheap
   const [ncUser,    setNcUser]    = useState("");
   const [ncKey,     setNcKey]     = useState("");
   const [ncIp,      setNcIp]      = useState("");
-  const [ncSandbox, setNcSandbox] = useState("true");
-  const [ncEnabled, setNcEnabled] = useState("false");
+  const [ncSandbox, setNcSandbox] = useState(true);
+  const [ncEnabled, setNcEnabled] = useState(false);
 
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(null); // "porkbun"|"namecheap"
@@ -1774,49 +1784,108 @@ function DomainRegistrarPanel() {
           const s = json.settings || {};
           setPbKey(s.porkbun_api_key || "");
           setPbSecret(s.porkbun_secret_key || "");
-          setPbEnabled(s.porkbun_enabled || "false");
+          setPbEnabled(asBool(s.porkbun_enabled));
           setNcUser(s.namecheap_api_user || "");
           setNcKey(s.namecheap_api_key || "");
           setNcIp(s.namecheap_client_ip || "");
-          setNcSandbox(s.namecheap_sandbox ?? "true");
-          setNcEnabled(s.namecheap_enabled || "false");
+          setNcSandbox(asBool(s.namecheap_sandbox, true));
+          setNcEnabled(asBool(s.namecheap_enabled));
         }
       } catch { /* ignore */ }
       finally { setLoading(false); }
     })();
   }, []);
 
-  async function save(registrar) {
+  function getRegistrarPayload(registrar) {
+    return registrar === "porkbun"
+      ? {
+          porkbun_api_key: pbKey.trim(),
+          porkbun_secret_key: pbSecret.trim(),
+          porkbun_enabled: pbEnabled,
+        }
+      : {
+          namecheap_api_user: ncUser.trim(),
+          namecheap_api_key: ncKey.trim(),
+          namecheap_client_ip: ncIp.trim(),
+          namecheap_sandbox: ncSandbox,
+          namecheap_enabled: ncEnabled,
+        };
+  }
+
+  function validateRegistrar(registrar) {
+    if (registrar === "porkbun") {
+      if (!pbKey.trim()) return "Porkbun API key is required.";
+      if (!pbSecret.trim()) return "Porkbun secret API key is required.";
+      return null;
+    }
+
+    if (!ncUser.trim()) return "Namecheap API username is required.";
+    if (!ncKey.trim()) return "Namecheap API key is required.";
+    if (!ncIp.trim()) return "Namecheap client IP is required.";
+    return null;
+  }
+
+  async function save(registrar, { silent = false } = {}) {
     setSaving(registrar);
-    const body = registrar === "porkbun"
-      ? { porkbun_api_key: pbKey, porkbun_secret_key: pbSecret, porkbun_enabled: pbEnabled }
-      : { namecheap_api_user: ncUser, namecheap_api_key: ncKey, namecheap_client_ip: ncIp, namecheap_sandbox: ncSandbox, namecheap_enabled: ncEnabled };
+    const validationError = validateRegistrar(registrar);
+    if (validationError) {
+      if (!silent) {
+        toast({ variant: "destructive", title: "❌ Missing Required Fields", description: validationError });
+      }
+      setSaving(null);
+      return false;
+    }
+
+    const body = getRegistrarPayload(registrar);
     try {
       const json = await apiFetch("/admin/domains/settings", {
         method: "PUT",
         body: JSON.stringify(body),
       });
       if (json.success) {
-        toast({ title: "Saved", description: `${registrar === "porkbun" ? "Porkbun" : "Namecheap"} settings saved.` });
+        if (!silent) {
+          toast({ title: "✅ Saved to Database", description: `${registrar === "porkbun" ? "Porkbun" : "Namecheap"} credentials securely saved to database.` });
+        }
+        return true;
       } else {
         throw new Error(json.error || "Save failed");
       }
     } catch (err) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
+      if (!silent) {
+        toast({ variant: "destructive", title: "❌ Save Failed", description: `Could not save to database: ${err.message}` });
+      } else {
+        throw err;
+      }
+      return false;
     } finally { setSaving(null); }
   }
 
   async function testConnection(registrar) {
     setTesting(registrar);
     try {
-      const json = await apiFetch(`/admin/domains/settings/test?registrar=${registrar}`, { method: "POST" });
+      const validationError = validateRegistrar(registrar);
+      if (validationError) {
+        toast({ variant: "destructive", title: "❌ Missing Fields", description: validationError });
+        return;
+      }
+
+      const ok = await save(registrar, { silent: true });
+      if (!ok) return;
+
+      const json = await apiFetch(`/admin/domains/settings/test?registrar=${registrar}`, {
+        method: "POST",
+        body: JSON.stringify({
+          registrar,
+          settings: getRegistrarPayload(registrar),
+        }),
+      });
       if (json.success) {
-        toast({ title: "Connection OK", description: json.message });
+        toast({ title: "✅ Connection Success", description: json.message });
       } else {
-        toast({ variant: "destructive", title: "Connection failed", description: json.message });
+        toast({ variant: "destructive", title: "❌ Connection Failed", description: json.message });
       }
     } catch (err) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
+      toast({ variant: "destructive", title: "❌ Connection Error", description: err.message });
     } finally { setTesting(null); }
   }
 
@@ -1853,12 +1922,12 @@ function DomainRegistrarPanel() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={ncEnabled === "true" ? "default" : "secondary"} className="text-xs">
-                {ncEnabled === "true" ? "Enabled" : "Disabled"}
+              <Badge variant={ncEnabled ? "default" : "secondary"} className="text-xs">
+                {ncEnabled ? "Enabled" : "Disabled"}
               </Badge>
               <Switch
-                checked={ncEnabled === "true"}
-                onCheckedChange={v => setNcEnabled(v ? "true" : "false")}
+                checked={ncEnabled}
+                onCheckedChange={setNcEnabled}
               />
             </div>
           </div>
@@ -1892,7 +1961,7 @@ function DomainRegistrarPanel() {
             </div>
             <div>
               <Label className="text-xs mb-1.5 block">Environment</Label>
-              <Select value={ncSandbox} onValueChange={setNcSandbox}>
+              <Select value={ncSandbox ? "true" : "false"} onValueChange={v => setNcSandbox(v === "true")}>
                 <SelectTrigger className="h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -1908,7 +1977,7 @@ function DomainRegistrarPanel() {
               {saving === "namecheap" ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : null}
               Save
             </Button>
-            <Button size="sm" variant="outline" onClick={() => testConnection("namecheap")} disabled={testing === "namecheap"}>
+            <Button size="sm" variant="outline" onClick={() => testConnection("namecheap")} disabled={testing === "namecheap" || saving === "namecheap"}>
               {testing === "namecheap" ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <TestTube2 className="h-3.5 w-3.5 mr-2" />}
               Test Connection
             </Button>
@@ -1929,12 +1998,12 @@ function DomainRegistrarPanel() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={pbEnabled === "true" ? "default" : "secondary"} className="text-xs">
-                {pbEnabled === "true" ? "Enabled" : "Disabled"}
+              <Badge variant={pbEnabled ? "default" : "secondary"} className="text-xs">
+                {pbEnabled ? "Enabled" : "Disabled"}
               </Badge>
               <Switch
-                checked={pbEnabled === "true"}
-                onCheckedChange={v => setPbEnabled(v ? "true" : "false")}
+                checked={pbEnabled}
+                onCheckedChange={setPbEnabled}
               />
             </div>
           </div>
@@ -1985,7 +2054,7 @@ function DomainRegistrarPanel() {
               {saving === "porkbun" ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : null}
               Save
             </Button>
-            <Button size="sm" variant="outline" onClick={() => testConnection("porkbun")} disabled={testing === "porkbun"}>
+            <Button size="sm" variant="outline" onClick={() => testConnection("porkbun")} disabled={testing === "porkbun" || saving === "porkbun"}>
               {testing === "porkbun" ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <TestTube2 className="h-3.5 w-3.5 mr-2" />}
               Test Connection
             </Button>
@@ -2426,6 +2495,137 @@ function EmailSettingsPanel() {
   );
 }
 
+// ── Notifications Settings Panel ────────────────────────────────────────────
+
+function NotificationsSettingsPanel() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState({});
+  const [saving, setSaving] = useState({});
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const data = await apiFetch("/admin/settings/notifications");
+      if (data.success) {
+        setNotifications(data.notifications || {});
+      }
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleToggle(key, value) {
+    setSaving(prev => ({ ...prev, [key]: true }));
+    try {
+      const settingKey = `notifications.${key}`;
+      const data = await apiFetch(`/admin/settings/${settingKey}`, {
+        method: "PUT",
+        body: JSON.stringify({ value }),
+      });
+      if (data.success) {
+        setNotifications(prev => ({ ...prev, [key]: value }));
+        toast({ title: `${key} notification ${value ? "enabled" : "disabled"}` });
+      } else {
+        throw new Error(data.error || "Failed to update");
+      }
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(prev => ({ ...prev, [key]: false }));
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading notification settings...
+      </div>
+    );
+  }
+
+  const groups = {
+    service: {
+      title: 'Service Events',
+      events: [
+        { key: 'service.activated', label: 'Service Activated', desc: 'When hosting account provisioning completes' },
+        { key: 'service.suspended', label: 'Service Suspended', desc: 'When service is suspended due to non-payment' },
+        { key: 'service.terminated', label: 'Service Terminated', desc: 'When service is terminated' },
+      ]
+    },
+    billing: {
+      title: 'Billing Events',
+      events: [
+        { key: 'billing.invoice_created', label: 'Invoice Created', desc: 'New invoice generated' },
+        { key: 'billing.payment_received', label: 'Payment Received', desc: 'Payment successfully recorded' },
+        { key: 'billing.payment_overdue', label: 'Payment Overdue', desc: 'Invoice payment is overdue' },
+        { key: 'billing.refund_issued', label: 'Refund Issued', desc: 'Refund processed' },
+      ]
+    },
+    order: {
+      title: 'Order Events',
+      events: [
+        { key: 'order.placed', label: 'Order Placed', desc: 'New order created' },
+      ]
+    },
+    support: {
+      title: 'Support Events',
+      events: [
+        { key: 'support.ticket_created', label: 'Ticket Created', desc: 'New support ticket opened' },
+        { key: 'support.ticket_reply', label: 'Ticket Reply', desc: 'Support staff replies to ticket' },
+        { key: 'support.ticket_closed', label: 'Ticket Closed', desc: 'Support ticket resolved' },
+      ]
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Notification Settings
+          </CardTitle>
+          <CardDescription>
+            Control which notifications are sent to clients. All notifications are enabled by default.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-8">
+            {Object.entries(groups).map(([groupKey, group]) => (
+              <div key={groupKey}>
+                <h3 className="text-sm font-semibold mb-4">{group.title}</h3>
+                <div className="space-y-3">
+                  {group.events.map(event => (
+                    <div key={event.key} className="flex items-center justify-between rounded-lg border px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">{event.label}</p>
+                        <p className="text-xs text-muted-foreground">{event.desc}</p>
+                      </div>
+                      <Switch
+                        checked={notifications[event.key] ?? true}
+                        onCheckedChange={(val) => handleToggle(event.key, val)}
+                        disabled={saving[event.key]}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ── Webhooks Panel ──────────────────────────────────────────────────────────
 
 const ALL_EVENTS = [
@@ -2562,39 +2762,49 @@ function ProvisioningSettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [autoProvisioning, setAutoProvisioning] = useState(true);
 
-  // VestaCP credentials state
-  const [vestaHost, setVestaHost] = useState("");
-  const [vestaPort, setVestaPort] = useState("8083");
-  const [vestaToken, setVestaToken] = useState("");
-  const [vestaTokenMasked, setVestaTokenMasked] = useState("");
-  const [vestaConfigured, setVestaConfigured] = useState(false);
-  const [showToken, setShowToken] = useState(false);
-  const [vestaSaving, setVestaSaving] = useState(false);
-  const [vestaTesting, setVestaTesting] = useState(false);
-  const [vestaTestResult, setVestaTestResult] = useState(null); // null | { ok: bool, message }
+  // CyberPanel SSH credentials state
+  const [cyberHost, setCyberHost] = useState("");
+  const [cyberSshPort, setCyberSshPort] = useState("22");
+  const [cyberSshUser, setCyberSshUser] = useState("root");
+  const [cyberAdminUser, setCyberAdminUser] = useState("admin");
+  const [cyberAdminPass, setCyberAdminPass] = useState("");
+  const [cyberAdminPassSet, setCyberAdminPassSet] = useState(false);
+  const [cyberPanelPort, setCyberPanelPort] = useState("8090");
+  const [cyberPrivateKey, setCyberPrivateKey] = useState("");
+  const [cyberSshPassword, setCyberSshPassword] = useState("");
+  const [showSshPassword, setShowSshPassword] = useState(false);
+  const [showAdminPass, setShowAdminPass] = useState(false);
+  const [cyberConfigured, setCyberConfigured] = useState(false);
+  const [cyberAuthType, setCyberAuthType] = useState("none");
+  const [cyberSaving, setCyberSaving] = useState(false);
+  const [cyberTesting, setCyberTesting] = useState(false);
+  const [cyberTestResult, setCyberTestResult] = useState(null);
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
     try {
-      const [provRes, vestaRes] = await Promise.all([
-        apiFetch("/api/admin/settings/provisioning"),
-        apiFetch("/api/admin/settings/vestacp"),
+      // apiFetch returns parsed JSON directly — do NOT call .json() on result
+      const [provData, cyberData] = await Promise.all([
+        apiFetch("/admin/settings/provisioning"),
+        apiFetch("/admin/settings/cyberpanel"),
       ]);
-      const provData = await provRes.json();
-      const vestaData = await vestaRes.json();
+
       if (provData.success) setAutoProvisioning(provData.autoProvisioning);
-      if (vestaData.success) {
-        setVestaHost(vestaData.host || "");
-        setVestaPort(String(vestaData.port || 8083));
-        setVestaTokenMasked(vestaData.tokenMasked || "");
-        setVestaConfigured(vestaData.configured);
+
+      if (cyberData.success) {
+        setCyberHost(cyberData.host || "");
+        setCyberSshPort(String(cyberData.sshPort || 22));
+        setCyberSshUser(cyberData.sshUser || "root");
+        setCyberAdminUser(cyberData.adminUser || "admin");
+        setCyberPanelPort(String(cyberData.panelPort || 8090));
+        setCyberAdminPassSet(!!cyberData.adminPassSet);
+        setCyberConfigured(cyberData.configured);
+        setCyberAuthType(cyberData.authType || "none");
       }
     } catch {
-      // ignore
+      // silently ignore load errors
     } finally {
       setLoading(false);
     }
@@ -2603,12 +2813,10 @@ function ProvisioningSettingsPanel() {
   async function handleToggle(val) {
     setSaving(true);
     try {
-      const res = await apiFetch("/api/admin/settings/provisioning", {
+      const data = await apiFetch("/admin/settings/provisioning", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: val }),
       });
-      const data = await res.json();
       if (data.success) {
         setAutoProvisioning(data.autoProvisioning);
         toast({ title: `Auto-provisioning ${data.autoProvisioning ? "enabled" : "disabled"}` });
@@ -2622,58 +2830,73 @@ function ProvisioningSettingsPanel() {
     }
   }
 
-  async function handleSaveVestacp(e) {
+  async function handleSaveCyberPanel(e) {
     e.preventDefault();
-    if (!vestaHost || (!vestaToken && !vestaConfigured)) {
-      toast({ title: "Host and API token are required", variant: "destructive" });
+
+    if (!cyberHost) {
+      toast({ title: "Host is required", variant: "destructive" });
       return;
     }
-    setVestaSaving(true);
-    setVestaTestResult(null);
-    try {
-      // Only send token if user entered a new one; backend keeps existing otherwise
-      const payload = { host: vestaHost, port: Number(vestaPort) || 8083 };
-      if (vestaToken) payload.token = vestaToken;
+    if (!cyberPrivateKey && !cyberSshPassword && !cyberConfigured) {
+      toast({ title: "SSH private key or password is required", variant: "destructive" });
+      return;
+    }
 
-      const res = await apiFetch("/api/admin/settings/vestacp", {
+    setCyberSaving(true);
+    setCyberTestResult(null);
+    try {
+      const payload = {
+        host: cyberHost,
+        sshPort: Number(cyberSshPort) || 22,
+        sshUser: cyberSshUser || "root",
+        adminUser: cyberAdminUser || "admin",
+        panelPort: Number(cyberPanelPort) || 8090,
+      };
+      if (cyberPrivateKey) payload.sshPrivateKey = cyberPrivateKey;
+      if (cyberSshPassword) payload.sshPassword = cyberSshPassword;
+      if (cyberAdminPass) payload.adminPass = cyberAdminPass;
+
+      const data = await apiFetch("/admin/settings/cyberpanel", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
+
       if (!data.success) throw new Error(data.error || "Save failed");
-      toast({ title: "VestaCP credentials saved" });
-      setVestaToken("");
-      setVestaConfigured(true);
-      // Reload to get masked token
-      const vestaRes = await apiFetch("/api/admin/settings/vestacp");
-      const vestaData = await vestaRes.json();
-      if (vestaData.success) {
-        setVestaTokenMasked(vestaData.tokenMasked || "");
-        setVestaConfigured(vestaData.configured);
+      toast({ title: "CyberPanel credentials saved" });
+
+      // Clear sensitive fields after save
+      setCyberPrivateKey("");
+      setCyberSshPassword("");
+      setCyberAdminPass("");
+
+      // Refresh status
+      const refreshed = await apiFetch("/admin/settings/cyberpanel");
+      if (refreshed.success) {
+        setCyberConfigured(refreshed.configured);
+        setCyberAuthType(refreshed.authType || "none");
+        setCyberAdminPassSet(!!refreshed.adminPassSet);
       }
     } catch (err) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
-      setVestaSaving(false);
+      setCyberSaving(false);
     }
   }
 
-  async function handleTestVestacp() {
-    setVestaTesting(true);
-    setVestaTestResult(null);
+  async function handleTestCyberPanel() {
+    setCyberTesting(true);
+    setCyberTestResult(null);
     try {
-      const res = await apiFetch("/api/admin/settings/vestacp/test", { method: "POST" });
-      const data = await res.json();
+      const data = await apiFetch("/admin/settings/cyberpanel/test", { method: "POST" });
       if (data.success) {
-        setVestaTestResult({ ok: true, message: "Connection successful — VestaCP is reachable." });
+        setCyberTestResult({ ok: true, message: data.message || "SSH connection verified — CyberPanel is reachable." });
       } else {
-        setVestaTestResult({ ok: false, message: data.error || "Connection failed" });
+        setCyberTestResult({ ok: false, message: data.error || "Connection failed" });
       }
     } catch (err) {
-      setVestaTestResult({ ok: false, message: err.message || "Connection failed" });
+      setCyberTestResult({ ok: false, message: err.message || "Connection failed" });
     } finally {
-      setVestaTesting(false);
+      setCyberTesting(false);
     }
   }
 
@@ -2727,105 +2950,201 @@ function ProvisioningSettingsPanel() {
         </CardContent>
       </Card>
 
-      {/* VestaCP Credentials */}
+      {/* CyberPanel SSH Credentials */}
+      {cyberConfigured && (
+        <Alert className="border-blue-200 bg-blue-50">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-700">
+            <strong>Active Control Panel:</strong> CyberPanel is configured via SSH (auth: <strong>{cyberAuthType}</strong>).
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
-            VestaCP API Credentials
-            {vestaConfigured && (
+            CyberPanel SSH Credentials
+            {cyberConfigured && (
               <Badge variant="secondary" className="ml-2 text-green-600 bg-green-50 border-green-200">
-                <CheckCircle2 className="h-3 w-3 mr-1" /> Configured
+                <CheckCircle2 className="h-3 w-3 mr-1" /> Active
               </Badge>
             )}
           </CardTitle>
           <CardDescription>
-            Enter your VestaCP control panel host and API token. These credentials are used to automatically provision hosting accounts when orders are activated.
+            CyberPanel has no REST API — provisioning uses SSH to run the <code className="text-xs bg-muted px-1 rounded">cyberpanel</code> CLI on your server. Provide SSH access credentials below.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSaveVestacp} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-3">
+          <form onSubmit={handleSaveCyberPanel} className="space-y-4">
+            {/* Host + SSH Port + Panel Port */}
+            <div className="grid gap-4 sm:grid-cols-4">
               <div className="sm:col-span-2 space-y-1.5">
-                <Label htmlFor="vesta-host">VestaCP Host</Label>
+                <Label htmlFor="cyber-host">Server IP / Hostname</Label>
                 <Input
-                  id="vesta-host"
-                  placeholder="vesta.yourdomain.com or 192.168.1.10"
-                  value={vestaHost}
-                  onChange={e => setVestaHost(e.target.value)}
+                  id="cyber-host"
+                  placeholder="209.74.81.196 or server.yourdomain.com"
+                  value={cyberHost}
+                  onChange={e => setCyberHost(e.target.value)}
                   required
                 />
-                <p className="text-xs text-muted-foreground">Hostname or IP address of your VestaCP server</p>
+                <p className="text-xs text-muted-foreground">IP address or hostname of your CyberPanel VPS</p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="vesta-port">Port</Label>
+                <Label htmlFor="cyber-ssh-port">SSH Port</Label>
                 <Input
-                  id="vesta-port"
+                  id="cyber-ssh-port"
                   type="number"
                   min="1"
                   max="65535"
-                  placeholder="8083"
-                  value={vestaPort}
-                  onChange={e => setVestaPort(e.target.value)}
+                  placeholder="22"
+                  value={cyberSshPort}
+                  onChange={e => setCyberSshPort(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">Default: 8083</p>
+                <p className="text-xs text-muted-foreground">Default: 22</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cyber-panel-port">Panel Port</Label>
+                <Input
+                  id="cyber-panel-port"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  placeholder="8090"
+                  value={cyberPanelPort}
+                  onChange={e => setCyberPanelPort(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Default: 8090</p>
               </div>
             </div>
 
+            {/* SSH User + CyberPanel Admin Username */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="cyber-ssh-user">SSH Username</Label>
+                <Input
+                  id="cyber-ssh-user"
+                  placeholder="root"
+                  value={cyberSshUser}
+                  onChange={e => setCyberSshUser(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">OS user for SSH (usually <code className="bg-muted px-1 rounded">root</code>)</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cyber-admin-user">CyberPanel Admin Username</Label>
+                <Input
+                  id="cyber-admin-user"
+                  placeholder="admin"
+                  value={cyberAdminUser}
+                  onChange={e => setCyberAdminUser(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Panel owner for websites (usually <code className="bg-muted px-1 rounded">admin</code>)</p>
+              </div>
+            </div>
+
+            {/* CyberPanel Admin Password — required for suspend/unsuspend */}
             <div className="space-y-1.5">
-              <Label htmlFor="vesta-token">API Token</Label>
+              <Label htmlFor="cyber-admin-pass">
+                CyberPanel Admin Password
+                <span className="text-xs text-muted-foreground font-normal ml-1">(required for suspend / unsuspend)</span>
+              </Label>
               <div className="relative">
                 <Input
-                  id="vesta-token"
-                  type={showToken ? "text" : "password"}
-                  placeholder={vestaConfigured ? "Leave blank to keep current token" : "Paste your VestaCP API token"}
-                  value={vestaToken}
-                  onChange={e => setVestaToken(e.target.value)}
+                  id="cyber-admin-pass"
+                  type={showAdminPass ? "text" : "password"}
+                  placeholder={cyberAdminPassSet ? "Leave blank to keep current password" : "CyberPanel web panel admin password"}
+                  value={cyberAdminPass}
+                  onChange={e => setCyberAdminPass(e.target.value)}
                   className="pr-10"
                 />
                 <button
                   type="button"
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowToken(v => !v)}
+                  onClick={() => setShowAdminPass(v => !v)}
                   tabIndex={-1}
                 >
-                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showAdminPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              {vestaConfigured && vestaTokenMasked && (
-                <p className="text-xs text-muted-foreground">
-                  Current token: <code className="bg-muted px-1 rounded">{vestaTokenMasked}</code>
-                </p>
-              )}
               <p className="text-xs text-muted-foreground">
-                Generate an API token in VestaCP admin panel under <strong>Admin → API</strong>.
+                Used for suspend/unsuspend via the CyberPanel web API — the CLI has no suspend command.
+                {cyberAdminPassSet && <span className="ml-1 text-green-600 font-medium">✓ Password stored</span>}
               </p>
             </div>
 
-            {vestaTestResult && (
-              <Alert variant={vestaTestResult.ok ? "default" : "destructive"}>
-                {vestaTestResult.ok
+            <Separator />
+
+            {/* SSH Private Key (recommended) */}
+            <div className="space-y-1.5">
+              <Label htmlFor="cyber-private-key">SSH Private Key <span className="text-xs text-muted-foreground font-normal">(recommended)</span></Label>
+              <Textarea
+                id="cyber-private-key"
+                placeholder={cyberConfigured && cyberAuthType === "key"
+                  ? "Leave blank to keep current key"
+                  : "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
+                value={cyberPrivateKey}
+                onChange={e => setCyberPrivateKey(e.target.value)}
+                className="font-mono text-xs min-h-[100px] resize-y"
+              />
+              <p className="text-xs text-muted-foreground">
+                Paste the contents of your <code className="bg-muted px-1 rounded">~/.ssh/id_rsa</code> or <code className="bg-muted px-1 rounded">id_ed25519</code> private key.
+                The public key must be in <code className="bg-muted px-1 rounded">~/.ssh/authorized_keys</code> on the server.
+              </p>
+            </div>
+
+            {/* SSH Password (fallback) */}
+            <div className="space-y-1.5">
+              <Label htmlFor="cyber-ssh-password">SSH Password <span className="text-xs text-muted-foreground font-normal">(fallback — key auth preferred)</span></Label>
+              <div className="relative">
+                <Input
+                  id="cyber-ssh-password"
+                  type={showSshPassword ? "text" : "password"}
+                  placeholder={cyberConfigured && cyberAuthType === "password" ? "Leave blank to keep current password" : "SSH password (optional if key provided)"}
+                  value={cyberSshPassword}
+                  onChange={e => setCyberSshPassword(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowSshPassword(v => !v)}
+                  tabIndex={-1}
+                >
+                  {showSshPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {cyberConfigured && (
+                <p className="text-xs text-muted-foreground">
+                  SSH auth: <code className="bg-muted px-1 rounded">{cyberAuthType}</code>
+                  {cyberAuthType === "none" && " — no SSH credentials stored yet"}
+                </p>
+              )}
+            </div>
+
+            {cyberTestResult && (
+              <Alert variant={cyberTestResult.ok ? "default" : "destructive"}>
+                {cyberTestResult.ok
                   ? <CheckCircle2 className="h-4 w-4" />
                   : <XCircle className="h-4 w-4" />}
-                <AlertDescription>{vestaTestResult.message}</AlertDescription>
+                <AlertDescription>{cyberTestResult.message}</AlertDescription>
               </Alert>
             )}
 
             <div className="flex items-center gap-3 pt-1">
-              <Button type="submit" disabled={vestaSaving}>
-                {vestaSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Save Credentials
+              <Button type="submit" disabled={cyberSaving}>
+                {cyberSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save SSH Credentials
               </Button>
-              {vestaConfigured && (
+              {cyberConfigured && (
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleTestVestacp}
-                  disabled={vestaTesting}
+                  onClick={handleTestCyberPanel}
+                  disabled={cyberTesting}
                 >
-                  {vestaTesting
-                    ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Testing...</>
-                    : <><TestTube2 className="h-4 w-4 mr-2" />Test Connection</>}
+                  {cyberTesting
+                    ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Testing SSH...</>
+                    : <><TestTube2 className="h-4 w-4 mr-2" />Test SSH Connection</>}
                 </Button>
               )}
             </div>
@@ -3204,6 +3523,7 @@ export default function AdminSettingsPage() {
           <TabsTrigger value="apikeys">API Keys</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
           <TabsTrigger value="email" className="gap-1.5"><Mail className="h-3.5 w-3.5" />Email</TabsTrigger>
+          <TabsTrigger value="notifications" className="gap-1.5"><Mail className="h-3.5 w-3.5" />Notifications</TabsTrigger>
           <TabsTrigger value="billing" className="gap-1.5"><Percent className="h-3.5 w-3.5" />Billing &amp; Tax</TabsTrigger>
           <TabsTrigger value="invoices" className="gap-1.5"><FileText className="h-3.5 w-3.5" />Invoices</TabsTrigger>
           <TabsTrigger value="domains" className="gap-1.5"><Globe className="h-3.5 w-3.5" />Domains</TabsTrigger>
@@ -3396,6 +3716,11 @@ export default function AdminSettingsPage() {
         {/* ── Email Tab ────────────────────────────────── */}
         <TabsContent value="email" className="mt-4">
           <EmailSettingsPanel />
+        </TabsContent>
+
+        {/* ── Notifications Tab ─────────────────────── */}
+        <TabsContent value="notifications" className="mt-4">
+          <NotificationsSettingsPanel />
         </TabsContent>
 
         {/* ── Billing & Tax Tab ─────────────────────── */}

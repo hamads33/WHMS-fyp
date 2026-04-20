@@ -61,6 +61,7 @@ const NAV_GROUPS = [
     label: "Infrastructure",
     items: [
       { name: "Servers",       href: "/admin/servers",           icon: Server,          permKey: "canAccessAdmin" },
+      { name: "Provisioning",  href: "/admin/provisioning",      icon: Network,         permKey: "canAccessAdmin" },
     ],
   },
   {

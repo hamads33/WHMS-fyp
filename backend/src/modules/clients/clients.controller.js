@@ -100,6 +100,7 @@ const ClientsController = {
           { email: { contains: q, mode: "insensitive" } },
           { id: { contains: q } },
           { clientProfile: { company: { contains: q, mode: "insensitive" } } },
+          { hostingAccounts: { some: { username: { contains: q, mode: "insensitive" } } } }
         ];
       }
 

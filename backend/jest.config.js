@@ -4,4 +4,8 @@ module.exports = {
   testMatch: ["**/*.test.js"],
   clearMocks: true,
   forceExit: true,
+  testTimeout: 30000,
+  transformIgnorePatterns: [
+    'node_modules/(?!uuid/)'
+  ]
 };

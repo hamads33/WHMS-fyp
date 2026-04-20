@@ -3,7 +3,7 @@
  * Reads/writes key-value pairs in the SystemSetting table.
  */
 
-const prisma = require("../../../prisma");
+const prisma = require('../../../prisma');
 
 const SettingsService = {
   async get(key) {
@@ -20,29 +20,61 @@ const SettingsService = {
   },
 
   async getAll() {
-    return prisma.systemSetting.findMany({ orderBy: { key: "asc" } });
+    return prisma.systemSetting.findMany({ orderBy: { key: 'asc' } });
   },
 
-  // ── Provisioning helpers ──────────────────────────────────────
+  // ── Provisioning helpers ──────────────────────────────────────────────────
 
   async getAutoProvisioning() {
-    const val = await this.get("provisioning.auto");
-    return val === null ? true : val === true || val === "true";
+    const val = await this.get('provisioning.auto');
+    return val === null ? true : val === true || val === 'true';
   },
 
   async setAutoProvisioning(enabled) {
-    return this.set("provisioning.auto", Boolean(enabled));
+    return this.set('provisioning.auto', Boolean(enabled));
   },
 
-  // ── VestaCP credential helpers ────────────────────────────────
+  // ── CyberPanel SSH credential helpers ────────────────────────────────────
+  // CyberPanel has no REST API — access is via SSH + cyberpanel CLI.
 
-  async getVestacpCredentials() {
-    const val = await this.get("provisioning.vestacp");
-    return val || { host: "", port: 8083, token: "" };
+  async getCyberPanelCredentials() {
+    const val = await this.get('provisioning.cyberpanel');
+    return val || {
+      host: '',
+      sshPort: 22,
+      sshUser: 'root',
+      sshPrivateKey: '',
+      sshPassword: '',
+      adminUser: 'admin',
+      adminPass: '',
+      panelPort: 8090,
+    };
   },
 
-  async setVestacpCredentials({ host, port, token }) {
-    return this.set("provisioning.vestacp", { host, port: Number(port), token });
+  async setCyberPanelCredentials({ host, sshPort, sshUser, sshPrivateKey, sshPassword, adminUser, adminPass, panelPort }) {
+    return this.set('provisioning.cyberpanel', {
+      host: host || '',
+      sshPort: Number(sshPort || 22),
+      sshUser: sshUser || 'root',
+      sshPrivateKey: sshPrivateKey || '',
+      sshPassword: sshPassword || '',
+      adminUser: adminUser || 'admin',
+      adminPass: adminPass || '',
+      panelPort: Number(panelPort || 8090),
+    });
+  },
+
+  async testCyberPanelConnection() {
+    const creds = await this.getCyberPanelCredentials();
+    if (!creds.host) {
+      throw new Error('CyberPanel SSH host not configured');
+    }
+    if (!creds.sshPrivateKey && !creds.sshPassword) {
+      throw new Error('No SSH credentials configured (need sshPrivateKey or sshPassword)');
+    }
+    const { CyberPanelDriver } = require('../provisioning/drivers/cyberpanel.driver');
+    const driver = new CyberPanelDriver(creds);
+    return driver.testConnection();
   },
 };
 

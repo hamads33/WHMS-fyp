@@ -4,6 +4,17 @@
  */
 
 const provisioningService = require("../services/provisioning.service");
+const {
+  enqueueProvisionAccount,
+  enqueueDeprovisionAccount,
+  enqueueProvisionDomain,
+  enqueueSuspendAccount,
+  enqueueUnsuspendAccount,
+  enqueueIssueSSL,
+  enqueueCreateDatabase,
+  enqueueCreateEmail,
+  getJobStatus,
+} = require("../queues/provisioning.queue");
 
 /**
  * Get hosting account for order
@@ -227,6 +238,150 @@ exports.syncAllStats = async (req, res) => {
     }
 
     res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Async provision account (queued)
+ * POST /api/admin/provisioning/orders/:orderId/provision-async
+ */
+exports.provisionAccountAsync = async (req, res) => {
+  try {
+    const job = await enqueueProvisionAccount(req.params.orderId);
+    res.status(202).json({
+      message: "Provisioning job queued",
+      jobId: job.id,
+      status: "queued",
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Get provisioning job status
+ * GET /api/admin/provisioning/jobs/:jobId
+ */
+exports.getProvisioningStatus = async (req, res) => {
+  try {
+    const status = await getJobStatus(req.params.jobId);
+    if (!status) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Async suspend account (queued)
+ * POST /api/admin/provisioning/orders/:orderId/suspend-async
+ */
+exports.suspendAccountAsync = async (req, res) => {
+  try {
+    const job = await enqueueSuspendAccount(
+      req.params.orderId,
+      req.body.reason || "admin-action"
+    );
+    res.status(202).json({
+      message: "Suspend job queued",
+      jobId: job.id,
+      status: "queued",
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Async unsuspend account (queued)
+ * POST /api/admin/provisioning/orders/:orderId/unsuspend-async
+ */
+exports.unsuspendAccountAsync = async (req, res) => {
+  try {
+    const job = await enqueueUnsuspendAccount(req.params.orderId);
+    res.status(202).json({
+      message: "Unsuspend job queued",
+      jobId: job.id,
+      status: "queued",
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Async provision domain (queued)
+ * POST /api/admin/provisioning/accounts/:username/domains-async
+ */
+exports.provisionDomainAsync = async (req, res) => {
+  try {
+    const job = await enqueueProvisionDomain(req.params.username, req.body.domain, {
+      ip: req.body.ip,
+      ns1: req.body.ns1,
+      ns2: req.body.ns2,
+    });
+    res.status(202).json({
+      message: "Domain provision job queued",
+      jobId: job.id,
+      status: "queued",
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Test CyberPanel SSH connection
+ * GET /api/admin/provisioning/test-connection
+ */
+exports.testCyberPanelConnection = async (req, res) => {
+  try {
+    const settingsService = require("../../settings/settings.service");
+    const result = await settingsService.testCyberPanelConnection();
+    res.json({ connected: true, ...result });
+  } catch (err) {
+    res.status(503).json({ connected: false, error: err.message });
+  }
+};
+
+/**
+ * Issue SSL for a domain (queued)
+ * POST /api/admin/provisioning/accounts/:username/ssl
+ */
+exports.issueSSLAsync = async (req, res) => {
+  try {
+    const job = await enqueueIssueSSL(req.params.username, req.body.domain);
+    res.status(202).json({ message: "SSL job queued", jobId: job.id, status: "queued" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Create database (queued)
+ * POST /api/admin/provisioning/accounts/:username/databases-async
+ */
+exports.createDatabaseAsync = async (req, res) => {
+  try {
+    const job = await enqueueCreateDatabase(req.params.username, req.body.domain, req.body);
+    res.status(202).json({ message: "Database job queued", jobId: job.id, status: "queued" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Create email (queued)
+ * POST /api/admin/provisioning/accounts/:username/emails-async
+ */
+exports.createEmailAsync = async (req, res) => {
+  try {
+    const job = await enqueueCreateEmail(req.params.username, req.body.domain, req.body);
+    res.status(202).json({ message: "Email job queued", jobId: job.id, status: "queued" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

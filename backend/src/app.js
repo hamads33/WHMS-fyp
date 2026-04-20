@@ -223,6 +223,13 @@ app.use("/api/admin/server-management", authGuard, adminPortalGuard, require("./
 app.use("/api/admin", authGuard, adminPortalGuard, require("./modules/settings/settings.routes"));
 
 /* ================================================================
+   PROVISIONING ROUTES (client + admin)
+================================================================ */
+const { clientRouter: provisioningClientRouter, adminRouter: provisioningAdminRouter } = require("./modules/provisioning/routes/provisioning.routes");
+app.use("/api/client/provisioning", require("./modules/auth/middlewares/auth.guard"), provisioningClientRouter);
+app.use("/api/admin/provisioning", authGuard, adminPortalGuard, provisioningAdminRouter);
+
+/* ================================================================
    PUBLIC EMBEDDABLE API  —  /public/v1/
 ================================================================ */
 app.use("/public/v1", require("./modules/public/public.routes"));
@@ -417,6 +424,7 @@ async function init() {
         app,
         prismaClient: prisma,
         logger: automationLogger,
+        authGuard,
         config: {},
       }),
       15000, // 15 second timeout
@@ -458,8 +466,18 @@ async function init() {
     console.error("❌ Worker initialization error:", err.message);
   }
 
-  /* ✅ 6. START BACKUP WORKERS (Non-blocking) */
-  console.log("📋 Step 6/6: Starting Backup Workers...");
+  /* ✅ 6. START PROVISIONING WORKER (Non-blocking) */
+  console.log("📋 Step 6/7: Starting Provisioning Worker...");
+  try {
+    require("./modules/provisioning/workers/provisioning.worker");
+    console.log("✅ Provisioning worker started");
+  } catch (err) {
+    console.error("❌ Provisioning worker initialization error:", err.message);
+    console.warn("⚠️ Continuing without provisioning worker functionality...");
+  }
+
+  /* ✅ 7. START BACKUP WORKERS (Non-blocking) */
+  console.log("📋 Step 7/7: Starting Backup Workers...");
   try {
     require("./modules/backup/worker/runner");
     require("./modules/backup/worker/restoreQueue");
