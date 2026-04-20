@@ -49,6 +49,7 @@ export function EnhancedBackupList() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [verifyBackup, setVerifyBackup] = useState(null);
+  const [showFailedBackups, setShowFailedBackups] = useState(false);
 
   // Filter backups
   const filteredBackups = backups.filter((backup) => {
@@ -57,7 +58,8 @@ export function EnhancedBackupList() {
       .includes(search.toLowerCase());
     const matchesStatus =
       statusFilter === "all" || backup.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const isNotFailed = showFailedBackups || backup.status !== "failed";
+    return matchesSearch && matchesStatus && isNotFailed;
   });
 
   const handleDelete = async (backup) => {
@@ -117,6 +119,13 @@ export function EnhancedBackupList() {
                   className="pl-9 w-[250px]"
                 />
               </div>
+              <Button
+                variant={showFailedBackups ? "default" : "outline"}
+                onClick={() => setShowFailedBackups(!showFailedBackups)}
+                className="whitespace-nowrap"
+              >
+                {showFailedBackups ? "✓ Show Failed" : "Hide Failed"}
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline">
