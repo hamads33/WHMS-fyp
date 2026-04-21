@@ -28,7 +28,7 @@ export default function AdminLayout({ children }) {
     if (loading) return;
 
     if (!isAuthenticated) {
-      router.push("/admin/login");
+      router.push("/login");
       return;
     }
 

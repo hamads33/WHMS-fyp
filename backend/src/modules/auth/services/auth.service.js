@@ -355,7 +355,7 @@ const AuthService = {
   // ------------------------------------------------------
   // 9) Create session (authoritative source of truth)
   // ------------------------------------------------------
-  await prisma.session.create({
+  const session = await prisma.session.create({
     data: {
       userId: user.id,
       token: accessToken,
@@ -367,6 +367,7 @@ const AuthService = {
       lastActivity: new Date(),
     },
   });
+  console.log("[AUTH.SERVICE] Session created. ID:", session.id, "UserId:", session.userId);
 
   // ------------------------------------------------------
   // 10) Log success

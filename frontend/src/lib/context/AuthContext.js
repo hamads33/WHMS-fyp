@@ -27,9 +27,11 @@ export function AuthProvider({ children }) {
     try {
       setLoading(true);
       setError(null);
-      
+
+      console.log("[AUTH] Loading session...");
       const data = await AuthAPI.getSession();
-      
+      console.log("[AUTH] Session loaded:", data);
+
       // Only update state if we got valid session data
       if (data) {
         setSession(data);
@@ -41,8 +43,10 @@ export function AuthProvider({ children }) {
         setPortal(data.portal || null);
         setImpersonating(data.impersonating || false);
         setImpersonator(data.impersonator || null);
+        console.log("[AUTH] Session state updated. User:", userWithPortals?.email, "Portal:", data.portal);
       } else {
         // No session found - clear state
+        console.log("[AUTH] No session data returned");
         setSession(null);
         setUser(null);
         setPortal(null);
@@ -51,22 +55,24 @@ export function AuthProvider({ children }) {
       }
       return data;
     } catch (err) {
+      console.error("[AUTH] loadSession error:", err.message);
       // Don't log 401 errors as they're expected when not logged in
       if (err.message !== "UNAUTHENTICATED") {
         console.error("Failed to load session:", err);
       }
-      
+
       // Clear session on error
       setSession(null);
       setUser(null);
       setPortal(null);
       setImpersonating(false);
       setImpersonator(null);
-      
+
       // Only set error for unexpected errors
       if (err.message !== "UNAUTHENTICATED") {
         setError(err.message);
       }
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -83,22 +89,34 @@ export function AuthProvider({ children }) {
   
   const login = async (email, password) => {
     try {
+      console.log("[AUTH] Login attempt:", email);
       const response = await AuthAPI.login(email, password);
+      console.log("[AUTH] Login response:", response?.user);
 
       // MFA required — return early so the login page can redirect to /mfa-verify
       if (response?.requiresMFA) {
+        console.log("[AUTH] MFA required, returning early");
         return response;
       }
 
       // Reload session after login
-      await loadSession();
+      console.log("[AUTH] MFA not required, loading session...");
+      try {
+        await loadSession();
+        console.log("[AUTH] Session loaded successfully");
+      } catch (sessionErr) {
+        console.error("[AUTH] Session load failed:", sessionErr.message);
+        throw sessionErr;
+      }
 
       // Redirect to appropriate portal
       const defaultPortal = getDefaultPortal(response.user?.roles || []);
+      console.log("[AUTH] Redirecting to portal:", defaultPortal);
       router.push(defaultPortal);
 
       return response;
     } catch (err) {
+      console.error("[AUTH] Login error:", err.message);
       throw err;
     }
   };

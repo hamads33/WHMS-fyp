@@ -142,7 +142,7 @@ export default function MFAVerificationPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button className="w-full" onClick={() => router.push("/admin/login")}>
+            <Button className="w-full" onClick={() => router.push("/login")}>
               Back to Sign In
             </Button>
           </CardContent>
@@ -210,7 +210,7 @@ export default function MFAVerificationPage() {
               <p className="text-sm text-muted-foreground">
                 Don&apos;t have access to your authenticator?
               </p>
-              <Link href="/admin/login" className="text-sm text-primary hover:underline">
+              <Link href="/login" className="text-sm text-primary hover:underline">
                 Back to Login
               </Link>
             </div>

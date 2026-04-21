@@ -68,21 +68,19 @@ class BillingService {
     this._assertSnapshot(snapshot, orderId);
 
     // Validate no invoice already exists for this order (first invoice)
-    if (status !== "draft") {
-      const existing = await prisma.invoice.findFirst({
-        where: {
-          orderId,
-          status: { notIn: ["cancelled"] },
-        },
-      });
+    const existing = await prisma.invoice.findFirst({
+      where: {
+        orderId,
+        status: { notIn: ["cancelled"] },
+      },
+    });
 
-      if (existing) {
-        const err = new Error(
-          `An active invoice already exists for order ${orderId} (${existing.invoiceNumber}). Use generateRenewalInvoice() for renewals.`
-        );
-        err.statusCode = 409;
-        throw err;
-      }
+    if (existing) {
+      const err = new Error(
+        `An active invoice already exists for order ${orderId} (${existing.invoiceNumber}). Use generateRenewalInvoice() for renewals.`
+      );
+      err.statusCode = 409;
+      throw err;
     }
 
     const pricing = snapshot.pricing;

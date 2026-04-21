@@ -17,6 +17,10 @@ app.set("json replacer", (key, val) => (typeof val === "bigint" ? val.toString()
    – Cookies
    – Debug incoming origin
 ================================================================ */
+app.use(
+  '/api/billing/webhooks/stripe',
+  express.raw({ type: 'application/json' })
+);
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 app.use((req, res, next) => {
@@ -197,6 +201,7 @@ app.use("/api/admin/orders", authGuard, adminPortalGuard, ordersModule.adminRout
 const billing = require('./modules/billing');
 app.use("/api/admin/billing", authGuard, adminPortalGuard, billing.adminRoutes);
 app.use('/api/client/billing', billing.clientRoutes);
+app.use('/api/billing/webhooks', billing.webhookRouter);
 
 // Start billing cron jobs (renewal processing, overdue detection)
 const { scheduleBillingJobs } = require('./modules/billing/jobs/billing.cron');
@@ -204,6 +209,11 @@ scheduleBillingJobs();
 
 // Client profile endpoints
 app.use('/api/client/profile', require('./modules/clients/client-portal.routes'));
+
+/* ================================================================
+   WEBSITE MANAGEMENT (MINIMAL CYBERPANEL ABSTRACTION)
+================================================================ */
+app.use("/api/websites", require("./modules/websites/routes/websites.routes"));
 
 /* ================================================================
    BROADCAST MODULE (DOCUMENTS & NOTIFICATIONS)

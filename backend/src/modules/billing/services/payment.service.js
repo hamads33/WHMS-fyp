@@ -11,6 +11,25 @@ const prisma = require("../../../../prisma");
 const invoiceService = require("./invoice.service");
 const { toCurrency } = require("../utils/billing.util");
 const provisioningHooks = require("../../provisioning/utils/provisioning-hooks");
+const Stripe = require('stripe');
+
+/* STRIPE SANDBOX TESTING
+ *
+ * Test card numbers (use any future expiry + any 3-digit CVC):
+ *   Success:           4242 4242 4242 4242
+ *   Requires auth:     4000 0025 0000 3155
+ *   Declined:          4000 0000 0000 9995
+ *
+ * Setup:
+ *   1. Copy .env values from Stripe Dashboard → Developers → API Keys
+ *   2. Install Stripe CLI: https://stripe.com/docs/stripe-cli
+ *   3. Forward webhooks locally:
+ *        stripe listen --forward-to localhost:4000/api/billing/webhooks/stripe
+ *   4. Copy the webhook signing secret printed by the CLI into STRIPE_WEBHOOK_SECRET
+ *   5. Set NEXT_PUBLIC_APP_URL=http://localhost:3000 in .env
+ */
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 class PaymentService {
   // ============================================================
@@ -138,7 +157,7 @@ class PaymentService {
    * @param {string} actor
    */
   async initiateGatewayPayment(invoiceId, gateway, options = {}, actor) {
-    const invoice = await invoiceService.getById(invoiceId, false);
+    const invoice = await invoiceService.getById(invoiceId, true);
 
     if (!["unpaid", "overdue", "draft"].includes(invoice.status)) {
       const err = new Error(`Invoice cannot be paid (status: ${invoice.status})`);
@@ -425,16 +444,35 @@ class PaymentService {
   // ============================================================
 
   async _initiateStripe(invoice, options) {
-    // TODO: Integrate with Stripe SDK
-    // const session = await stripe.checkout.sessions.create({...});
+    const lineItems = invoice.lineItems.map(li => ({
+      price_data: {
+        currency: invoice.currency.toLowerCase(),
+        product_data: {
+          name: li.description,
+        },
+        unit_amount: Math.round(li.unitPrice * 100),
+      },
+      quantity: li.quantity,
+    }));
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: lineItems,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/store/checkout?session_id={CHECKOUT_SESSION_ID}&status=success`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/store/checkout?status=cancelled`,
+      metadata: {
+        invoiceId: invoice.id,
+        clientId: invoice.clientId,
+      },
+      client_reference_id: invoice.clientId,
+      currency: invoice.currency.toLowerCase(),
+    });
+
     return {
-      gateway: "stripe",
+      gateway: 'stripe',
       invoiceId: invoice.id,
-      amount: invoice.amountDue,
-      currency: invoice.currency,
-      checkoutUrl: null, // stripe session URL
-      sessionId: null,   // stripe session ID
-      message: "Stripe integration pending - connect Stripe SDK",
+      checkoutUrl: session.url,
+      sessionId: session.id,
     };
   }
 
@@ -452,10 +490,40 @@ class PaymentService {
   }
 
   async _handleStripeCallback(payload, signature) {
-    // TODO: Verify Stripe webhook signature and process event
-    // const event = stripe.webhooks.constructEvent(payload, signature, secret);
-    // if (event.type === 'payment_intent.succeeded') { ... }
-    return { status: "stub", message: "Stripe callback handler pending" };
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err) {
+      throw new Error(`Webhook signature verification failed: ${err.message}`);
+    }
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const { invoiceId, clientId } = session.metadata;
+      const sessionId = session.id;
+      const paymentIntentId = session.payment_intent;
+      const amountTotal = session.amount_total / 100;
+      const currency = session.currency.toUpperCase();
+
+      await this.create(
+        invoiceId,
+        {
+          amount: amountTotal,
+          currency,
+          gateway: 'stripe',
+          gatewayRef: paymentIntentId || sessionId,
+          gatewayResponse: session,
+          gatewayStatus: event.type,
+        },
+        clientId
+      );
+    }
+
+    return { status: 'ok', event: event.type };
   }
 
   async _handlePayPalCallback(payload) {

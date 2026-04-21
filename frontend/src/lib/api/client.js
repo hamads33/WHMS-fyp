@@ -28,11 +28,13 @@ export async function apiFetch(path, options = {}) {
   );
 
   if (res.status === 401) {
+    console.log("[API] 401 Unauthorized response from:", path);
     if (typeof window !== "undefined") {
-      const path = window.location.pathname;
-      const isLoginPage = path.endsWith("/login") || path.includes("/login/");
+      const currentPath = window.location.pathname;
+      const isLoginPage = currentPath.endsWith("/login") || currentPath.includes("/login/");
       if (!isLoginPage) {
-        const loginUrl = path.startsWith("/admin") ? "/admin/login" : "/login";
+        console.log("[API] Not on login page, redirecting to /login");
+        const loginUrl = "/login";
         window.location.href = loginUrl;
       }
     }

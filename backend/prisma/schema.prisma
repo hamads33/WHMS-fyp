@@ -59,6 +59,7 @@ model User {
   broadcastsCreated      Broadcast[]              @relation("BroadcastCreator")
   broadcastDismissals    BroadcastDismissal[]     @relation("BroadcastDismissalUser")
   broadcastEngagements   BroadcastEngagement[]    @relation("BroadcastEngagementUser")
+  websites               Website[]
 }
 
 model Role {
@@ -1429,6 +1430,18 @@ model HostingDatabase {
 
   @@unique([hostingAccountId, name])
   @@index([hostingAccountId])
+}
+
+model Website {
+  id        String   @id @default(cuid())
+  domain    String
+  status    String   @default("pending")
+  userId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
 }
 
 model IpAccessRule {

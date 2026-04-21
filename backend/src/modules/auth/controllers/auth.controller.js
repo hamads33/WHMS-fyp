@@ -93,6 +93,9 @@ class AuthController {
       // Clear any leftover impersonation backup cookie
       res.clearCookie("_admin_token", { path: "/" });
 
+      console.log("[LOGIN] Success for:", user.email, "Roles:", user.roles);
+      console.log("[LOGIN] Token created:", accessToken.slice(0, 20) + "...");
+
       return res.status(200).json({
         message: "Login successful",
         user,

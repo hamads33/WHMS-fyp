@@ -10,7 +10,7 @@
 // Routes
 const adminRoutes = require("./routes/admin.billing.routes");
 const clientRoutes = require("./routes/client.billing.routes");
-const { webhookRouter } = require("./routes/client.billing.routes");
+const { webhookRouter } = require("./routes/webhook.billing.routes");
 
 // Services
 const billingService = require("./services/billing.service");

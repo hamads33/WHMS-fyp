@@ -43,7 +43,23 @@ async function clientFetch(path, opts = {}) {
 
 export const StoreAPI = {
   // ── Catalog (public) ──────────────────────────────────────────────────────
-  listServices: ()      => storeFetch("/services"),
+  listServices: async () => {
+    const res = await storeFetch("/services");
+    if (res.services) {
+      res.services.forEach(svc => {
+        if (svc.plans) {
+          svc.plans.forEach(plan => {
+            if (plan.pricing) {
+              plan.pricing.forEach(p => {
+                p.billingCycle = p.cycle;
+              });
+            }
+          });
+        }
+      });
+    }
+    return res;
+  },
   getService:   (id)    => storeFetch(`/services/${id}`),
   listPlans:    (q = {}) => {
     const qs = new URLSearchParams(q).toString();

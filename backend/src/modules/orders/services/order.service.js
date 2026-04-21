@@ -70,11 +70,18 @@ async function createOrder(clientId, dto) {
     },
   });
 
-  // Auto-generate invoice for the new order (unpaid, ready for payment)
+  // Auto-generate invoice for the new order (idempotent — return existing if already created)
   let invoice = null;
   try {
-    const draft = await BillingService.generateInvoiceFromOrder(order.id, { status: "draft" }, "system");
-    invoice = await invoiceService.send(draft.id); // draft → unpaid
+    const existingInvoice = await prisma.invoice.findFirst({
+      where: { orderId: order.id, status: { notIn: ["cancelled"] } },
+    });
+    if (existingInvoice) {
+      invoice = existingInvoice;
+    } else {
+      const draft = await BillingService.generateInvoiceFromOrder(order.id, { status: "draft" }, "system");
+      invoice = await invoiceService.send(draft.id); // draft → unpaid
+    }
   } catch (err) {
     console.error("Failed to auto-generate invoice for order:", err.message);
   }

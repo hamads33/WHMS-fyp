@@ -87,7 +87,7 @@ function StepBar({ step }) {
 
 // ── Order Summary Sidebar ─────────────────────────────────────────────────────
 
-function OrderSummary({ items, subtotal, compact = false }) {
+function OrderSummary({ items = [], subtotal, compact = false }) {
   if (compact) {
     return (
       <div className="rounded-xl border bg-muted/30 px-4 py-3 flex items-center justify-between gap-4">
@@ -109,7 +109,8 @@ function OrderSummary({ items, subtotal, compact = false }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
-        {items.map(item => {
+        {(items || []).map(item => {
+          if (!item) return null
           const price  = parseFloat(item.pricing?.price    || 0)
           const setup  = parseFloat(item.pricing?.setupFee || 0)
           const cycles = item.billingCycles || 1
@@ -149,7 +150,7 @@ function OrderSummary({ items, subtotal, compact = false }) {
 
 // ── Step 0: Cart ───────────────────────────────────────────────────────────────
 
-function CartStep({ items, subtotal, onContinue }) {
+function CartStep({ items = [], subtotal, onContinue }) {
   const { removeItem, updateCycles } = useStoreCart()
 
   if (items.length === 0) {
@@ -393,10 +394,30 @@ function AccountStep({ onContinue, onBack, loading, error }) {
 
 // ── Step 2: Payment ────────────────────────────────────────────────────────────
 
-function PaymentStep({ invoices, onPay, onBack, loading, error, paidIds }) {
-  const [gateway, setGateway] = useState('manual')
+function PaymentStep({ invoices = [], onPay, onBack, loading, error, paidIds = [] }) {
+  const [gateway, setGateway] = useState('stripe')
   const unpaid = invoices.filter(inv => inv.status !== 'paid' && !paidIds.includes(inv.id))
   const totalDue = unpaid.reduce((s, inv) => s + parseFloat(inv.amountDue || 0), 0)
+
+  if (invoices.length === 0) {
+    return (
+      <div className="text-center py-12 space-y-4">
+        <div className="w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto">
+          <AlertCircle className="h-7 w-7 text-amber-500" />
+        </div>
+        <div>
+          <p className="font-semibold text-base">Orders placed — invoices pending</p>
+          <p className="text-sm text-muted-foreground mt-1.5 max-w-sm mx-auto leading-relaxed">
+            Your orders were received successfully. Invoices are being processed and will appear in your client dashboard shortly.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 max-w-xs mx-auto pt-2">
+          <Button asChild className="flex-1"><Link href="/client/dashboard">Go to Dashboard</Link></Button>
+          <Button variant="outline" onClick={onBack} className="flex-1">Back</Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -409,23 +430,24 @@ function PaymentStep({ invoices, onPay, onBack, loading, error, paidIds }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-0 space-y-2">
-          {invoices.map(inv => {
+          {(invoices || []).map(inv => {
+            if (!inv) return null
             const isPaid = inv.status === 'paid' || paidIds.includes(inv.id)
             return (
               <div key={inv.id} className={`flex items-center justify-between rounded-lg p-3 ${
                 isPaid ? 'bg-green-50 dark:bg-green-950/30' : 'bg-muted/40'
               }`}>
                 <div>
-                  <p className="text-xs font-semibold">{inv.invoiceNumber}</p>
+                  <p className="text-xs font-semibold">{inv.invoiceNumber || 'Invoice'}</p>
                   {inv.dueDate && <p className="text-[10px] text-muted-foreground">Due {fmtDate(inv.dueDate)}</p>}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-sm font-bold ${isPaid ? 'text-green-600' : ''}`}>
-                    {fmt(inv.amountDue, inv.currency)}
+                    {fmt(inv.amountDue || 0, inv.currency)}
                   </span>
                   <Badge variant={isPaid ? 'default' : 'outline'}
                     className={isPaid ? 'bg-green-500 hover:bg-green-500 text-white text-[10px]' : 'text-[10px]'}>
-                    {isPaid ? 'PAID' : inv.status?.toUpperCase()}
+                    {isPaid ? 'PAID' : (inv.status?.toUpperCase() || 'PENDING')}
                   </Badge>
                 </div>
               </div>
@@ -435,31 +457,35 @@ function PaymentStep({ invoices, onPay, onBack, loading, error, paidIds }) {
       </Card>
 
       {/* Line items for unpaid invoices */}
-      {unpaid.map(inv => inv.lineItems?.length > 0 && (
-        <Card key={`li-${inv.id}`}>
-          <CardContent className="p-4">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b">
-                  {['Description', 'Qty', 'Price', 'Total'].map((h, i) => (
-                    <th key={h} className={`pb-2 font-semibold text-muted-foreground ${i > 0 ? 'text-right' : 'text-left'}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {inv.lineItems.map((li, i) => (
-                  <tr key={i} className="border-b last:border-0">
-                    <td className="py-2">{li.description}</td>
-                    <td className="py-2 text-right">{li.quantity}</td>
-                    <td className="py-2 text-right">{fmt(li.unitPrice, inv.currency)}</td>
-                    <td className="py-2 text-right font-semibold">{fmt(li.total, inv.currency)}</td>
+      {unpaid.map(inv => {
+        const lineItems = inv.lineItems || []
+        if (!lineItems.length) return null
+        return (
+          <Card key={`li-${inv.id}`}>
+            <CardContent className="p-4">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b">
+                    {['Description', 'Qty', 'Price', 'Total'].map((h, i) => (
+                      <th key={h} className={`pb-2 font-semibold text-muted-foreground ${i > 0 ? 'text-right' : 'text-left'}`}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      ))}
+                </thead>
+                <tbody>
+                  {lineItems.map((li, i) => (
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="py-2">{li.description}</td>
+                      <td className="py-2 text-right">{li.quantity}</td>
+                      <td className="py-2 text-right">{fmt(li.unitPrice, inv.currency)}</td>
+                      <td className="py-2 text-right font-semibold">{fmt(li.total, inv.currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        )
+      })}
 
       {/* Payment method */}
       {unpaid.length > 0 && (
@@ -468,8 +494,23 @@ function PaymentStep({ invoices, onPay, onBack, loading, error, paidIds }) {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Payment Method</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
+            <CardContent className="pt-0 space-y-3">
               <RadioGroup value={gateway} onValueChange={setGateway}>
+                <label className={`flex items-start gap-3 rounded-lg border p-3.5 cursor-pointer transition-colors ${
+                  gateway === 'stripe' ? 'border-primary bg-primary/5' : 'border-border'
+                }`}>
+                  <RadioGroupItem value="stripe" id="gw-stripe" className="mt-0.5" />
+                  <div>
+                    <Label htmlFor="gw-stripe" className="font-semibold text-sm cursor-pointer flex items-center gap-2">
+                      Credit / Debit Card
+                      <span className="text-[10px] font-normal text-muted-foreground">via Stripe</span>
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Visa, Mastercard, Amex — secure payment powered by Stripe.
+                    </p>
+                  </div>
+                </label>
+
                 <label className={`flex items-start gap-3 rounded-lg border p-3.5 cursor-pointer transition-colors ${
                   gateway === 'manual' ? 'border-primary bg-primary/5' : 'border-border'
                 }`}>
@@ -524,9 +565,10 @@ function PaymentStep({ invoices, onPay, onBack, loading, error, paidIds }) {
 
 // ── Step 3: Done ───────────────────────────────────────────────────────────────
 
-function DoneStep({ invoices, redirectUri }) {
-  const total    = invoices.reduce((s, i) => s + parseFloat(i.amountDue || 0), 0)
-  const currency = invoices[0]?.currency || 'USD'
+function DoneStep({ invoices = [], redirectUri }) {
+  const invList   = invoices || []
+  const total    = invList.reduce((s, i) => s + parseFloat(i?.amountDue || 0), 0)
+  const currency = invList[0]?.currency || 'USD'
 
   useEffect(() => {
     if (!redirectUri) return
@@ -558,20 +600,29 @@ function DoneStep({ invoices, redirectUri }) {
       <Card className="text-left max-w-sm mx-auto border-green-200 dark:border-green-800">
         <CardContent className="p-4 space-y-2.5">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Order Summary</p>
-          {invoices.map(inv => (
-            <div key={inv.id} className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground font-mono text-xs">{inv.invoiceNumber}</span>
+          {invList.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Your payment was confirmed. A receipt has been emailed to you.
+            </p>
+          )}
+          {invList.map(inv => (
+            <div key={inv?.id} className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground font-mono text-xs">{inv?.invoiceNumber}</span>
               <div className="flex items-center gap-2">
-                <span className="font-semibold">{fmt(inv.amountDue, inv.currency)}</span>
+                <span className="font-semibold">{fmt(inv?.amountDue || 0, inv?.currency)}</span>
                 <Badge className="bg-green-500 hover:bg-green-500 text-white text-[10px] px-1.5">PAID</Badge>
               </div>
             </div>
           ))}
-          <Separator />
-          <div className="flex justify-between font-bold">
-            <span>Total paid</span>
-            <span className="text-primary">{fmt(total, currency)}</span>
-          </div>
+          {invList.length > 0 && (
+            <>
+              <Separator />
+              <div className="flex justify-between font-bold">
+                <span>Total paid</span>
+                <span className="text-primary">{fmt(total, currency)}</span>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -625,6 +676,19 @@ function StoreCheckoutContent() {
   const [paidIds,  setPaidIds] = useState([])
   const [loading,  setLoading] = useState(false)
   const [error,    setError]   = useState(null)
+
+  // Handle return from Stripe
+  useEffect(() => {
+    const status    = searchParams.get('status')
+    const sessionId = searchParams.get('session_id')
+    if (status === 'success' && sessionId) {
+      setStep(STEP_DONE)
+    }
+    if (status === 'cancelled') {
+      setError('Payment was cancelled. Please try again.')
+      setStep(STEP_PAYMENT)
+    }
+  }, [searchParams])
 
   // ── Place orders after auth ────────────────────────────────────────────────
 
@@ -691,13 +755,15 @@ function StoreCheckoutContent() {
     setLoading(true)
     setError(null)
     const unpaid  = invoices.filter(inv => inv.status !== 'paid' && !paidIds.includes(inv.id))
-    const newPaid = []
     try {
       for (const inv of unpaid) {
-        await StoreAPI.payInvoice(inv.id, gateway)
-        newPaid.push(inv.id)
+        const result = await StoreAPI.payInvoice(inv.id, gateway)
+        if (gateway === 'stripe' && result.checkoutUrl) {
+          window.location.href = result.checkoutUrl
+          return
+        }
       }
-      setPaidIds(prev => [...prev, ...newPaid])
+      setPaidIds(prev => [...prev, ...unpaid.map(i => i.id)])
       clearCart()
       setStep(STEP_DONE)
     } catch (err) {
