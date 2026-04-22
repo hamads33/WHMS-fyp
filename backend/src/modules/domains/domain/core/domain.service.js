@@ -12,6 +12,7 @@
  * Currency is ADMIN-SELECTED and passed explicitly.
  */
 
+const prisma = require("../../../../../prisma");
 const { loadRegistrar, loadRegistrarWithFallback } = require("../../registrars");
 const { logDomainAction } = require("../repositories/domainLog.repo");
 const { createDomainContacts } = require("../repositories/domainContact.repo");
@@ -75,6 +76,15 @@ async function registerDomain({
 
   if (years < 1 || years > 10) {
     throw new Error("Domain registration period must be between 1 and 10 years");
+  }
+
+  // ✅ VALIDATE: Owner user exists
+  const ownerUser = await prisma.user.findUnique({
+    where: { id: ownerId }
+  });
+
+  if (!ownerUser) {
+    throw new Error(`User with ID ${ownerId} does not exist`);
   }
 
   validateContacts(contacts);

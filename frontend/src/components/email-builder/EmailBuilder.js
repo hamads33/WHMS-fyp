@@ -109,6 +109,34 @@ export default function EmailBuilder({ templateId = null, initialTemplate = null
       setSelectedId: builder.setSelectedId,
     });
 
+  // ── Save ─────────────────────────────────────────────────────────
+  const handleSave = useCallback(async () => {
+    if (!meta.displayName.trim()) return;
+    setSaving(true);
+    setSaveStatus(null);
+    try {
+      await EmailTemplatesAPI.saveLayout({
+        id:          templateId,
+        name:        meta.name || meta.displayName.toLowerCase().replace(/\s+/g, '_'),
+        displayName: meta.displayName,
+        subject:     meta.subject,
+        category:    meta.category,
+        language:    meta.language,
+        blocks:      builder.blocks,
+        html:        builder.getHtml(),
+      });
+      builder.setIsDirty(false);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(null), 2500);
+    } catch (err) {
+      console.error('Save error:', err);
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus(null), 3000);
+    } finally {
+      setSaving(false);
+    }
+  }, [meta, templateId, builder]);
+
   // ── Keyboard shortcuts ──────────────────────────────────────────
   useEffect(() => {
     function handleKeyDown(e) {
@@ -168,34 +196,6 @@ export default function EmailBuilder({ templateId = null, initialTemplate = null
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [builder.isDirty]);
-
-  // ── Save ─────────────────────────────────────────────────────────
-  const handleSave = useCallback(async () => {
-    if (!meta.displayName.trim()) return;
-    setSaving(true);
-    setSaveStatus(null);
-    try {
-      await EmailTemplatesAPI.saveLayout({
-        id:          templateId,
-        name:        meta.name || meta.displayName.toLowerCase().replace(/\s+/g, '_'),
-        displayName: meta.displayName,
-        subject:     meta.subject,
-        category:    meta.category,
-        language:    meta.language,
-        blocks:      builder.blocks,
-        html:        builder.getHtml(),
-      });
-      builder.setIsDirty(false);
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus(null), 2500);
-    } catch (err) {
-      console.error('Save error:', err);
-      setSaveStatus('error');
-      setTimeout(() => setSaveStatus(null), 3000);
-    } finally {
-      setSaving(false);
-    }
-  }, [meta, templateId, builder]);
 
   // ── Send Test ────────────────────────────────────────────────────
   const handleSendTest = useCallback(async () => {

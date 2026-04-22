@@ -17,12 +17,11 @@ const PasswordResetService = {
     const tempPassword = crypto.randomBytes(6).toString("hex");
     const passwordHash = await bcrypt.hash(tempPassword, SALT);
 
-    // update password + force change
+    // update password
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        passwordHash,
-        forcePasswordChange: true
+        passwordHash
       }
     });
 

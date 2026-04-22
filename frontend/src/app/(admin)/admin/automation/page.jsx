@@ -336,30 +336,6 @@ export default function AutomationPage() {
       </div>
 
       <div className="container mx-auto px-4 py-8">
-<<<<<<< HEAD
-        {/* Stats Row */}
-        <div className="flex gap-4 mb-8">
-          <StatCard
-            label="Total Profiles"
-            value={profiles.length}
-            icon={Zap}
-            iconClass="bg-secondary text-foreground border border-border"
-          />
-          <StatCard
-            label="Enabled"
-            value={enabledCount}
-            icon={CheckCircle2}
-            iconClass="bg-secondary text-foreground border border-border"
-          />
-          <StatCard
-            label="Last Run Failed"
-            value={failedCount}
-            icon={AlertCircle}
-            iconClass={failedCount > 0 ? "bg-destructive/10 text-destructive border border-destructive/30" : "bg-secondary text-muted-foreground border border-border"}
-          />
-        </div>
-
-=======
         {/* Templates Shortcut */}
         <Card className="mb-8 border-primary/20 bg-primary/5">
           <CardContent className="pt-6 flex items-center justify-between">
@@ -397,8 +373,6 @@ export default function AutomationPage() {
             iconClass={failedCount > 0 ? "bg-destructive/10 text-destructive border border-destructive/30" : "bg-secondary text-muted-foreground border border-border"}
           />
         </div>
-
->>>>>>> af16d6e (refactor: move business logic from controllers to services (API-first fixes))
         {/* Empty State */}
         {profiles.length === 0 && (
           <Card className="py-20 text-center">

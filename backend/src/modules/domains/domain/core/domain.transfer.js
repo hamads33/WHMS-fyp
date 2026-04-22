@@ -1,3 +1,4 @@
+const prisma = require("../../../../../prisma");
 const { loadRegistrar } = require("../../registrars");
 const domainRepo = require("../repositories/domain.repo");
 const transferRepo = require("../repositories/domainTransfer.repo");
@@ -24,6 +25,15 @@ async function initiateTransfer({
 
   if (!currency) {
     throw new Error("currency must be selected by admin");
+  }
+
+  // ✅ VALIDATE: Owner user exists
+  const ownerUser = await prisma.user.findUnique({
+    where: { id: ownerId }
+  });
+
+  if (!ownerUser) {
+    throw new Error(`User with ID ${ownerId} does not exist`);
   }
 
   // ─────────────────────────────

@@ -96,7 +96,19 @@ router.post("/register", async (req, res, next) => {
       });
     }
 
-    const domain = await registerDomain(req.body);
+    // ✅ FIX: Use authenticated user's ID if ownerId not provided
+    const ownerId = req.body.ownerId || req.user?.id;
+
+    if (!ownerId) {
+      return res.status(401).json({
+        error: "Authentication required or ownerId must be provided"
+      });
+    }
+
+    const domain = await registerDomain({
+      ...req.body,
+      ownerId  // Ensure ownerId is set
+    });
     res.json({ success: true, data: domain });
   } catch (err) {
     next(err);
@@ -116,7 +128,19 @@ router.post("/transfer", async (req, res, next) => {
       });
     }
 
-    const result = await initiateTransfer(req.body);
+    // ✅ FIX: Use authenticated user's ID if ownerId not provided
+    const ownerId = req.body.ownerId || req.user?.id;
+
+    if (!ownerId) {
+      return res.status(401).json({
+        error: "Authentication required or ownerId must be provided"
+      });
+    }
+
+    const result = await initiateTransfer({
+      ...req.body,
+      ownerId  // Ensure ownerId is set
+    });
     res.json(result);
   } catch (err) {
     next(err);
