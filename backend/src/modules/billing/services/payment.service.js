@@ -11,25 +11,7 @@ const prisma = require("../../../../prisma");
 const invoiceService = require("./invoice.service");
 const { toCurrency } = require("../utils/billing.util");
 const provisioningHooks = require("../../provisioning/utils/provisioning-hooks");
-const Stripe = require('stripe');
-
-/* STRIPE SANDBOX TESTING
- *
- * Test card numbers (use any future expiry + any 3-digit CVC):
- *   Success:           4242 4242 4242 4242
- *   Requires auth:     4000 0025 0000 3155
- *   Declined:          4000 0000 0000 9995
- *
- * Setup:
- *   1. Copy .env values from Stripe Dashboard → Developers → API Keys
- *   2. Install Stripe CLI: https://stripe.com/docs/stripe-cli
- *   3. Forward webhooks locally:
- *        stripe listen --forward-to localhost:4000/api/billing/webhooks/stripe
- *   4. Copy the webhook signing secret printed by the CLI into STRIPE_WEBHOOK_SECRET
- *   5. Set NEXT_PUBLIC_APP_URL=http://localhost:3000 in .env
- */
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const serviceContainer = require("../../../core/plugin-system/service.container");
 
 class PaymentService {
   // ============================================================
@@ -165,50 +147,38 @@ class PaymentService {
       throw err;
     }
 
-    // Gateway stubs — integrate with actual providers here
-    switch (gateway) {
-      case "stripe":
-        return this._initiateStripe(invoice, options);
-      case "paypal":
-        return this._initiatePayPal(invoice, options);
-      case "manual": {
-        const result = await this.create(
-          invoiceId,
-          {
-            amount: invoice.amountDue,
-            currency: invoice.currency,
-            gateway: "manual",
-            notes: "Manual / bank transfer payment recorded at checkout",
-          },
-          actor
-        );
-        return { payment: result.payment, invoice: result.invoice };
-      }
-      default: {
-        const err = new Error(`Unsupported payment gateway: "${gateway}"`);
-        err.statusCode = 400;
-        throw err;
-      }
+    if (gateway === "manual") {
+      const result = await this.create(
+        invoiceId,
+        {
+          amount: invoice.amountDue,
+          currency: invoice.currency,
+          gateway: "manual",
+          notes: "Manual / bank transfer payment recorded at checkout",
+        },
+        actor
+      );
+      return { payment: result.payment, invoice: result.invoice };
     }
+
+    // Attempt to load the gateway plugin
+    const pluginService = serviceContainer.get(`paymentGateway:${gateway}`);
+    if (pluginService && typeof pluginService.initiatePayment === "function") {
+      return pluginService.initiatePayment(invoice, options);
+    }
+
+    // Fallback if not found
+    const err = new Error(`Unsupported payment gateway: "${gateway}"`);
+    err.statusCode = 400;
+    throw err;
   }
 
   /**
    * Handle gateway webhook / callback.
-   * Validates the event, records payment, updates invoice.
-   *
-   * @param {string} gateway - "stripe" | "paypal"
-   * @param {Object} payload - Raw webhook payload
-   * @param {string} [signature] - Webhook signature header
+   * This is deprecated in favor of plugins mounting their own webhooks.
    */
   async handleGatewayCallback(gateway, payload, signature) {
-    switch (gateway) {
-      case "stripe":
-        return this._handleStripeCallback(payload, signature);
-      case "paypal":
-        return this._handlePayPalCallback(payload);
-      default:
-        throw new Error(`Unknown gateway callback: ${gateway}`);
-    }
+    throw new Error(`Core webhook handler deprecated. Gateways must process their own webhooks.`);
   }
 
   // ============================================================
@@ -437,98 +407,6 @@ class PaymentService {
         total: toCurrency(refunds._sum.amount || 0),
       },
     };
-  }
-
-  // ============================================================
-  // PRIVATE: GATEWAY STUBS
-  // ============================================================
-
-  async _initiateStripe(invoice, options) {
-    const lineItems = invoice.lineItems.map(li => ({
-      price_data: {
-        currency: invoice.currency.toLowerCase(),
-        product_data: {
-          name: li.description,
-        },
-        unit_amount: Math.round(li.unitPrice * 100),
-      },
-      quantity: li.quantity,
-    }));
-
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      line_items: lineItems,
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/store/checkout?session_id={CHECKOUT_SESSION_ID}&status=success`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/store/checkout?status=cancelled`,
-      metadata: {
-        invoiceId: invoice.id,
-        clientId: invoice.clientId,
-      },
-      client_reference_id: invoice.clientId,
-      currency: invoice.currency.toLowerCase(),
-    });
-
-    return {
-      gateway: 'stripe',
-      invoiceId: invoice.id,
-      checkoutUrl: session.url,
-      sessionId: session.id,
-    };
-  }
-
-  async _initiatePayPal(invoice, options) {
-    // TODO: Integrate with PayPal SDK
-    return {
-      gateway: "paypal",
-      invoiceId: invoice.id,
-      amount: invoice.amountDue,
-      currency: invoice.currency,
-      approvalUrl: null,
-      orderId: null,
-      message: "PayPal integration pending - connect PayPal SDK",
-    };
-  }
-
-  async _handleStripeCallback(payload, signature) {
-    let event;
-    try {
-      event = stripe.webhooks.constructEvent(
-        payload,
-        signature,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-    } catch (err) {
-      throw new Error(`Webhook signature verification failed: ${err.message}`);
-    }
-
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      const { invoiceId, clientId } = session.metadata;
-      const sessionId = session.id;
-      const paymentIntentId = session.payment_intent;
-      const amountTotal = session.amount_total / 100;
-      const currency = session.currency.toUpperCase();
-
-      await this.create(
-        invoiceId,
-        {
-          amount: amountTotal,
-          currency,
-          gateway: 'stripe',
-          gatewayRef: paymentIntentId || sessionId,
-          gatewayResponse: session,
-          gatewayStatus: event.type,
-        },
-        clientId
-      );
-    }
-
-    return { status: 'ok', event: event.type };
-  }
-
-  async _handlePayPalCallback(payload) {
-    // TODO: Verify PayPal IPN and process event
-    return { status: "stub", message: "PayPal callback handler pending" };
   }
 
   // ============================================================

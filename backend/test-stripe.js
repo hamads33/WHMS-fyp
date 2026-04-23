@@ -11,36 +11,36 @@ try {
   console.log('  ✗ Error:', err.message);
 }
 
-console.log('\n✓ Test 2: Payment Service');
+console.log('\n✓ Test 2: Stripe Plugin Service');
 try {
-  const paymentService = require('./src/modules/billing/services/payment.service.js');
-  console.log('  ✓ Payment service loaded');
+  const StripeGatewayService = require('./src/plugins/stripe/service.js');
+  console.log('  ✓ Stripe plugin service loaded');
   
-  // Check if methods exist
-  if (typeof paymentService._initiateStripe === 'function') {
-    console.log('  ✓ _initiateStripe method exists');
+  const instance = new StripeGatewayService();
+  if (typeof instance.initiatePayment === 'function') {
+    console.log('  ✓ initiatePayment method exists');
   } else {
-    console.log('  ✗ _initiateStripe method missing');
+    console.log('  ✗ initiatePayment method missing');
   }
   
-  if (typeof paymentService._handleStripeCallback === 'function') {
-    console.log('  ✓ _handleStripeCallback method exists');
+  if (typeof instance.handleWebhook === 'function') {
+    console.log('  ✓ handleWebhook method exists');
   } else {
-    console.log('  ✗ _handleStripeCallback method missing');
+    console.log('  ✗ handleWebhook method missing');
   }
 } catch (err) {
   console.log('  ✗ Error:', err.message);
 }
 
-console.log('\n✓ Test 3: Controller');
+console.log('\n✓ Test 3: Plugin Router');
 try {
-  const controller = require('./src/modules/billing/controllers/payment.controller.js');
-  console.log('  ✓ Payment controller loaded');
+  const buildRouter = require('./src/plugins/stripe/api.js');
+  console.log('  ✓ Plugin API builder loaded');
   
-  if (typeof controller.handleWebhook === 'function') {
-    console.log('  ✓ handleWebhook method exists');
+  if (typeof buildRouter === 'function') {
+    console.log('  ✓ buildRouter is a function');
   } else {
-    console.log('  ✗ handleWebhook method missing');
+    console.log('  ✗ buildRouter is missing');
   }
 } catch (err) {
   console.log('  ✗ Error:', err.message);

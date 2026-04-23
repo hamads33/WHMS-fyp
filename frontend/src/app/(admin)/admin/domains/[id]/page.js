@@ -1,391 +1,266 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
-} from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+  Activity, AlertCircle, ArrowLeft, Building2, Calendar, DollarSign, Globe,
+  Info, Loader2, Lock, RefreshCw, Search, Server, Settings2, Trash2,
+  Waypoints, Route, Shield,
+} from 'lucide-react'
+
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import PorkbunDNS from '@/components/admin/domains/PorkbunDNS'
+import PorkbunForwarding from '@/components/admin/domains/PorkbunForwarding'
+import PorkbunGlue from '@/components/admin/domains/PorkbunGlue'
+import PorkbunSSL from '@/components/admin/domains/PorkbunSSL'
+import { useToast } from '@/hooks/use-toast'
 import {
-  ArrowLeft, Trash2, Copy, CheckCircle2, Loader2, RefreshCw,
-  AlertCircle, Plus, Globe, Server, Shield, Clock,
-  Calendar, DollarSign, Activity, Settings2, XCircle, Search,
-  Building2, Lock, Info,
-} from 'lucide-react'
-
-import {
-  adminGetDomainById, adminDeleteDomain, adminSyncDomain, adminOverrideDomain,
-  getDnsRecords, addDnsRecord, deleteDnsRecord, getDomainLogs,
-  formatDate, daysUntilExpiry,
+  adminCheckRenewalPrice,
+  adminDeleteDomain,
+  adminGetDomainById,
+  adminRenewDomain,
+  adminSyncDomain,
+  formatDate,
+  formatMoneyFromCents,
+  getDomainLogs,
+  daysUntilExpiry,
 } from '@/lib/api/domain'
-import { getErrorMessage, apiFetch } from '@/lib/api/client'
+import { apiFetch, getErrorMessage } from '@/lib/api/client'
+import { toastDomainError } from '@/lib/domain-error-toast'
 
-/* ── status config ─────────────────────────────────────── */
 const STATUS_CONFIG = {
-  active:            { label: 'Active',           classes: 'bg-accent/10 text-accent border-accent/20' },
-  expired:           { label: 'Expired',          classes: 'bg-destructive/10 text-destructive border-destructive/20' },
-  transfer_pending:  { label: 'Transfer Pending', classes: 'bg-muted text-foreground border-muted-foreground/20' },
-  transfer_failed:   { label: 'Transfer Failed',  classes: 'bg-destructive/10 text-destructive border-destructive/20' },
-  grace:             { label: 'Grace Period',     classes: 'bg-muted text-muted-foreground border-muted-foreground/20' },
-  redemption:        { label: 'Redemption',       classes: 'bg-muted text-muted-foreground border-muted-foreground/20' },
+  active: { label: 'Active', classes: 'bg-accent/10 text-accent border-accent/20' },
+  expired: { label: 'Expired', classes: 'bg-destructive/10 text-destructive border-destructive/20' },
+  transfer_pending: { label: 'Transfer Pending', classes: 'bg-muted text-foreground border-muted-foreground/20' },
+  transfer_failed: { label: 'Transfer Failed', classes: 'bg-destructive/10 text-destructive border-destructive/20' },
+  grace: { label: 'Grace Period', classes: 'bg-muted text-muted-foreground border-muted-foreground/20' },
+  redemption: { label: 'Redemption', classes: 'bg-muted text-muted-foreground border-muted-foreground/20' },
   pending_registration: { label: 'Pending', classes: 'bg-muted text-foreground border-muted-foreground/20' },
-  cancelled:         { label: 'Cancelled',        classes: 'bg-muted text-muted-foreground border-muted-foreground/20' },
+  cancelled: { label: 'Cancelled', classes: 'bg-muted text-muted-foreground border-muted-foreground/20' },
 }
 
 function DomainStatusBadge({ status, size = 'sm' }) {
-  const cfg = STATUS_CONFIG[status] ?? { label: status, classes: 'bg-muted text-muted-foreground border-muted-foreground/20' }
+  const cfg = STATUS_CONFIG[status] ?? {
+    label: status,
+    classes: 'bg-muted text-muted-foreground border-muted-foreground/20',
+  }
+
   return (
-    <Badge variant="outline" className={`font-medium ${size === 'lg' ? 'text-sm px-3 py-1' : 'text-xs'} ${cfg.classes}`}>
+    <Badge variant="outline" className={`${size === 'lg' ? 'px-3 py-1 text-sm' : 'text-xs'} font-medium ${cfg.classes}`}>
       {cfg.label}
     </Badge>
   )
 }
 
-const DNS_TYPE_COLORS = {
-  A: 'bg-muted text-muted-foreground',
-  AAAA: 'bg-muted text-muted-foreground',
-  CNAME: 'bg-muted text-muted-foreground',
-  MX: 'bg-muted text-muted-foreground',
-  TXT: 'bg-muted text-muted-foreground',
-  NS: 'bg-muted text-muted-foreground',
-  SRV: 'bg-muted text-muted-foreground',
-}
-
 function InfoRow({ label, value }) {
   return (
-    <div className="flex items-start justify-between py-2.5 border-b border-border/50 last:border-0 gap-4">
-      <span className="text-sm text-muted-foreground shrink-0">{label}</span>
-      <span className="text-sm font-medium text-right break-all">{value ?? '—'}</span>
+    <div className="flex items-start justify-between gap-4 border-b border-border/50 py-2.5 last:border-0">
+      <span className="shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="break-all text-right text-sm font-medium">{value ?? '—'}</span>
+    </div>
+  )
+}
+
+function LogList({ logs }) {
+  if (!logs.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-center">
+        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+          <Activity className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <p className="text-sm text-muted-foreground">No domain activity has been logged yet.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {logs.map((log) => (
+        <div key={log.id} className="rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold">{log.action}</p>
+            <p className="text-xs text-muted-foreground">{formatDate(log.createdAt)}</p>
+          </div>
+          <pre className="mt-2 overflow-auto rounded-md bg-muted p-2 text-xs">{JSON.stringify(log.meta || {}, null, 2)}</pre>
+        </div>
+      ))}
     </div>
   )
 }
 
 export default function DomainDetailPage() {
   const { id } = useParams()
-  const router  = useRouter()
+  const router = useRouter()
+  const { toast } = useToast()
 
-  const [domain,     setDomain]     = useState(null)
-  const [dnsRecords, setDnsRecords] = useState([])
-  const [logs,       setLogs]       = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [error,      setError]      = useState(null)
-  const [copied,     setCopied]     = useState(null)
+  const [domain, setDomain] = useState(null)
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [syncing,    setSyncing]    = useState(false)
-
-  const [newDns,     setNewDns]     = useState({ type: 'A', name: '', value: '', ttl: '3600' })
-  const [addingDns,  setAddingDns]  = useState(false)
-  const [dnsError,   setDnsError]   = useState(null)
-
+  const [syncing, setSyncing] = useState(false)
+  const [renewOpen, setRenewOpen] = useState(false)
+  const [renewing, setRenewing] = useState(false)
+  const [renewPrice, setRenewPrice] = useState(null)
+  const [priceLoading, setPriceLoading] = useState(false)
+  const [renewForm, setRenewForm] = useState({ years: '1', currency: 'USD' })
   const [overrideData, setOverrideData] = useState({ status: '', expiryDate: '' })
-  const [overriding,   setOverriding]   = useState(false)
-  const [overrideMsg,  setOverrideMsg]  = useState(null)
-
-  const [whois,        setWhois]        = useState(null)
+  const [overriding, setOverriding] = useState(false)
+  const [overrideMsg, setOverrideMsg] = useState(null)
+  const [whois, setWhois] = useState(null)
   const [whoisLoading, setWhoisLoading] = useState(false)
-  const [whoisError,   setWhoisError]   = useState(null)
-  const [whoisDomain,  setWhoisDomain]  = useState('')
+  const [whoisError, setWhoisError] = useState(null)
+  const [whoisDomain, setWhoisDomain] = useState('')
+  const [activeTab, setActiveTab] = useState('details')
 
-  useEffect(() => { if (id) fetchAll() }, [id])
-
-  const fetchAll = async () => {
+  const fetchDomain = useCallback(async () => {
     try {
-      setLoading(true); setError(null)
-      const [dr, dns, lr] = await Promise.all([
+      setLoading(true)
+      setError(null)
+      const [domainRes, logsRes] = await Promise.all([
         adminGetDomainById(id),
-        getDnsRecords(id),
         getDomainLogs(id),
       ])
-      const d = dr?.data ?? null
-      setDomain(d)
-      setDnsRecords(Array.isArray(dns?.data) ? dns.data : [])
-      setLogs(Array.isArray(lr?.data) ? lr.data : [])
-      if (d) setOverrideData({ status: d.status ?? '', expiryDate: d.expiryDate?.split('T')[0] ?? '' })
-    } catch (err) { setError(getErrorMessage(err)) }
-    finally { setLoading(false) }
-  }
+      const currentDomain = domainRes?.data ?? null
+      setDomain(currentDomain)
+      setLogs(Array.isArray(logsRes?.data) ? logsRes.data : [])
+      setOverrideData({
+        status: currentDomain?.status ?? '',
+        expiryDate: currentDomain?.expiryDate?.split('T')[0] ?? '',
+      })
+      if (currentDomain?.currency) {
+        setRenewForm((prev) => ({ ...prev, currency: currentDomain.currency }))
+      }
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [id])
 
-  const handleCopy = (val, key) => { navigator.clipboard.writeText(val); setCopied(key); setTimeout(() => setCopied(null), 1500) }
-  const handleDelete = async () => { try { await adminDeleteDomain(id); router.push('/admin/domains') } catch (err) { alert(getErrorMessage(err)) } }
-  const handleSync = async () => { try { setSyncing(true); await adminSyncDomain(id); await fetchAll() } catch (err) { alert(getErrorMessage(err)) } finally { setSyncing(false) } }
+  useEffect(() => {
+    if (id) fetchDomain()
+  }, [id, fetchDomain])
 
-  const handleAddDns = async () => {
-    if (!newDns.name || !newDns.value) { setDnsError('Name and value are required'); return }
-    try {
-      setAddingDns(true); setDnsError(null)
-      await addDnsRecord(id, { type: newDns.type, name: newDns.name, value: newDns.value, ttl: parseInt(newDns.ttl) || 3600 })
-      setNewDns({ type: 'A', name: '', value: '', ttl: '3600' })
-      await fetchAll()
-    } catch (err) { setDnsError(getErrorMessage(err)) }
-    finally { setAddingDns(false) }
-  }
-
-  const handleWhoisLookup = async (domainName) => {
+  const loadWhois = useCallback(async (domainName) => {
     const target = domainName || whoisDomain || domain?.name
     if (!target) return
+
     try {
-      setWhoisLoading(true); setWhoisError(null); setWhois(null)
+      setWhoisLoading(true)
+      setWhoisError(null)
       const res = await apiFetch(`/admin/domains/whois?domain=${encodeURIComponent(target)}`)
       setWhois(res?.data ?? null)
       setWhoisDomain(target)
-    } catch (err) { setWhoisError(getErrorMessage(err)) }
-    finally { setWhoisLoading(false) }
-  }
+    } catch (err) {
+      setWhoisError(getErrorMessage(err))
+    } finally {
+      setWhoisLoading(false)
+    }
+  }, [domain?.name, whoisDomain])
 
-  const handleOverride = async () => {
+  const handleOverride = useCallback(async () => {
     try {
-      setOverriding(true); setOverrideMsg(null)
+      setOverriding(true)
+      setOverrideMsg(null)
       const payload = {}
       if (overrideData.status && overrideData.status !== domain.status) payload.status = overrideData.status
       if (overrideData.expiryDate) payload.expiryDate = new Date(overrideData.expiryDate).toISOString()
-      if (!Object.keys(payload).length) { setOverrideMsg({ type: 'info', text: 'Nothing changed.' }); return }
-      await adminOverrideDomain(id, payload)
-      await fetchAll()
-      setOverrideMsg({ type: 'success', text: 'Domain updated successfully.' })
-    } catch (err) { setOverrideMsg({ type: 'error', text: getErrorMessage(err) }) }
-    finally { setOverriding(false) }
+      if (!Object.keys(payload).length) {
+        setOverrideMsg({ type: 'info', text: 'Nothing changed.' })
+        return
+      }
+      await apiFetch(`/admin/domains/${id}/override`, {
+        method: 'PATCH',
+        body: JSON.stringify({ changes: payload }),
+      })
+      setOverrideMsg({ type: 'success', text: 'Domain override saved.' })
+      await fetchDomain()
+    } catch (err) {
+      setOverrideMsg({ type: 'error', text: getErrorMessage(err) })
+      toastDomainError(toast, err, 'Override failed')
+    } finally {
+      setOverriding(false)
+    }
+  }, [domain, fetchDomain, id, overrideData, toast])
+
+  const openRenewDialog = async () => {
+    setRenewOpen(true)
+    try {
+      setPriceLoading(true)
+      const res = await adminCheckRenewalPrice(id)
+      setRenewPrice(res?.data ?? null)
+    } catch (err) {
+      toastDomainError(toast, err, 'Price check failed')
+    } finally {
+      setPriceLoading(false)
+    }
   }
 
-  /* ── loading / error ────────────────────────────────── */
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-    </div>
-  )
+  const handleRenew = async () => {
+    try {
+      setRenewing(true)
+      await adminRenewDomain(id, {
+        years: Number(renewForm.years || 1),
+        currency: renewForm.currency || 'USD',
+      })
+      toast({
+        title: 'Domain renewed',
+        description: `${domain.name} was extended after the live price check.`,
+      })
+      setRenewOpen(false)
+      await fetchDomain()
+    } catch (err) {
+      toastDomainError(toast, err, 'Renewal failed')
+    } finally {
+      setRenewing(false)
+    }
+  }
 
-  if (error || !domain) return (
-    <div className="space-y-6">
-      <Link href="/admin/domains"><Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-2" />Back</Button></Link>
-      <Card className="border-destructive/50 bg-destructive/10">
-        <CardContent className="pt-4 flex gap-3">
-          <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold text-sm text-destructive">Error Loading Domain</p>
-            <p className="text-xs text-destructive/75 mt-0.5">{error || 'Domain not found'}</p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
+  const handleDelete = async () => {
+    try {
+      await adminDeleteDomain(id)
+      toast({ title: 'Domain cancelled', description: `${domain.name} was marked as cancelled.` })
+      router.push('/admin/domains')
+    } catch (err) {
+      toastDomainError(toast, err, 'Delete failed')
+    }
+  }
 
-  const expiryDays = daysUntilExpiry(domain.expiryDate)
+  const handleSync = async () => {
+    try {
+      setSyncing(true)
+      await adminSyncDomain(id)
+      toast({ title: 'Domain synced', description: 'Registrar data was refreshed successfully.' })
+      await fetchDomain()
+    } catch (err) {
+      toastDomainError(toast, err, 'Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
-  /* ── UI ─────────────────────────────────────────────── */
-  return (
-    <div className="space-y-6">
-      {/* Back */}
-      <Link href="/admin/domains">
-        <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> All Domains
-        </Button>
-      </Link>
+  const tabs = useMemo(() => {
+    if (!domain) return []
 
-      {/* ── Domain Header card ─────────────────────────── */}
-      <Card className="overflow-hidden">
-        <div className="h-1.5 w-full bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
-        <CardContent className="pt-5 pb-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <Globe className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h1 className="text-xl font-bold font-mono">{domain.name}</h1>
-                  <DomainStatusBadge status={domain.status} size="lg" />
-                </div>
-                <p className="text-xs text-muted-foreground mt-1 font-mono">ID: {domain.id}</p>
-              </div>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-                {syncing ? 'Syncing…' : 'Sync'}
-              </Button>
-              <Button variant="destructive" size="sm" onClick={() => setDeleteConfirm(true)}>
-                <Trash2 className="h-4 w-4 mr-2" /> Delete
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Summary strip ──────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { icon: Server, label: 'Registrar', value: domain.registrar ?? 'N/A' },
-          {
-            icon: Calendar, label: 'Expires',
-            value: <span className={expiryDays !== null && expiryDays <= 0 ? 'text-destructive' : expiryDays !== null && expiryDays <= 30 ? 'text-muted-foreground' : ''}>
-              {formatDate(domain.expiryDate)}
-            </span>
-          },
-          {
-            icon: Clock, label: 'Days Left',
-            value: expiryDays !== null
-              ? <span className={expiryDays <= 0 ? 'font-bold text-destructive' : expiryDays <= 30 ? 'font-bold text-muted-foreground' : 'font-semibold text-accent'}>
-                  {expiryDays <= 0 ? `${Math.abs(expiryDays)}d overdue` : `${expiryDays} days`}
-                </span>
-              : '—'
-          },
-          { icon: DollarSign, label: 'Currency', value: domain.currency ?? 'USD' },
-        ].map(({ icon: Icon, label, value }) => (
-          <Card key={label}>
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <Icon className="h-3.5 w-3.5" />
-                <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
-              </div>
-              <p className="text-sm font-semibold">{value}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* ── Tabs ───────────────────────────────────────── */}
-      <Tabs defaultValue="dns">
-        <TabsList className="w-full grid grid-cols-5 h-10">
-          <TabsTrigger value="dns" className="gap-1.5 text-xs"><Server className="h-3.5 w-3.5" /> DNS</TabsTrigger>
-          <TabsTrigger value="details" className="gap-1.5 text-xs"><Globe className="h-3.5 w-3.5" /> Details</TabsTrigger>
-          <TabsTrigger value="whois" className="gap-1.5 text-xs" onClick={() => !whois && handleWhoisLookup(domain?.name)}><Search className="h-3.5 w-3.5" /> WHOIS</TabsTrigger>
-          <TabsTrigger value="override" className="gap-1.5 text-xs"><Settings2 className="h-3.5 w-3.5" /> Override</TabsTrigger>
-          <TabsTrigger value="logs" className="gap-1.5 text-xs"><Activity className="h-3.5 w-3.5" /> Logs</TabsTrigger>
-        </TabsList>
-
-        {/* ── DNS Tab ──────────────────────────────────── */}
-        <TabsContent value="dns" className="space-y-4 mt-4">
-          {/* Nameservers */}
-          {domain.nameservers?.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Server className="h-4 w-4 text-muted-foreground" /> Nameservers
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {domain.nameservers.map((ns, i) => (
-                  <div key={i} className="flex items-center justify-between bg-muted/50 px-4 py-2.5 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground font-medium w-8">NS{i + 1}</span>
-                      <code className="text-sm">{ns}</code>
-                    </div>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleCopy(ns, `ns-${i}`)}>
-                      {copied === `ns-${i}` ? <CheckCircle2 className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Add DNS Record */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Add DNS Record</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-4">
-                <div>
-                  <Label className="text-xs mb-1.5 block">Type</Label>
-                  <select
-                    value={newDns.type}
-                    onChange={e => setNewDns({ ...newDns, type: e.target.value })}
-                    className="w-full h-9 px-3 border border-input rounded-md bg-background text-sm"
-                  >
-                    {['A','AAAA','CNAME','MX','TXT','NS','SRV'].map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label className="text-xs mb-1.5 block">Name</Label>
-                  <Input placeholder="@" value={newDns.name} onChange={e => setNewDns({ ...newDns, name: e.target.value })} className="h-9 text-sm" />
-                </div>
-                <div>
-                  <Label className="text-xs mb-1.5 block">Value</Label>
-                  <Input placeholder="1.1.1.1" value={newDns.value} onChange={e => setNewDns({ ...newDns, value: e.target.value })} className="h-9 text-sm" />
-                </div>
-                <div>
-                  <Label className="text-xs mb-1.5 block">TTL</Label>
-                  <Input type="number" value={newDns.ttl} onChange={e => setNewDns({ ...newDns, ttl: e.target.value })} className="h-9 text-sm" />
-                </div>
-              </div>
-              {dnsError && <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" />{dnsError}</p>}
-              <Button onClick={handleAddDns} disabled={addingDns} size="sm">
-                {addingDns ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-2" />}
-                Add Record
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* DNS Records table */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">DNS Records ({dnsRecords.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {dnsRecords.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mb-2">
-                    <Server className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">No DNS records yet</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="pl-5">Type</TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Value</TableHead>
-                        <TableHead className="hidden sm:table-cell">TTL</TableHead>
-                        <TableHead className="w-10 pr-5" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {dnsRecords.map(r => (
-                        <TableRow key={r.id} className="group">
-                          <TableCell className="pl-5">
-                            <span className={`inline-block text-xs font-mono font-semibold px-2 py-0.5 rounded ${DNS_TYPE_COLORS[r.type] ?? 'bg-muted text-muted-foreground'}`}>
-                              {r.type}
-                            </span>
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">{r.name}</TableCell>
-                          <TableCell className="font-mono text-sm max-w-xs truncate text-muted-foreground">{r.value}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{r.ttl}s</TableCell>
-                          <TableCell className="pr-5">
-                            <Button
-                              size="icon" variant="ghost"
-                              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                              onClick={async () => { await deleteDnsRecord(id, r.id); await fetchAll() }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ── Details Tab ──────────────────────────────── */}
-        <TabsContent value="details" className="mt-4">
+    const capabilities = domain.registrarCapabilities || {}
+    const builtTabs = [
+      {
+        value: 'details',
+        label: 'Details',
+        icon: Globe,
+        content: (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold">Domain Details</CardTitle>
@@ -395,301 +270,366 @@ export default function DomainDetailPage() {
                 <div>
                   <InfoRow label="Domain Name" value={<span className="font-mono">{domain.name}</span>} />
                   <InfoRow label="Owner ID" value={<span className="font-mono text-xs">{domain.ownerId}</span>} />
-                  <InfoRow label="Registrar" value={domain.registrar} />
+                  <InfoRow label="Registrar" value={domain.registrar || '—'} />
                   <InfoRow label="Status" value={<DomainStatusBadge status={domain.status} />} />
                 </div>
                 <div>
                   <InfoRow label="Registered" value={formatDate(domain.createdAt)} />
                   <InfoRow label="Expires" value={formatDate(domain.expiryDate)} />
-                  <InfoRow label="Reg. Price" value={domain.registrationPrice ? `${domain.registrationPrice} ${domain.currency ?? 'USD'}` : '—'} />
-                  <InfoRow label="Auto-Renew" value={
-                    <Badge variant={domain.autoRenew ? 'default' : 'outline'} className="text-xs">
-                      {domain.autoRenew ? 'Enabled' : 'Disabled'}
-                    </Badge>
-                  } />
+                  <InfoRow label="Reg. Price" value={formatMoneyFromCents(domain.registrationPrice, domain.currency || 'USD')} />
+                  <InfoRow label="Renewal Price" value={formatMoneyFromCents(domain.renewalPrice, domain.currency || 'USD')} />
                 </div>
               </div>
-
-              {domain.contacts?.length > 0 && (
-                <>
-                  <Separator className="my-4" />
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">WHOIS Contacts</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {domain.contacts.map((c, i) => (
-                      <div key={i} className="rounded-lg border border-border p-3 space-y-1">
-                        <Badge variant="outline" className="capitalize text-xs mb-2">{c.type}</Badge>
-                        <p className="text-sm font-medium">{c.name}</p>
-                        <p className="text-xs text-muted-foreground">{c.email}</p>
-                        {c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}
-                        <p className="text-xs text-muted-foreground">{c.country}</p>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        {/* ── WHOIS Tab ────────────────────────────────── */}
-        <TabsContent value="whois" className="mt-4 space-y-4">
-          {/* Search bar */}
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="example.com"
-                    value={whoisDomain}
-                    onChange={e => setWhoisDomain(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleWhoisLookup()}
-                    className="pl-9 h-9 text-sm font-mono"
-                  />
-                </div>
-                <Button size="sm" onClick={() => handleWhoisLookup()} disabled={whoisLoading} className="h-9 px-4">
+        ),
+      },
+      ...(domain.registrar === 'porkbun' && capabilities.canManageDNS ? [{
+        value: 'dns',
+        label: 'DNS',
+        icon: Server,
+        content: <PorkbunDNS domainId={id} />,
+      }] : []),
+      ...(domain.registrar === 'porkbun' && capabilities.canManageGlue ? [{
+        value: 'glue',
+        label: 'Glue',
+        icon: Waypoints,
+        content: <PorkbunGlue domainId={id} />,
+      }] : []),
+      ...(domain.registrar === 'porkbun' && capabilities.canForwardURL ? [{
+        value: 'forwarding',
+        label: 'Forwarding',
+        icon: Route,
+        content: <PorkbunForwarding domainId={id} />,
+      }] : []),
+      ...(domain.registrar === 'porkbun' && capabilities.canManageSSL ? [{
+        value: 'ssl',
+        label: 'SSL',
+        icon: Lock,
+        content: <PorkbunSSL domainId={id} />,
+      }] : []),
+      {
+        value: 'whois',
+        label: 'WHOIS',
+        icon: Search,
+        content: (
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="flex gap-2 pt-4">
+                <Input
+                  value={whoisDomain}
+                  onChange={(e) => setWhoisDomain(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && loadWhois()}
+                  placeholder="example.com"
+                  className="h-9 text-sm font-mono"
+                />
+                <Button size="sm" onClick={() => loadWhois()} disabled={whoisLoading}>
                   {whoisLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Lookup'}
                 </Button>
+              </CardContent>
+            </Card>
+            {whoisError && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{whoisError}
               </div>
-            </CardContent>
-          </Card>
-
-          {whoisError && (
-            <div className="flex items-start gap-2.5 bg-destructive/10 border border-destructive/50 text-destructive rounded-lg p-3 text-sm">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" /><span>{whoisError}</span>
-            </div>
-          )}
-
-          {whoisLoading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          )}
-
-          {whois && !whoisLoading && (
-            <>
-              {!whois.found ? (
+            )}
+            {whois && (
+              <div className="grid gap-4 sm:grid-cols-2">
                 <Card>
-                  <CardContent className="pt-4 pb-4 flex items-center gap-3">
-                    <Info className="h-4 w-4 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">{whois.message || 'No WHOIS data found for this domain.'}</p>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                      <Globe className="h-4 w-4 text-muted-foreground" /> Registration
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <InfoRow label="Domain" value={<span className="font-mono">{whois.domain}</span>} />
+                    <InfoRow label="Registered" value={whois.registeredOn ? formatDate(whois.registeredOn) : '—'} />
+                    <InfoRow label="Updated" value={whois.updatedOn ? formatDate(whois.updatedOn) : '—'} />
+                    <InfoRow label="Expires" value={whois.expiresOn ? formatDate(whois.expiresOn) : '—'} />
                   </CardContent>
                 </Card>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {/* Registration Info */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                        <Globe className="h-4 w-4 text-muted-foreground" /> Registration
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <InfoRow label="Domain" value={<span className="font-mono">{whois.domain}</span>} />
-                      <InfoRow label="Registered" value={whois.registeredOn ? formatDate(whois.registeredOn) : '—'} />
-                      <InfoRow label="Updated" value={whois.updatedOn ? formatDate(whois.updatedOn) : '—'} />
-                      <InfoRow label="Expires" value={whois.expiresOn ? formatDate(whois.expiresOn) : '—'} />
-                      <InfoRow label="DNSSEC" value={
-                        <Badge variant="outline" className={`text-xs ${whois.secureDns ? 'text-accent border-accent/30' : 'text-muted-foreground'}`}>
-                          {whois.secureDns ? 'Signed' : 'Unsigned'}
-                        </Badge>
-                      } />
-                    </CardContent>
-                  </Card>
-
-                  {/* Registrar Info */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" /> Registrar
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <InfoRow label="Name" value={whois.registrar || '—'} />
-                      <InfoRow label="IANA ID" value={whois.registrarIanaId || '—'} />
-                      <InfoRow label="URL" value={whois.registrarUrl
-                        ? <a href={whois.registrarUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs truncate max-w-[180px] inline-block">{whois.registrarUrl}</a>
-                        : '—'
-                      } />
-                      {whois.status?.length > 0 && (
-                        <div className="flex items-start justify-between py-2.5 border-b border-border/50 last:border-0 gap-4">
-                          <span className="text-sm text-muted-foreground shrink-0">Status</span>
-                          <div className="flex flex-wrap gap-1 justify-end">
-                            {whois.status.slice(0, 3).map(s => (
-                              <Badge key={s} variant="outline" className="text-xs capitalize">
-                                {s.replace(/([A-Z])/g, ' $1').trim()}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Nameservers */}
-                  {whois.nameservers?.length > 0 && (
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                          <Server className="h-4 w-4 text-muted-foreground" /> Nameservers
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-1.5">
-                        {whois.nameservers.map((ns, i) => (
-                          <div key={i} className="flex items-center gap-2 bg-muted/50 px-3 py-2 rounded-md">
-                            <span className="text-xs text-muted-foreground w-7">NS{i+1}</span>
-                            <code className="text-sm">{ns}</code>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Registrant Contact */}
-                  {whois.registrant && (
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                          <Lock className="h-4 w-4 text-muted-foreground" /> Registrant
-                          {whois.registrant.redacted && (
-                            <Badge variant="outline" className="text-xs ml-auto text-muted-foreground border-muted-foreground/30">GDPR Redacted</Badge>
-                          )}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {whois.registrant.redacted ? (
-                          <p className="text-sm text-muted-foreground">Contact details are redacted per GDPR/privacy policy.</p>
-                        ) : (
-                          <>
-                            {whois.registrant.name && <InfoRow label="Name" value={whois.registrant.name} />}
-                            {whois.registrant.organization && <InfoRow label="Org" value={whois.registrant.organization} />}
-                            {whois.registrant.email && <InfoRow label="Email" value={whois.registrant.email} />}
-                            {whois.registrant.country && <InfoRow label="Country" value={whois.registrant.country} />}
-                          </>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </TabsContent>
-
-        {/* ── Override Tab ─────────────────────────────── */}
-        <TabsContent value="override" className="mt-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                      <Building2 className="h-4 w-4 text-muted-foreground" /> Registrar
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <InfoRow label="Name" value={whois.registrar || '—'} />
+                    <InfoRow label="IANA ID" value={whois.registrarIanaId || '—'} />
+                    <InfoRow label="URL" value={whois.registrarUrl || '—'} />
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+            {!whois && !whoisLoading && (
+              <Card>
+                <CardContent className="flex items-center gap-3 pt-4">
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Run a WHOIS lookup when you need current public registry data.</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        ),
+      },
+      {
+        value: 'override',
+        label: 'Override',
+        icon: Settings2,
+        content: (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Shield className="h-4 w-4 text-muted-foreground" /> Admin Override
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Force-update domain fields. These changes are logged in the audit trail.
-              </CardDescription>
+              <CardTitle className="text-sm font-semibold">Admin Override</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {overrideMsg && (
-                <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md ${
-                  overrideMsg.type === 'success' ? 'bg-accent/10 text-accent'
-                  : overrideMsg.type === 'error' ? 'bg-destructive/10 text-destructive'
-                  : 'bg-muted text-foreground'
-                }`}>
-                  {overrideMsg.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-                  {overrideMsg.text}
-                </div>
-              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <Label className="text-xs mb-1.5 block">Force Status</Label>
+                  <Label className="mb-1.5 block text-xs">Status</Label>
                   <select
                     value={overrideData.status}
-                    onChange={e => setOverrideData({ ...overrideData, status: e.target.value })}
-                    className="w-full h-9 px-3 border border-input rounded-md bg-background text-sm"
+                    onChange={(e) => setOverrideData((prev) => ({ ...prev, status: e.target.value }))}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
-                    {['active','expired','grace','redemption','transfer_pending','transfer_failed','cancelled','pending_registration'].map(s => (
-                      <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                    {Object.keys(STATUS_CONFIG).map((status) => (
+                      <option key={status} value={status}>{STATUS_CONFIG[status].label}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <Label className="text-xs mb-1.5 block">Force Expiry Date</Label>
+                  <Label className="mb-1.5 block text-xs">Expiry Date</Label>
                   <Input
                     type="date"
                     value={overrideData.expiryDate}
-                    onChange={e => setOverrideData({ ...overrideData, expiryDate: e.target.value })}
+                    onChange={(e) => setOverrideData((prev) => ({ ...prev, expiryDate: e.target.value }))}
                     className="h-9 text-sm"
                   />
                 </div>
               </div>
-              <Button onClick={handleOverride} disabled={overriding} size="sm" variant="secondary">
-                {overriding ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Settings2 className="h-3.5 w-3.5 mr-2" />}
-                Apply Override
+              {overrideMsg && (
+                <div className={`rounded-md px-3 py-2 text-sm ${
+                  overrideMsg.type === 'success'
+                    ? 'bg-accent/10 text-accent'
+                    : overrideMsg.type === 'error'
+                      ? 'bg-destructive/10 text-destructive'
+                      : 'bg-muted text-muted-foreground'
+                }`}>
+                  {overrideMsg.text}
+                </div>
+              )}
+              <Button onClick={handleOverride} disabled={overriding}>
+                {overriding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Shield className="mr-2 h-4 w-4" />}
+                Save Override
               </Button>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        {/* ── Logs Tab ─────────────────────────────────── */}
-        <TabsContent value="logs" className="mt-4">
+        ),
+      },
+      {
+        value: 'logs',
+        label: 'Logs',
+        icon: Activity,
+        content: (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Activity Log</CardTitle>
-              <CardDescription className="text-xs">{logs.length} event{logs.length !== 1 ? 's' : ''} recorded</CardDescription>
+              <CardTitle className="text-sm font-semibold">Domain Activity</CardTitle>
             </CardHeader>
             <CardContent>
-              {logs.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mb-2">
-                    <Activity className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">No activity yet</p>
-                </div>
-              ) : (
-                <div className="space-y-0">
-                  {logs.map((log, i) => (
-                    <div key={log.id} className="flex gap-4 pb-4">
-                      <div className="flex flex-col items-center">
-                        <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                          <Activity className="h-3.5 w-3.5 text-primary" />
-                        </div>
-                        {i < logs.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
-                      </div>
-                      <div className="flex-1 pb-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold capitalize">{log.action?.replace(/_/g, ' ')}</p>
-                          <span className="text-xs text-muted-foreground shrink-0">{formatDate(log.createdAt)}</span>
-                        </div>
-                        {log.meta && Object.keys(log.meta).length > 0 && (
-                          <pre className="text-xs bg-muted/50 p-2 rounded mt-1.5 overflow-auto max-h-28 text-muted-foreground">
-                            {JSON.stringify(log.meta, null, 2)}
-                          </pre>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <LogList logs={logs} />
             </CardContent>
           </Card>
-        </TabsContent>
+        ),
+      },
+    ]
+
+    return builtTabs
+  }, [domain, handleOverride, id, loadWhois, logs, overrideData, overrideMsg, overriding, whois, whoisDomain, whoisError, whoisLoading])
+
+  useEffect(() => {
+    if (tabs.length && !tabs.find((tab) => tab.value === activeTab)) {
+      setActiveTab(tabs[0].value)
+    }
+  }, [tabs, activeTab])
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error || !domain) {
+    return (
+      <div className="space-y-6">
+        <Link href="/admin/domains">
+          <Button variant="ghost" size="sm"><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>
+        </Link>
+        <Card className="border-destructive/50 bg-destructive/10">
+          <CardContent className="flex gap-3 pt-4">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div>
+              <p className="text-sm font-semibold text-destructive">Error Loading Domain</p>
+              <p className="mt-0.5 text-xs text-destructive/75">{error || 'Domain not found'}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const expiryDays = daysUntilExpiry(domain.expiryDate)
+
+  return (
+    <div className="space-y-6">
+      <Link href="/admin/domains">
+        <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> All Domains
+        </Button>
+      </Link>
+
+      <Card className="overflow-hidden">
+        <div className="h-1.5 w-full bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
+        <CardContent className="pb-5 pt-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                <Globe className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="font-mono text-xl font-bold">{domain.name}</h1>
+                  <DomainStatusBadge status={domain.status} size="lg" />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Registrar: {domain.registrar || '—'}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={openRenewDialog}>
+                <DollarSign className="mr-2 h-4 w-4" /> Renew
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Syncing…' : 'Sync'}
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => setDeleteConfirm(true)}>
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {[
+          { icon: Server, label: 'Registrar', value: domain.registrar ?? 'N/A' },
+          { icon: Calendar, label: 'Expires', value: formatDate(domain.expiryDate) },
+          { icon: DollarSign, label: 'Registration', value: formatMoneyFromCents(domain.registrationPrice, domain.currency ?? 'USD') },
+          {
+            icon: Globe,
+            label: 'Days Left',
+            value: expiryDays !== null
+              ? expiryDays <= 0 ? `${Math.abs(expiryDays)}d overdue` : `${expiryDays} days`
+              : '—',
+          },
+        ].map(({ icon: Icon, label, value }) => (
+          <Card key={label}>
+            <CardContent className="pb-4 pt-4">
+              <div className="mb-1 flex items-center gap-2 text-muted-foreground">
+                <Icon className="h-3.5 w-3.5" />
+                <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
+              </div>
+              <p className="text-sm font-semibold">{value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Tabs value={activeTab} onValueChange={(value) => {
+        setActiveTab(value)
+        if (value === 'whois' && !whois) loadWhois(domain.name)
+      }}>
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2">
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5 text-xs">
+                <Icon className="h-3.5 w-3.5" /> {tab.label}
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
+        {tabs.map((tab) => (
+          <TabsContent key={tab.value} value={tab.value} className="mt-4 space-y-4">
+            {tab.content}
+          </TabsContent>
+        ))}
       </Tabs>
 
-      {/* ── Delete Dialog ────────────────────────────── */}
+      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Renew {domain.name}</DialogTitle>
+            <DialogDescription>
+              A live price check runs before confirmation because Porkbun does not provide a sandbox for renewal billing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label className="mb-1.5 block text-xs">Years</Label>
+                <select
+                  value={renewForm.years}
+                  onChange={(e) => setRenewForm((prev) => ({ ...prev, years: e.target.value }))}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {[1, 2, 3, 4, 5].map((years) => (
+                    <option key={years} value={years}>{years} year{years > 1 ? 's' : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="mb-1.5 block text-xs">Currency</Label>
+                <Input value={renewForm.currency} disabled className="h-9 text-sm" />
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-3">
+              {priceLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Checking live registrar pricing…
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live price check</p>
+                  <p className="mt-1 text-sm font-semibold">{renewPrice?.exactUsdDisplay || formatMoneyFromCents(domain.renewalPrice, 'USD')}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Source: {renewPrice?.source || 'domain snapshot'}.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenewOpen(false)}>Cancel</Button>
+            <Button onClick={handleRenew} disabled={renewing || priceLoading}>
+              {renewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Confirm Renewal
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={deleteConfirm} onOpenChange={setDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-destructive" /> Delete Domain
-            </AlertDialogTitle>
+            <AlertDialogTitle>Delete Domain</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently cancel{' '}
-              <span className="font-mono font-semibold">{domain.name}</span>.
-              This cannot be undone.
+              This will mark <strong>{domain.name}</strong> as cancelled inside WHMS-fyp. The registrar account will not be touched automatically.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex justify-end gap-2 mt-2">
+          <div className="flex justify-end gap-2">
             <AlertDialogCancel>Keep Domain</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 focus:ring-destructive" onClick={handleDelete}>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={handleDelete}>
               Delete Domain
             </AlertDialogAction>
           </div>

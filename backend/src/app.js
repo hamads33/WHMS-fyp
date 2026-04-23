@@ -509,7 +509,10 @@ async function init() {
 ================================================================ */
 app.use((err, req, res, next) => {
   console.error("💥 Backend Error:", err);
-  res.status(err.statusCode || 500).json({ error: err.message || "Internal Server Error" });
+  res.status(err.statusCode || 500).json({
+    error: err.message || "Internal Server Error",
+    errorCode: err.errorCode || err.code || null,
+  });
 });
 
 /* ================================================================

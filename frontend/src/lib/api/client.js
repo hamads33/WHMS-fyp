@@ -49,11 +49,18 @@ export async function apiFetch(path, options = {}) {
       const json = JSON.parse(text);
       message = json.error || json.message || message;
       if (json.fields && typeof json.fields === "object") fields = json.fields;
+      if (json.errorCode || json.code) {
+        fields = fields || {};
+        fields.__errorCode = json.errorCode || json.code;
+      }
     } catch {
       if (text) message = text;
     }
     const err = new Error(message);
-    if (fields) err.fields = fields;
+    if (fields) {
+      err.fields = fields;
+      if (fields.__errorCode) err.code = fields.__errorCode;
+    }
     throw err;
   }
 

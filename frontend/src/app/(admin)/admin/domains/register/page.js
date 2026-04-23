@@ -8,6 +8,9 @@ import {
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -16,8 +19,10 @@ import {
   Globe, Search, User, Server, Tag, ChevronRight,
 } from 'lucide-react'
 
-import { checkDomainAvailability, registerDomain } from '@/lib/api/domain'
+import { checkDomainAvailability, registerDomain, adminCheckDomainPrice } from '@/lib/api/domain'
 import { getErrorMessage } from '@/lib/api/client'
+import { useToast } from '@/hooks/use-toast'
+import { toastDomainError } from '@/lib/domain-error-toast'
 
 /* ── step indicator ─────────────────────────────────────── */
 function StepIndicator({ steps, current }) {
@@ -78,6 +83,7 @@ function ContactFields({ label, data, onChange }) {
 /* ── page ─────────────────────────────────────────────── */
 export default function RegisterDomainPage() {
   const router = useRouter()
+  const { toast } = useToast()
 
   const [domain,       setDomain]       = useState('')
   const [registrar,    setRegistrar]    = useState('mock')
@@ -95,6 +101,9 @@ export default function RegisterDomainPage() {
   })
 
   const [registering, setRegistering] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [priceCheck, setPriceCheck] = useState(null)
+  const [priceChecking, setPriceChecking] = useState(false)
   const [error,       setError]       = useState(null)
   const [success,     setSuccess]     = useState(null)
   const [mockWarning, setMockWarning] = useState(null)
@@ -138,10 +147,39 @@ export default function RegisterDomainPage() {
       if (result?.isMock || result?.warning) {
         setMockWarning(result.warning || 'Domain registered with mock registrar — for testing only, not a real domain.')
       }
+      setConfirmOpen(false)
+      toast({ title: 'Domain registered', description: `${domain} was submitted after a live price check.` })
       setSuccess(`${domain} registered successfully!`)
       setTimeout(() => router.push('/admin/domains'), 2000)
-    } catch (err) { setError(getErrorMessage(err)) }
+    } catch (err) {
+      setError(getErrorMessage(err))
+      toastDomainError(toast, err, 'Registration failed')
+    }
     finally { setRegistering(false) }
+  }
+
+  const prepareRegisterConfirmation = async () => {
+    const { contacts, ownerId } = formData
+    if (!availability?.available) { setError('Domain is not available'); return }
+    if (!ownerId.trim()) { setError('Owner ID is required'); return }
+    if (!contacts.registrant.name || !contacts.registrant.email) { setError('Registrant name and email are required'); return }
+    if (!contacts.admin.name || !contacts.admin.email) { setError('Admin name and email are required'); return }
+
+    try {
+      setPriceChecking(true)
+      const res = await adminCheckDomainPrice({
+        registrar,
+        domain,
+        action: 'register',
+      })
+      setPriceCheck(res?.data ?? null)
+      setConfirmOpen(true)
+    } catch (err) {
+      setError(getErrorMessage(err))
+      toastDomainError(toast, err, 'Price check failed')
+    } finally {
+      setPriceChecking(false)
+    }
   }
 
   const updateContact = (type, field, value) =>
@@ -323,7 +361,7 @@ export default function RegisterDomainPage() {
                 <Server className="h-4 w-4 text-muted-foreground" /> Step 3 — Nameservers
                 <Badge variant="outline" className="text-xs ml-1">Optional</Badge>
               </CardTitle>
-              <CardDescription className="text-xs">Leave blank to use the registrar's default nameservers</CardDescription>
+              <CardDescription className="text-xs">Leave blank to use the registrar&apos;s default nameservers</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -379,14 +417,39 @@ export default function RegisterDomainPage() {
                 </div>
               </div>
 
-              <Button onClick={handleRegister} disabled={registering} size="lg" className="w-full">
-                {registering ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Globe className="h-4 w-4 mr-2" />}
-                {registering ? 'Registering…' : `Register ${domain}`}
+              <Button onClick={prepareRegisterConfirmation} disabled={registering || priceChecking} size="lg" className="w-full">
+                {registering || priceChecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Globe className="h-4 w-4 mr-2" />}
+                {registering ? 'Registering…' : priceChecking ? 'Checking live price…' : `Register ${domain}`}
               </Button>
             </CardContent>
           </Card>
         </div>
       )}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Domain Registration</DialogTitle>
+            <DialogDescription>
+              Live billing confirmation is required before registration because Porkbun does not offer a sandbox checkout flow.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live price check</p>
+            <p className="mt-1 text-lg font-semibold">{priceCheck?.exactUsdDisplay || 'Unavailable'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Source: {priceCheck?.source || 'registrar'}.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button onClick={handleRegister} disabled={registering}>
+              {registering ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Confirm Registration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -21,16 +21,17 @@
  */
 
 const express = require("express");
-const paymentCtrl = require("../controllers/payment.controller");
 const webhookRouter = express.Router();
 
 /**
- * POST /api/billing/webhooks/stripe
- * Stripe webhook endpoint — handle payment events
- *
- * Important: Must use express.raw() body parser for Stripe signature verification.
- * In app.js: app.use('/api/billing/webhooks/stripe', express.raw({ type: 'application/json' }), ...)
+ * Webhooks are now handled by individual plugins.
+ * Example: Stripe webhook is at /api/plugins/stripe/webhook
  */
-webhookRouter.post("/:gateway", paymentCtrl.handleWebhook);
+webhookRouter.post("/:gateway", (req, res) => {
+  res.status(410).json({
+    error: "Gone",
+    message: "Core webhook handlers are deprecated. Gateways must process their own webhooks via plugin routes.",
+  });
+});
 
 module.exports.webhookRouter = webhookRouter;

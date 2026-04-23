@@ -59,32 +59,6 @@ exports.initiatePayment = async (req, res) => {
   }
 };
 
-/**
- * POST /billing/webhooks/:gateway
- * Handle payment gateway webhook callbacks.
- * No auth — validated by gateway signature.
- */
-exports.handleWebhook = async (req, res) => {
-  try {
-    const { gateway } = req.params;
-    const signature =
-      req.headers["stripe-signature"] ||
-      req.headers["paypal-transmission-sig"] ||
-      null;
-
-    const result = await paymentService.handleGatewayCallback(
-      gateway,
-      req.body,
-      signature
-    );
-
-    res.json({ received: true, ...result });
-  } catch (err) {
-    // Return 200 to prevent gateway retries on handler bugs
-    console.error("Webhook handler error:", err.message);
-    res.status(200).json({ received: true, error: err.message });
-  }
-};
 
 // ============================================================
 // READ

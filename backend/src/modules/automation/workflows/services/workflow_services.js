@@ -105,7 +105,7 @@ class EventWorkflowService {
       });
       
       if (!workflow) {
-        this.logger.debug(`Workflow not found: ${id}`);
+        this.logger.debug(`Workflow not found: ${workflowId}`);
         return null;
       }
       
@@ -335,6 +335,17 @@ class EventWorkflowService {
       
       if (!Array.isArray(definition.tasks) || definition.tasks.length === 0) {
         throw new Error("Workflow definition must contain at least one task");
+      }
+      
+      // Validate input against definition schema if present
+      if (definition.input && this.validator) {
+        const validation = this.validator.validateInput(workflowInput, definition.input);
+        if (!validation.valid) {
+          const errors = Array.isArray(validation.errors) 
+            ? validation.errors.join(", ")
+            : String(validation.errors);
+          throw new Error(`Input validation failed: ${errors}`);
+        }
       }
       
       const run = await this.prisma.workflowRun.create({
@@ -884,6 +895,37 @@ class EventWorkflowService {
    */
   _generateSecret() {
     return require('crypto').randomBytes(32).toString('hex');
+  }
+
+  /**
+   * Verify webhook signature using HMAC-SHA256 with timing-safe comparison
+   * Prevents timing attacks by using constant-time comparison
+   */
+  _verifyWebhookSignature(signature, payload, secret) {
+    try {
+      const crypto = require('crypto');
+      
+      // Compute expected signature
+      const computed = crypto
+        .createHmac('sha256', secret)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+
+      // Use timing-safe comparison to prevent timing attacks
+      // Handles unequal lengths gracefully
+      const computedBuffer = Buffer.from(computed);
+      const signatureBuffer = Buffer.from(signature);
+      
+      // If lengths don't match, comparison will fail safely
+      if (computedBuffer.length !== signatureBuffer.length) {
+        return false;
+      }
+      
+      return crypto.timingSafeEqual(computedBuffer, signatureBuffer);
+    } catch (error) {
+      this.logger.warn(`Webhook signature verification error: ${error.message}`);
+      return false;
+    }
   }
 
   /**

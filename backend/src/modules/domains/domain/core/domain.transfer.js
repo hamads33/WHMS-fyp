@@ -4,6 +4,7 @@ const domainRepo = require("../repositories/domain.repo");
 const transferRepo = require("../repositories/domainTransfer.repo");
 const { logDomainAction } = require("../repositories/domainLog.repo");
 const { createInvoice } = require("../../billing/billing.stub");
+const { toPennies } = require("../../utils/pennies");
 
 /**
  * Initiate domain transfer (EPP)
@@ -60,7 +61,9 @@ async function initiateTransfer({
   const invoice = await createInvoice({
     ownerId,
     domain,
-    amount: transferPrice,
+    amount: transferPrice !== null && transferPrice !== undefined
+      ? toPennies(transferPrice, "transferPrice")
+      : null,
     currency,
     description: `Domain transfer: ${domain}`
   });
@@ -74,7 +77,10 @@ async function initiateTransfer({
   // ─────────────────────────────
   const transferResult = await registrarModule.transferDomain({
     domain,
-    authCode
+    authCode,
+    cost: transferPrice !== null && transferPrice !== undefined
+      ? toPennies(transferPrice, "transferPrice")
+      : null,
   });
 
   if (!transferResult || transferResult.success !== true) {
@@ -91,7 +97,9 @@ async function initiateTransfer({
     status: "transfer_pending",
     autoRenew: true,
     currency,
-    registrationPrice: transferPrice,
+    registrationPrice: transferPrice !== null && transferPrice !== undefined
+      ? toPennies(transferPrice, "transferPrice")
+      : null,
   });
 
   // ─────────────────────────────

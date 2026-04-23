@@ -2,6 +2,7 @@ const { loadRegistrar } = require("../../registrars");
 const domainRepo = require("../repositories/domain.repo");
 const { logDomainAction } = require("../repositories/domainLog.repo");
 const { createInvoice } = require("../../billing/billing.stub");
+const { toPennies } = require("../../utils/pennies");
 
 /**
  * Admin manual domain renewal
@@ -42,7 +43,9 @@ async function adminRenewDomain({
   // 3️⃣ Billing stub (BOUNDARY)
   // ─────────────────────────────
   const renewalAmount =
-    priceOverride ?? domain.renewalPrice ?? domain.registrationPrice;
+    priceOverride !== null && priceOverride !== undefined
+      ? toPennies(priceOverride, "priceOverride")
+      : domain.renewalPrice ?? domain.registrationPrice;
 
   const invoice = await createInvoice({
     ownerId: domain.ownerId,

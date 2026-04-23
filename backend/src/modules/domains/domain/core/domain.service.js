@@ -19,6 +19,7 @@ const { createDomainContacts } = require("../repositories/domainContact.repo");
 const { validateContacts } = require("../../validators/domainContact.validator");
 const { createInvoice } = require("../../billing/billing.stub");
 const domainRepo = require("../repositories/domain.repo");
+const { toPennies } = require("../../utils/pennies");
 
 
 /**
@@ -118,8 +119,10 @@ async function registerDomain({
   // Determine final price (admin override > registrar price)
   const finalPrice =
     priceOverride !== null
-      ? priceOverride
-      : availability.price ?? null;
+      ? toPennies(priceOverride, "priceOverride")
+      : availability.price !== null && availability.price !== undefined
+        ? toPennies(availability.price, "availability price")
+        : null;
 
   // ─────────────────────────────
   // 5️⃣ Billing boundary (STUB)

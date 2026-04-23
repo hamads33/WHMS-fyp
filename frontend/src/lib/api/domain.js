@@ -148,6 +148,92 @@ export function adminGetDomainById(id) {
   return apiFetch(`/admin/domains/${id}`)
 }
 
+export function adminGetDomainCapabilities(domainId) {
+  return apiFetch(`/admin/domains/${domainId}/capabilities`)
+}
+
+export function adminGetDomainDns(domainId) {
+  return apiFetch(`/admin/domains/${domainId}/dns`)
+}
+
+export function adminCreateDomainDns(domainId, record) {
+  return apiFetch(`/admin/domains/${domainId}/dns`, {
+    method: 'POST',
+    body: JSON.stringify(record),
+  })
+}
+
+export function adminUpdateDomainDns(domainId, recordId, record) {
+  return apiFetch(`/admin/domains/${domainId}/dns/${recordId}`, {
+    method: 'PUT',
+    body: JSON.stringify(record),
+  })
+}
+
+export function adminDeleteDomainDns(domainId, recordId) {
+  return apiFetch(`/admin/domains/${domainId}/dns/${recordId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function adminGetDomainGlue(domainId) {
+  return apiFetch(`/admin/domains/${domainId}/glue`)
+}
+
+export function adminCreateDomainGlue(domainId, payload) {
+  return apiFetch(`/admin/domains/${domainId}/glue`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function adminUpdateDomainGlue(domainId, subdomain, payload) {
+  return apiFetch(`/admin/domains/${domainId}/glue/${encodeURIComponent(subdomain)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function adminDeleteDomainGlue(domainId, subdomain) {
+  return apiFetch(`/admin/domains/${domainId}/glue/${encodeURIComponent(subdomain)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function adminGetDomainForwarding(domainId) {
+  return apiFetch(`/admin/domains/${domainId}/forwarding`)
+}
+
+export function adminCreateDomainForwarding(domainId, payload) {
+  return apiFetch(`/admin/domains/${domainId}/forwarding`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function adminDeleteDomainForwarding(domainId, forwardId) {
+  return apiFetch(`/admin/domains/${domainId}/forwarding/${forwardId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function adminGetDomainSSL(domainId) {
+  return apiFetch(`/admin/domains/${domainId}/ssl`)
+}
+
+export function adminCheckDomainPrice(payload) {
+  return apiFetch('/admin/domains/check-domain-pricing', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function adminCheckRenewalPrice(domainId) {
+  return apiFetch(`/admin/domains/${domainId}/price-check`, {
+    method: 'POST',
+  })
+}
+
 /**
  * Admin: Renew domain (with admin override)
  */
@@ -226,6 +312,14 @@ export function formatDate(date) {
     month: 'short',
     day: 'numeric',
   })
+}
+
+export function formatMoneyFromCents(cents, currency = 'USD') {
+  if (cents === null || cents === undefined) return '—'
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+  }).format(Number(cents) / 100)
 }
 
 /**
