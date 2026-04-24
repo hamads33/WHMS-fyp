@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   RefreshCw, Power, PowerOff, ChevronRight, PackageOpen,
   CheckCircle2, XCircle, AlertCircle, ArrowUpCircle, Puzzle,
@@ -47,7 +48,7 @@ function PluginRow({ plugin, onToggle, toggling }) {
       {/* Icon */}
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted">
         {plugin.iconUrl ? (
-          <img src={plugin.iconUrl} alt={plugin.name} className="h-8 w-8 object-contain rounded" />
+          <Image src={plugin.iconUrl} alt={plugin.name} width={32} height={32} className="object-contain rounded" />
         ) : (
           <Puzzle className="h-5 w-5 text-muted-foreground" />
         )}

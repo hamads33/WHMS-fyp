@@ -48,7 +48,12 @@ export function BackupActivityTimeline() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(timeoutId);
+  }, []);
 
   return (
     <Card className="rounded-2xl border border-border bg-card shadow-sm hover:shadow-md transition-shadow duration-200">

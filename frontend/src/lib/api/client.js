@@ -5,9 +5,15 @@ export function getErrorMessage(err) {
 }
 
 export async function apiFetch(path, options = {}) {
+  const {
+    redirectOn401 = true,
+    headers: optionHeaders,
+    ...fetchOptions
+  } = options;
+
   const headers = {
     "Content-Type": "application/json",
-    ...(options.headers || {}),
+    ...(optionHeaders || {}),
   };
 
   // Add Bearer token if available in localStorage
@@ -23,17 +29,15 @@ export async function apiFetch(path, options = {}) {
     {
       credentials: "include",
       headers,
-      ...options,
+      ...fetchOptions,
     }
   );
 
   if (res.status === 401) {
-    console.log("[API] 401 Unauthorized response from:", path);
-    if (typeof window !== "undefined") {
+    if (redirectOn401 && typeof window !== "undefined") {
       const currentPath = window.location.pathname;
       const isLoginPage = currentPath.endsWith("/login") || currentPath.includes("/login/");
       if (!isLoginPage) {
-        console.log("[API] Not on login page, redirecting to /login");
         const loginUrl = "/login";
         window.location.href = loginUrl;
       }
@@ -66,6 +70,7 @@ export async function apiFetch(path, options = {}) {
 
   // Parse JSON with BigInt support
   const text = await res.text();
+  if (!text) return null;
   try {
     // Use JSON.parse with BigInt replacer
     return JSON.parse(text, (_key, value) => {

@@ -334,7 +334,7 @@ function PaymentStep({ invoices, onPay, loading, error, payedIds }) {
 // ── Done Step ─────────────────────────────────────────────────────────────────
 
 function DoneStep({ orders, invoices }) {
-  const total = invoices.reduce((s, inv) => s + parseFloat(inv.amountDue || 0), 0)
+  const total = invoices.reduce((s, inv) => s + parseFloat(inv.totalAmount ?? inv.amountDue ?? 0), 0)
   const currency = invoices[0]?.currency || 'USD'
 
   return (
@@ -347,7 +347,7 @@ function DoneStep({ orders, invoices }) {
       </div>
 
       <div>
-        <h2 className="text-xl font-extrabold text-foreground">You're all set!</h2>
+        <h2 className="text-xl font-extrabold text-foreground">You&apos;re all set!</h2>
         <p className="text-sm text-muted-foreground mt-1.5 max-w-sm mx-auto leading-relaxed">
           Your {orders.length > 1 ? `${orders.length} orders have` : 'order has'} been placed
           and your hosting account{orders.length > 1 ? 's are' : ' is'} being provisioned.
@@ -363,7 +363,7 @@ function DoneStep({ orders, invoices }) {
             <div key={inv.id} className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground font-mono text-xs">{inv.invoiceNumber}</span>
               <div className="flex items-center gap-2">
-                <span className="font-semibold">{fmt(inv.amountDue, inv.currency)}</span>
+                <span className="font-semibold">{fmt(inv.totalAmount ?? inv.amountDue ?? 0, inv.currency)}</span>
                 <Badge className="bg-green-500 hover:bg-green-500 text-white text-[10px] h-4 px-1.5">PAID</Badge>
               </div>
             </div>

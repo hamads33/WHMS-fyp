@@ -20,6 +20,7 @@ const { validateContacts } = require("../../validators/domainContact.validator")
 const { createInvoice } = require("../../billing/billing.stub");
 const domainRepo = require("../repositories/domain.repo");
 const { toPennies } = require("../../utils/pennies");
+const hookRegistry = require("../../../../../core/plugin-system/hook.registry");
 
 
 /**
@@ -208,6 +209,17 @@ async function registerDomain({
   await logDomainAction(createdDomain.id, "domain_contacts_created", {
     count: contacts.length
   });
+
+  // Notify plugin hooks — fires asynchronously, never blocks registration
+  hookRegistry.trigger("domain.registered", {
+    domainId   : createdDomain.id,
+    domainName : createdDomain.name,
+    ownerId    : createdDomain.ownerId,
+    registrar,
+    years,
+    expiryDate : regResult.expiryDate,
+    isMock     : isMockRegistrar,
+  }).catch(() => {});
 
   if (isMockRegistrar) {
     return { ...createdDomain, isMock: true, warning: mockReason || "Domain registered with mock registrar — for testing only, not a real domain" };

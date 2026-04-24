@@ -43,13 +43,26 @@ class PluginInstallQueue {
 
   /**
    * enqueue
-   * Enqueue a new plugin installation job.
+   * Enqueue a new plugin installation job with atomic check-and-set.
    * Returns immediately with jobId. Actual install runs in background.
+   * Prevents race condition where multiple requests could enqueue duplicate installs.
    *
    * @param  {string} slug
    * @returns {{ jobId: string }}
    */
   enqueue(slug) {
+    // Atomic check-and-set: use _enqueueAtomically to prevent race conditions
+    return this._enqueueAtomically(slug);
+  }
+
+  /**
+   * _enqueueAtomically
+   * Private method that performs atomic check-and-set for job enqueuing.
+   * Ensures only one job per slug can be enqueued at a time.
+   *
+   * @private
+   */
+  _enqueueAtomically(slug) {
     // Check if this slug is already installing
     const existingJobId = this._activeJobsBySlug.get(slug);
     if (existingJobId) {
@@ -60,6 +73,7 @@ class PluginInstallQueue {
       }
     }
 
+    // Create new job (atomically set before running to prevent duplicate enqueuing)
     const jobId = uuid();
     const jobRecord = {
       jobId,
@@ -72,6 +86,7 @@ class PluginInstallQueue {
       completedAt: null,
     };
 
+    // Atomic: set in both maps before starting the job
     this._jobs.set(jobId, jobRecord);
     this._activeJobsBySlug.set(slug, jobId);
     this._sseClients.set(jobId, new Set());

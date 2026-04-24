@@ -14,43 +14,30 @@ import { backupApi } from "@/lib/api/backupClient";
 export function BackupScheduleHeatmap() {
   const [heatmapData, setHeatmapData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [weeks, setWeeks] = useState([]);
-
-  useEffect(() => {
-    backupApi("/analytics/schedule-heatmap?weeks=4")
-      .then((res) => {
-        const data = res.data?.data || generateDefaultHeatmap();
-        setHeatmapData(data);
-        setWeeks(generateWeeks(4));
-      })
-      .catch((err) => {
-        console.error("Failed to load schedule heatmap:", err);
-        setHeatmapData(generateDefaultHeatmap());
-        setWeeks(generateWeeks(4));
-      })
-      .finally(() => setLoading(false));
-  }, []);
 
   const generateDefaultHeatmap = () => {
     const data = [];
+    const today = new Date();
     for (let i = 0; i < 28; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() - i);
       data.push({
-        date: new Date(Date.now() - i * 86400000).toISOString().split("T")[0],
-        count: Math.floor(Math.random() * 5),
+        date: date.toISOString().split("T")[0],
+        count: i % 5,
       });
     }
     return data.sort((a, b) => new Date(a.date) - new Date(b.date));
   };
 
-  const generateWeeks = (count) => {
-    const weeks = [];
+  const generateWeeks = (count, data = heatmapData) => {
+    const generatedWeeks = [];
     for (let i = count - 1; i >= 0; i--) {
       const weekStart = new Date();
       weekStart.setDate(weekStart.getDate() - i * 7);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
 
-      weeks.push({
+      generatedWeeks.push({
         start: weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
         end: weekEnd.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
         days: [],
@@ -60,16 +47,29 @@ export function BackupScheduleHeatmap() {
         const date = new Date(weekStart);
         date.setDate(date.getDate() + j);
         const dateStr = date.toISOString().split("T")[0];
-        const data = heatmapData.find((d) => d.date === dateStr);
-        weeks[weeks.length - 1].days.push({
+        const dayData = data.find((d) => d.date === dateStr);
+        generatedWeeks[generatedWeeks.length - 1].days.push({
           date: dateStr,
           dayName: date.toLocaleDateString(undefined, { weekday: "short" }),
-          count: data?.count || 0,
+          count: dayData?.count || 0,
         });
       }
     }
-    return weeks;
+    return generatedWeeks;
   };
+
+  useEffect(() => {
+    backupApi("/analytics/schedule-heatmap?weeks=4")
+      .then((res) => {
+        const data = res.data?.data || generateDefaultHeatmap();
+        setHeatmapData(data);
+      })
+      .catch((err) => {
+        console.error("Failed to load schedule heatmap:", err);
+        setHeatmapData(generateDefaultHeatmap());
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -97,7 +97,7 @@ export function BackupScheduleHeatmap() {
     );
   }
 
-  const weeks_to_display = generateWeeks(4);
+  const weeks_to_display = generateWeeks(4, heatmapData);
 
   return (
     <Card className="rounded-2xl shadow-sm border border-muted/40 bg-white/70 dark:bg-zinc-900/60 backdrop-blur-sm h-full flex flex-col">

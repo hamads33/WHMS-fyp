@@ -27,11 +27,12 @@ import {
 } from "@/components/ui/table"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Users, UserCheck, UserX, ShieldAlert, RefreshCcw, Search,
   MoreHorizontal, Eye, UserMinus, UserPlus, LogOut, KeyRound,
   MonitorSmartphone, Building2, Phone, MapPin, Mail, AlertCircle,
-  CheckCircle2, Plus, Package, Radio,
+  CheckCircle2, Plus, Package, Radio, AlertTriangle,
 } from "lucide-react"
 import { StatusBadge } from "@/components/portal/status-badge"
 
@@ -75,6 +76,10 @@ export default function AdminClientsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [showEditProfile, setShowEditProfile] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
+  const [showImpersonate, setShowImpersonate] = useState(false)
+  const [impersonateTarget, setImpersonateTarget] = useState(null)
+  const [showConfirmLogout, setShowConfirmLogout] = useState(false)
+  const [logoutTarget, setLogoutTarget] = useState(null)
 
   const [actionLoading, setActionLoading] = useState(null)
 
@@ -128,12 +133,22 @@ export default function AdminClientsPage() {
       switch (action) {
         case "activate":   await ClientsAPI.activate(id); break
         case "deactivate": await ClientsAPI.deactivate(id, extra.reason); break
-        case "logout":     await ClientsAPI.forceLogout(id); break
+        case "logout": {
+          // Show logout confirmation dialog
+          const client = clients.find(c => c.id === id)
+          setLogoutTarget(client)
+          setShowConfirmLogout(true)
+          setActionLoading(null)
+          return
+        }
         case "reset":      await ClientsAPI.resetPassword(id); break
         case "impersonate": {
-          await ClientsAPI.impersonate(id, extra.reason)
-          window.location.href = "/client/dashboard"
-          break
+          // Show impersonate dialog to get reason
+          const client = clients.find(c => c.id === id)
+          setImpersonateTarget(client)
+          setShowImpersonate(true)
+          setActionLoading(null)
+          return
         }
       }
       flash(`Action "${action}" completed`)
@@ -330,6 +345,47 @@ export default function AdminClientsPage() {
           flash("Profile updated")
         }}
         onError={(msg) => setError(msg)}
+      />
+
+      {/* Impersonate Dialog */}
+      <ImpersonateDialog
+        open={showImpersonate}
+        client={impersonateTarget}
+        onClose={() => { setShowImpersonate(false); setImpersonateTarget(null) }}
+        onConfirm={async (reason) => {
+          try {
+            await ClientsAPI.impersonate(impersonateTarget.id, reason)
+            setShowImpersonate(false)
+            setImpersonateTarget(null)
+            // Redirect after successful impersonation
+            window.location.href = "/client/dashboard"
+          } catch (err) {
+            setError(err.message)
+          }
+        }}
+        onError={(msg) => setError(msg)}
+      />
+
+      {/* Confirm Logout Dialog */}
+      <ConfirmLogoutDialog
+        open={showConfirmLogout}
+        client={logoutTarget}
+        onClose={() => { setShowConfirmLogout(false); setLogoutTarget(null) }}
+        onConfirm={async () => {
+          try {
+            await ClientsAPI.forceLogout(logoutTarget.id)
+            setShowConfirmLogout(false)
+            setLogoutTarget(null)
+            flash("Client logged out successfully")
+            await loadData()
+            if (showDetail && detailClient?.id === logoutTarget.id) {
+              const updated = await ClientsAPI.get(logoutTarget.id)
+              setDetailClient(updated)
+            }
+          } catch (err) {
+            setError(err.message)
+          }
+        }}
       />
     </div>
   )
@@ -774,6 +830,178 @@ function EditProfileDialog({ open, client, onClose, onSaved, onError }) {
             <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save Changes"}</Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ============================================================
+// IMPERSONATE DIALOG
+// ============================================================
+
+function ImpersonateDialog({ open, client, onClose, onConfirm, onError }) {
+  const [reason, setReason] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (open) {
+      setReason("")
+      setError(null)
+    }
+  }, [open])
+
+  const handleConfirm = async () => {
+    if (!reason.trim()) {
+      setError("Please provide a reason for impersonation")
+      return
+    }
+
+    setLoading(true)
+    try {
+      await onConfirm(reason.trim())
+    } catch (err) {
+      setError(err.message || "Failed to impersonate client")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Confirm Impersonation</DialogTitle>
+          <DialogDescription>
+            You are about to impersonate <span className="font-semibold text-foreground">{client?.email}</span>. This action will be logged for security and audit purposes.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="w-4 h-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="impersonate-reason">
+              Reason for Impersonation <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="impersonate-reason"
+              placeholder="e.g., Troubleshooting billing issue, Customer support request, Account recovery assistance..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={4}
+              disabled={loading}
+              className="resize-none"
+            />
+            <p className="text-xs text-muted-foreground">
+              Provide a clear reason for audit trail purposes. This will be logged and monitored.
+            </p>
+          </div>
+
+          {client && (
+            <div className="bg-muted rounded-lg p-3 space-y-2 border border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase">CLIENT DETAILS</p>
+              <div className="space-y-1">
+                <p className="text-sm"><span className="text-muted-foreground">Email:</span> {client.email}</p>
+                {client.profile?.company && (
+                  <p className="text-sm"><span className="text-muted-foreground">Company:</span> {client.profile.company}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirm}
+            disabled={loading || !reason.trim()}
+          >
+            {loading ? "Impersonating…" : "Confirm Impersonation"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ============================================================
+// CONFIRM LOGOUT DIALOG
+// ============================================================
+
+function ConfirmLogoutDialog({ open, client, onClose, onConfirm }) {
+  const [loading, setLoading] = useState(false)
+
+  const handleConfirm = async () => {
+    setLoading(true)
+    try {
+      await onConfirm()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-destructive" />
+            Confirm Force Logout
+          </DialogTitle>
+          <DialogDescription>
+            This action will terminate all active sessions for <span className="font-semibold text-foreground">{client?.email}</span>.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          <Alert className="bg-destructive/10 border-destructive/20">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertDescription className="text-destructive font-medium">
+              The client will be immediately logged out from all devices. They will need to log in again to access their account.
+            </AlertDescription>
+          </Alert>
+
+          {client && (
+            <div className="bg-muted rounded-lg p-3 space-y-2 border border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase">CLIENT DETAILS</p>
+              <div className="space-y-1">
+                <p className="text-sm"><span className="text-muted-foreground">Email:</span> {client.email}</p>
+                {client.profile?.company && (
+                  <p className="text-sm"><span className="text-muted-foreground">Company:</span> {client.profile.company}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleConfirm}
+            disabled={loading}
+          >
+            {loading ? "Logging out…" : "Force Logout"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

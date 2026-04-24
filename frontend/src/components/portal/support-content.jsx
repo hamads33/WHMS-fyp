@@ -96,7 +96,7 @@ function NewTicketModal({ open, onClose, onCreated }) {
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">Open a Support Ticket</DialogTitle>
-          <DialogDescription className="text-xs">We'll get back to you as soon as possible.</DialogDescription>
+          <DialogDescription className="text-xs">We&apos;ll get back to you as soon as possible.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4 mt-1">
           <div className="space-y-1.5">
@@ -202,7 +202,12 @@ export function SupportContent() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void load()
+    }, 0)
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   const filtered = tickets.filter(t => {
     if (filter === 'open') return t.status !== 'closed'

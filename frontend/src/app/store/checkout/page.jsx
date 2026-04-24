@@ -1,4 +1,6 @@
 import { Suspense } from 'react'
+
+export const dynamic = 'force-dynamic'
 import { StoreCheckout } from './store-checkout'
 import { Loader2 } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'

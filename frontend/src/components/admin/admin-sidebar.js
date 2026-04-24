@@ -34,6 +34,28 @@ import { PluginSidebarSection } from "@/components/plugins/PluginSidebarSection"
 
 const COLLAPSE_KEY = "whms-sidebar-collapsed";
 
+// Module-level cache so the manifest is fetched once per browser session
+// and shared across all sidebar instances during navigation.
+let _pluginManifestCache = null;
+let _pluginManifestPromise = null;
+
+function getPluginManifest() {
+  if (_pluginManifestCache) return Promise.resolve(_pluginManifestCache);
+  if (_pluginManifestPromise) return _pluginManifestPromise;
+  _pluginManifestPromise = MarketplaceAPI.getPluginUiManifest()
+    .then(res => {
+      _pluginManifestCache = (res?.data ?? [])
+        .filter(e => e.pages?.length > 0)
+        .map(e => ({ plugin: e.plugin, name: e.displayName ?? e.plugin, pages: e.pages }));
+      return _pluginManifestCache;
+    })
+    .catch(() => {
+      _pluginManifestPromise = null;
+      return [];
+    });
+  return _pluginManifestPromise;
+}
+
 const NAV_GROUPS = [
   {
     label: null,
@@ -143,7 +165,9 @@ function CollapsibleNavItem({ item, pathname, collapsed }) {
   const [open, setOpen] = useState(isAnyChildActive);
 
   useEffect(() => {
-    if (isAnyChildActive) setOpen(true);
+    if (!isAnyChildActive) return undefined;
+    const frame = requestAnimationFrame(() => setOpen(true));
+    return () => cancelAnimationFrame(frame);
   }, [isAnyChildActive]);
 
   if (collapsed) {
@@ -236,17 +260,18 @@ function CollapsibleNavItem({ item, pathname, collapsed }) {
 
 export function AdminSidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const saved = localStorage.getItem(COLLAPSE_KEY);
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
   const [pluginPages, setPluginPages] = useState([]);
   const perms = usePermissions();
   const { user, logout, isSuperAdmin } = useAuth();
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(COLLAPSE_KEY);
-      if (saved !== null) setCollapsed(JSON.parse(saved));
-    } catch {}
-  }, []);
 
   function toggleCollapsed() {
     setCollapsed(prev => {
@@ -257,14 +282,7 @@ export function AdminSidebar() {
   }
 
   useEffect(() => {
-    MarketplaceAPI.getPluginUiManifest()
-      .then(res => {
-        const entries = (res?.data ?? [])
-          .filter(e => e.pages?.length > 0)
-          .map(e => ({ plugin: e.plugin, name: e.displayName ?? e.plugin, pages: e.pages }));
-        setPluginPages(entries);
-      })
-      .catch(() => {});
+    getPluginManifest().then(setPluginPages);
   }, []);
 
   const roleLabel  = isSuperAdmin ? "Superadmin" : "Admin";

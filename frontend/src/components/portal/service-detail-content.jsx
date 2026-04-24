@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select'
 import { ClientServicesAPI } from '@/lib/api/services'
 import { useCart } from '@/lib/context/CartContext'
+import { v4 as uuidv4 } from 'uuid'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,10 @@ function fmt(amount, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency', currency, minimumFractionDigits: 2,
   }).format(amount ?? 0)
+}
+
+function createCartItemId(prefix) {
+  return `${prefix}-${uuidv4().slice(0, 8)}`
 }
 
 // ── Plan Card ─────────────────────────────────────────────────────────────────
@@ -40,7 +45,7 @@ function PlanCard({ plan, service, isPopular }) {
   function handleAddToCart() {
     if (!pricing) return
     addItem({
-      id:              `${pricingId}-${Date.now()}`,
+      id:              createCartItemId(pricingId),
       serviceId:       service.id,
       serviceName:     service.name,
       planId:          plan.id,

@@ -38,22 +38,23 @@ export const AuthAPI = {
     });
   },
 
-  async refresh() {
+  async refresh(options = {}) {
     return await apiFetch("/auth/refresh", {
       method: "POST",
+      ...options,
     });
   },
 
-  async me() {
-    return await apiFetch("/auth/me");
+  async me(options = {}) {
+    return await apiFetch("/auth/me", options);
   },
 
   // ===================================
   // SESSION MANAGEMENT
   // ===================================
   
-  async getSession() {
-    return await apiFetch("/auth/sessions/current");
+  async getSession(options = {}) {
+    return await apiFetch("/auth/sessions/current", options);
   },
 
   async listSessions() {

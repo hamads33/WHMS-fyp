@@ -68,9 +68,7 @@ class ProvisioningService {
 
     const existing = await prisma.hostingAccount.findFirst({ where: { orderId } });
     if (existing) {
-      const err = new Error('Account already provisioned for this order');
-      err.statusCode = 409;
-      throw err;
+      return existing;
     }
 
     const driver = await this._getDriver();
@@ -79,7 +77,7 @@ class ProvisioningService {
 
     if (!driver) {
       console.warn(`[PROVISIONING] No CyberPanel configured — order ${orderId} marked manual`);
-      return prisma.hostingAccount.create({
+      const account = await prisma.hostingAccount.create({
         data: {
           orderId,
           clientId: order.clientId,
@@ -89,6 +87,11 @@ class ProvisioningService {
           status: 'pending',
         },
       });
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { provisioningStatus: 'pending_manual', provisioningError: null },
+      }).catch(() => {});
+      return account;
     }
 
     try {
@@ -106,7 +109,7 @@ class ProvisioningService {
 
       await prisma.order.update({
         where: { id: orderId },
-        data: { provisioningStatus: 'pending' },
+        data: { provisioningStatus: 'provisioned', provisioningError: null },
       });
 
       console.log(`[PROVISIONING] Account record created: ${username} for order ${orderId}`);
@@ -163,6 +166,10 @@ class ProvisioningService {
       where: { id: account.id },
       data: { status: 'active' },
     });
+    await prisma.order.update({
+      where: { id: account.orderId },
+      data: { provisioningStatus: 'provisioned', provisioningError: null },
+    }).catch(() => {});
 
     // Attempt SSL immediately; if it fails it can be retried separately
     try {
@@ -244,10 +251,15 @@ class ProvisioningService {
       }
     }
 
-    return prisma.hostingAccount.update({
+    const updated = await prisma.hostingAccount.update({
       where: { id: account.id },
       data: { status: 'suspended', suspendedAt: new Date(), suspendReason: reason },
     });
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'suspended', suspendedAt: new Date() },
+    }).catch(() => {});
+    return updated;
   }
 
   /**
@@ -278,10 +290,15 @@ class ProvisioningService {
       }
     }
 
-    return prisma.hostingAccount.update({
+    const updated = await prisma.hostingAccount.update({
       where: { id: account.id },
       data: { status: 'active', suspendedAt: null, suspendReason: null },
     });
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'active', suspendedAt: null },
+    }).catch(() => {});
+    return updated;
   }
 
   /**

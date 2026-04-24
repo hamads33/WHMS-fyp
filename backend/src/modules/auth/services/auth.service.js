@@ -286,23 +286,15 @@ const AuthService = {
     return { requiresMFA: true, userId: user.id };
   }
 
-  // ------------------------------------------------------
-  // 3) Reload fresh flags (emailVerified, disabled, etc.)
-  // ------------------------------------------------------
-  const fresh = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { emailVerified: true },
-  });
-
-  user.emailVerified = Boolean(fresh?.emailVerified);
+  user.emailVerified = Boolean(user.emailVerified);
 
   // ------------------------------------------------------
-  // 4) Ensure portal profiles (self-healing)
+  // 3) Ensure portal profiles (self-healing)
   // ------------------------------------------------------
   await Promise.all(this._ensurePortalProfiles(user));
 
   // ------------------------------------------------------
-  // 5) Generate tokens
+  // 4) Generate tokens
   // ------------------------------------------------------
   const accessToken = TokenService.signAccessToken({
     userId: user.id,
@@ -313,7 +305,7 @@ const AuthService = {
   });
 
   // ------------------------------------------------------
-  // 6) Device fingerprint + Geo-IP (SAFE & PRIVACY-AWARE)
+  // 5) Device fingerprint + Geo-IP (SAFE & PRIVACY-AWARE)
   // ------------------------------------------------------
   const country = resolveCountry(normalizedIp);
 
@@ -323,7 +315,7 @@ const AuthService = {
   });
 
   // ------------------------------------------------------
-  // 7) Detect new device
+  // 6) Detect new device
   // ------------------------------------------------------
   let isNewDevice = false;
 
@@ -340,7 +332,7 @@ const AuthService = {
   }
 
   // ------------------------------------------------------
-  // 8) Remove existing session for SAME DEVICE only
+  // 7) Remove existing session for SAME DEVICE only
   // (prevents duplicates without killing other sessions)
   // ------------------------------------------------------
   if (deviceHash) {
@@ -353,7 +345,7 @@ const AuthService = {
   }
 
   // ------------------------------------------------------
-  // 9) Create session (authoritative source of truth)
+  // 8) Create session (authoritative source of truth)
   // ------------------------------------------------------
   const session = await prisma.session.create({
     data: {
@@ -367,10 +359,8 @@ const AuthService = {
       lastActivity: new Date(),
     },
   });
-  console.log("[AUTH.SERVICE] Session created. ID:", session.id, "UserId:", session.userId);
-
   // ------------------------------------------------------
-  // 10) Log success
+  // 9) Log success
   // ------------------------------------------------------
   await this.logLoginAttempt(
     user.id,
@@ -392,7 +382,7 @@ const AuthService = {
   } catch {}
 
   // ------------------------------------------------------
-  // 11) New device security alert (NON-BLOCKING)
+  // 10) New device security alert (NON-BLOCKING)
   // ------------------------------------------------------
   if (isNewDevice) {
     await AuditService.log({
@@ -420,17 +410,41 @@ const AuthService = {
   }
 
   // ------------------------------------------------------
-  // 12) Return response (unchanged contract)
+  // 11) Return response
   // ------------------------------------------------------
+  const roles = (user.roles || [])
+    .map((r) => r.role && r.role.name)
+    .filter(Boolean);
+
+  const permissionSet = new Set();
+  for (const roleAssignment of user.roles || []) {
+    for (const permission of roleAssignment.role?.permissions || []) {
+      if (permission.permission?.key) permissionSet.add(permission.permission.key);
+    }
+  }
+
+  const portals = [];
+  if (roles.some((r) => ["superadmin", "admin", "staff"].includes(r))) portals.push("admin");
+  if (roles.includes("client")) portals.push("client");
+  if (roles.includes("reseller")) portals.push("reseller");
+  if (roles.includes("developer")) portals.push("developer");
+
+  const portal =
+    portals.includes("admin") ? "admin" :
+    portals.includes("reseller") ? "reseller" :
+    portals.includes("developer") ? "developer" :
+    "client";
+
   return {
     user: {
       id: user.id,
       email: user.email,
       emailVerified: user.emailVerified,
-      roles: (user.roles || [])
-        .map((r) => r.role && r.role.name)
-        .filter(Boolean),
+      roles,
+      permissions: [...permissionSet],
+      portals,
     },
+    portal,
     accessToken,
     refreshToken,
   };

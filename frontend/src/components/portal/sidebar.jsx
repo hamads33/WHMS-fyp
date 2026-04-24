@@ -19,6 +19,7 @@ import { useAuth } from '@/lib/context/AuthContext'
 
 const navItems = [
   { href: '/client/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/client/hosting',   label: 'Hosting',   icon: Server },
   { href: '/client/services',  label: 'Services',  icon: Server },
   { href: '/client/orders',    label: 'My Orders', icon: ShoppingBag },
   { href: '/client/domains',   label: 'Domains',   icon: Globe },

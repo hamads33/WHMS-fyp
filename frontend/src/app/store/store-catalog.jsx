@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import { v4 as uuidv4 } from 'uuid'
 import {
   ShoppingCart, Check, Plus, Zap, Star, Package,
   Search, SlidersHorizontal, ChevronRight, Shield, Clock, RefreshCcw,
@@ -21,6 +22,10 @@ import { useStoreCart } from '@/lib/context/StoreCartContext'
 
 function fmt(amount, currency = 'USD') {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(amount ?? 0)
+}
+
+function createCartItemId(prefix) {
+  return `${prefix}-${uuidv4().slice(0, 8)}`
 }
 
 function cycleGroup(cycle = '') {
@@ -50,7 +55,9 @@ function PlanCard({ plan, service, isPopular, billingPeriod, checkoutHref }) {
 
   useEffect(() => {
     const match = plan.pricing?.find(p => cycleGroup(p.billingCycle) === billingPeriod)
-    if (match) setPricingId(match.id)
+    if (!match) return undefined
+    const timeoutId = setTimeout(() => setPricingId(match.id), 0)
+    return () => clearTimeout(timeoutId)
   }, [billingPeriod, plan.pricing])
 
   const pricing  = plan.pricing?.find(p => p.id === pricingId)
@@ -62,7 +69,7 @@ function PlanCard({ plan, service, isPopular, billingPeriod, checkoutHref }) {
   function handleAdd() {
     if (!pricing) return
     addItem({
-      id:          `${pricingId}-${Date.now()}`,
+      id:          createCartItemId(pricingId),
       serviceId:   service.id,
       serviceName: service.name,
       planId:      plan.id,
@@ -274,7 +281,7 @@ export function StoreCatalog() {
           {filterService ? 'Choose your plan' : 'Find the perfect plan'}
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-sm sm:text-base">
-          All plans include instant activation, 24/7 support, and a full refund if you're not satisfied within 30 days.
+          All plans include instant activation, 24/7 support, and a full refund if you are not satisfied within 30 days.
         </p>
 
         {/* Trust badges */}

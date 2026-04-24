@@ -216,12 +216,23 @@ function DetailPanel({ ticket: initial, onBack, onRefresh }) {
   const [actionLoading, setActionLoading] = useState(null)
 
   useEffect(() => {
-    setLoadingTicket(true)
-    AdminSupportAPI.getTicket(initial.id)
-      .then(res => setTicket(res?.ticket ?? res?.data ?? res))
-      .catch(() => setTicket(initial))
-      .finally(() => setLoadingTicket(false))
-  }, [initial.id])
+    let active = true
+
+    async function loadTicket() {
+      setLoadingTicket(true)
+      try {
+        const res = await AdminSupportAPI.getTicket(initial.id)
+        if (active) setTicket(res?.ticket ?? res?.data ?? res)
+      } catch {
+        if (active) setTicket(initial)
+      } finally {
+        if (active) setLoadingTicket(false)
+      }
+    }
+
+    void loadTicket()
+    return () => { active = false }
+  }, [initial, initial.id])
 
   const isClosed = ticket.status === "closed"
   const allReplies = ticket.replies ?? []

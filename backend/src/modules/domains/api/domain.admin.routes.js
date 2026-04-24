@@ -6,6 +6,7 @@ const router = express.Router();
 router.get("/settings", controller.getSettings);
 router.put("/settings", controller.updateSettings);
 router.post("/settings/test", controller.testSettings);
+router.post("/sync-all", controller.syncAllDomains);
 
 router.get("/stats", controller.getStats);
 router.get("/whois", controller.getWhois);

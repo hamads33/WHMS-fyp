@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -21,7 +21,7 @@ import { Loader2, Shield } from "lucide-react";
 import { AuthAPI } from "@/lib/api/auth";
 import { useAuth } from "@/lib/context/AuthContext";
 
-export default function MFAVerificationPage() {
+function MFAVerificationPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { loadSession } = useAuth();
@@ -218,5 +218,13 @@ export default function MFAVerificationPage() {
         </form>
       </Card>
     </div>
+  );
+}
+
+export default function MFAVerificationPage() {
+  return (
+    <Suspense fallback={null}>
+      <MFAVerificationPageContent />
+    </Suspense>
   );
 }

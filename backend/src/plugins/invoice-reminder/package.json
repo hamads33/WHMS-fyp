@@ -1,9 +1,0 @@
-{
-  "name": "invoice-reminder",
-  "version": "1.2.0",
-  "description": "Tracks overdue invoices and sends reminders via cron",
-  "main": "plugin.js",
-  "plugin": {
-    "dependencies": {}
-  }
-}

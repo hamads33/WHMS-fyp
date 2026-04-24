@@ -1,6 +1,0 @@
-{
-  "name": "analytics-widget",
-  "version": "1.0.0",
-  "description": "Live system event tracker with an embeddable admin dashboard UI",
-  "main": "plugin.js"
-}

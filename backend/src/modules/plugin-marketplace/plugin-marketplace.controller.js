@@ -5,7 +5,11 @@
  * No business logic lives here.
  */
 
-const { validateCreatePlugin, validateSubmitVersion } = require("./plugin-marketplace.validation");
+const {
+  validateCreatePlugin,
+  validateSubmitVersion,
+  validateUpdatePlugin,
+} = require("./plugin-marketplace.validation");
 const pluginStats = require("./plugin-stats.service");
 
 class PluginMarketplaceController {
@@ -30,6 +34,8 @@ class PluginMarketplaceController {
     this.uploadPluginZip         = this.uploadPluginZip.bind(this);
     this.listMarketplacePlugins  = this.listMarketplacePlugins.bind(this);
     this.listDeveloperPlugins    = this.listDeveloperPlugins.bind(this);
+    this.getDeveloperPlugin      = this.getDeveloperPlugin.bind(this);
+    this.updateDeveloperPlugin   = this.updateDeveloperPlugin.bind(this);
     this.getPluginBySlug         = this.getPluginBySlug.bind(this);
     this.approvePlugin           = this.approvePlugin.bind(this);
     this.rejectPlugin            = this.rejectPlugin.bind(this);
@@ -71,7 +77,11 @@ class PluginMarketplaceController {
 
     try {
       const plugin = await this.marketplace.createPlugin({
-        ...req.body,
+        ...validation.normalized,
+        pricingType: req.body.pricingType,
+        price: req.body.price,
+        currency: req.body.currency,
+        interval: req.body.interval,
         ownerId: req.user?.id || null,
       });
       return res.status(201).json({ success: true, data: plugin });
@@ -94,6 +104,46 @@ class PluginMarketplaceController {
   }
 
   /**
+   * GET /api/developer/plugins/:id
+   */
+  async getDeveloperPlugin(req, res) {
+    try {
+      const plugin = await this.marketplace.getPluginById(req.params.id);
+      const ownedPlugins = await this.marketplace.listPluginsByOwner(req.user.id);
+      const isOwner = ownedPlugins.some((entry) => entry.id === plugin.id);
+
+      if (!isOwner) {
+        return res.status(403).json({ success: false, message: "Unauthorized — you do not own this plugin" });
+      }
+
+      return res.json({ success: true, data: plugin });
+    } catch (err) {
+      return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+    }
+  }
+
+  /**
+   * PATCH /api/developer/plugins/:id
+   */
+  async updateDeveloperPlugin(req, res) {
+    const validation = validateUpdatePlugin(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, errors: validation.errors });
+    }
+
+    try {
+      const plugin = await this.marketplace.updatePluginMetadata(
+        req.params.id,
+        validation.normalized,
+        { ownerId: req.user.id }
+      );
+      return res.json({ success: true, data: plugin });
+    } catch (err) {
+      return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+    }
+  }
+
+  /**
    * POST /api/marketplace/plugins/:id/version
    */
   async submitPluginVersion(req, res) {
@@ -103,7 +153,10 @@ class PluginMarketplaceController {
     }
 
     try {
-      const version = await this.marketplace.submitPluginVersion(req.params.id, req.body);
+      const version = await this.marketplace.submitPluginVersion(req.params.id, {
+        ...req.body,
+        ownerId: req.user.id,
+      });
       return res.status(201).json({ success: true, data: version });
     } catch (err) {
       return res.status(err.statusCode || 500).json({ success: false, message: err.message });
@@ -115,7 +168,13 @@ class PluginMarketplaceController {
    */
   async listMarketplacePlugins(req, res) {
     try {
-      const plugins = await this.marketplace.listMarketplacePlugins();
+      const plugins = await this.marketplace.listMarketplacePlugins({
+        search: req.query.search,
+        category: req.query.category,
+        pricingType: req.query.pricingType,
+        minRating: req.query.minRating,
+        capability: req.query.capability,
+      });
       return res.json({ success: true, data: plugins });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
@@ -354,7 +413,7 @@ class PluginMarketplaceController {
       const { id } = req.params;
       const iconUrl = `/uploads/plugin-assets/${req.file.filename}`;
 
-      const plugin = await this.marketplace.updatePluginAssets(id, { iconUrl });
+      const plugin = await this.marketplace.updatePluginAssets(id, { iconUrl, ownerId: req.user.id });
       return res.status(200).json({ success: true, data: plugin, iconUrl });
     } catch (err) {
       return res.status(err.statusCode || 500).json({ success: false, message: err.message });
@@ -374,7 +433,7 @@ class PluginMarketplaceController {
       const { id } = req.params;
       const screenshots = req.files.map((file) => `/uploads/plugin-assets/${file.filename}`);
 
-      const plugin = await this.marketplace.updatePluginAssets(id, { screenshots });
+      const plugin = await this.marketplace.updatePluginAssets(id, { screenshots, ownerId: req.user.id });
       return res.status(200).json({ success: true, data: plugin, screenshots });
     } catch (err) {
       return res.status(err.statusCode || 500).json({ success: false, message: err.message });
@@ -404,6 +463,7 @@ class PluginMarketplaceController {
         price: pricingType === "free" ? 0 : price,
         currency,
         interval: pricingType === "subscription" ? interval : null,
+        ownerId: req.user.id,
       });
 
       return res.json({ success: true, data: plugin });
@@ -465,7 +525,9 @@ class PluginMarketplaceController {
 
       // Get plugin and verify ownership
       const plugin = await this.marketplace.getPluginById(id);
-      if (plugin.devId !== userId) {
+      const ownedPlugins = await this.marketplace.listPluginsByOwner(userId);
+      const isOwner = ownedPlugins.some((entry) => entry.id === plugin.id);
+      if (!isOwner) {
         return res.status(403).json({ success: false, message: "Unauthorized — you do not own this plugin" });
       }
 

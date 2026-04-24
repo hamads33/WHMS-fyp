@@ -109,6 +109,41 @@ export const EVENTS_REGISTRY = {
     ],
   },
 
+  domains: {
+    label: "Domains",
+    icon: "Globe",
+    color: "indigo",
+    events: [
+      { type: "domain.synced",          label: "Domain Synced",          description: "Registrar data was synced into WHMS",                 payload: { domainId: "number", domain: "string", registrar: "string", changes: "object" } },
+      { type: "domain.expiry_changed",  label: "Domain Expiry Changed",  description: "A domain expiry date changed during sync",            payload: { domainId: "number", domain: "string", previousExpiryDate: "string", newExpiryDate: "string" } },
+      { type: "domain.status_changed",  label: "Domain Status Changed",  description: "A domain status changed during sync",                 payload: { domainId: "number", domain: "string", previousStatus: "string", newStatus: "string" } },
+      { type: "domain.sync_failed",     label: "Domain Sync Failed",     description: "Registrar sync failed for a domain",                  payload: { domainId: "number", domain: "string", registrar: "string", error: "string" } },
+    ],
+  },
+
+  websites: {
+    label: "Websites",
+    icon: "LayoutTemplate",
+    color: "pink",
+    events: [
+      { type: "website.created",              label: "Website Requested",            description: "A website provisioning request was created",  payload: { websiteId: "number", domain: "string", status: "string", userId: "string" } },
+      { type: "website.provisioned",          label: "Website Provisioned",          description: "Website provisioning succeeded",               payload: { websiteId: "number", domain: "string", status: "string", userId: "string" } },
+      { type: "website.provisioning_failed",  label: "Website Provisioning Failed",  description: "Website provisioning failed",                  payload: { websiteId: "number", domain: "string", status: "string", userId: "string", error: "string" } },
+    ],
+  },
+
+  infrastructure: {
+    label: "Infrastructure",
+    icon: "ServerCog",
+    color: "slate",
+    events: [
+      { type: "server.created",         label: "Server Created",         description: "A new infrastructure node was added",            payload: { serverId: "number", name: "string", type: "string", status: "string" } },
+      { type: "server.status_changed",  label: "Server Status Changed",  description: "Server state changed",                           payload: { serverId: "number", name: "string", previousStatus: "string", newStatus: "string", error: "string" } },
+      { type: "server.recovered",       label: "Server Recovered",       description: "An offline server recovered",                    payload: { serverId: "number", name: "string", previousStatus: "string", newStatus: "string" } },
+      { type: "server.high_cpu",        label: "Server High CPU",        description: "A monitored server crossed the CPU threshold",  payload: { serverId: "number", name: "string", cpuUsage: "number", threshold: "number" } },
+    ],
+  },
+
   clients: {
     label: "Clients",
     icon: "Users",

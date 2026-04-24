@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { PluginCard } from "@/components/marketplace/PluginCard";
 import { StarRating } from "@/components/marketplace/StarRating";
 import { CapabilityBadges } from "@/components/plugins/PluginCapabilityBadges";
@@ -139,7 +140,7 @@ const SORT_OPTIONS = [
   { value: "name",    label: "Name A–Z" },
 ];
 
-export default function AdminPluginsMarketplacePage() {
+function AdminPluginsMarketplacePage() {
   const [plugins, setPlugins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -318,5 +319,13 @@ export default function AdminPluginsMarketplacePage() {
         onClose={() => { setInstalling(null); loadPlugins(); }}
       />
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <ErrorBoundary>
+      <AdminPluginsMarketplacePage />
+    </ErrorBoundary>
   );
 }

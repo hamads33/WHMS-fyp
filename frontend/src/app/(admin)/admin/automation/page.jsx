@@ -20,6 +20,9 @@ import {
   Clock,
   Timer,
   RotateCcw,
+  Globe,
+  Server,
+  HardDrive,
 } from "lucide-react"
 import { AutomationAPI } from "@/lib/api/automation"
 import { ConfirmDialog } from "@/components/automation/confirm-dialog"
@@ -194,7 +197,8 @@ function StatCard({ label, value, icon: Icon, iconClass }) {
 
 export default function AutomationPage() {
   const [profiles, setProfiles] = useState([])
-  
+  const [templates, setTemplates] = useState([])
+  const [installingTemplateId, setInstallingTemplateId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -207,9 +211,13 @@ export default function AutomationPage() {
       setError(null)
 
       try {
-        const profilesRes = await AutomationAPI.listProfiles()
+        const [profilesRes, templatesRes] = await Promise.all([
+          AutomationAPI.listProfiles(),
+          AutomationAPI.listProfileTemplates().catch(() => ({ data: [] })),
+        ])
         if (!active) return
         setProfiles(normalizeProfiles(profilesRes?.data ?? []))
+        setTemplates(templatesRes?.data ?? [])
       } catch {
         if (active) setError("Failed to load automations")
       } finally {
@@ -254,6 +262,19 @@ export default function AutomationPage() {
       await AutomationAPI.runProfile(id)
     } catch (err) {
       console.error("Failed to run profile:", err)
+    }
+  }
+
+  const handleInstallTemplate = async (templateId) => {
+    try {
+      setInstallingTemplateId(templateId)
+      await AutomationAPI.installProfileTemplate(templateId)
+      const res = await AutomationAPI.listProfiles()
+      setProfiles(normalizeProfiles(res?.data ?? []))
+    } catch (err) {
+      console.error("Failed to install profile template:", err)
+    } finally {
+      setInstallingTemplateId(null)
     }
   }
 
@@ -351,6 +372,51 @@ export default function AutomationPage() {
             </Link>
           </CardContent>
         </Card>
+
+        {templates.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-end justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Starter Cron Automations</h2>
+                <p className="text-sm text-muted-foreground">
+                  Install real scheduled jobs for domains, backups, and infrastructure monitoring.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {templates.map((template) => {
+                const iconMap = {
+                  Globe,
+                  Server,
+                  HardDrive,
+                }
+                const Icon = iconMap[template.icon] || Zap
+                return (
+                  <Card key={template.id} className="border-border/70">
+                    <CardContent className="pt-6">
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                          <Icon className="w-5 h-5 text-foreground" />
+                        </div>
+                        <Badge variant="outline">{template.cron}</Badge>
+                      </div>
+                      <h3 className="font-semibold mb-1">{template.name}</h3>
+                      <p className="text-sm text-muted-foreground mb-4">{template.description}</p>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        disabled={installingTemplateId === template.id}
+                        onClick={() => handleInstallTemplate(template.id)}
+                      >
+                        {installingTemplateId === template.id ? "Installing..." : "Install Profile"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Stats Row */}
         <div className="flex gap-4 mb-8">

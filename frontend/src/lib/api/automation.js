@@ -251,6 +251,26 @@ export const AutomationAPI = {
     });
   },
 
+  listProfileTemplates() {
+    return apiFetch(`${BASE}/profile-templates`);
+  },
+
+  getProfileTemplate(templateId) {
+    if (!templateId) {
+      throw new Error("templateId is required");
+    }
+    return apiFetch(`${BASE}/profile-templates/${templateId}`);
+  },
+
+  installProfileTemplate(templateId) {
+    if (!templateId) {
+      throw new Error("templateId is required");
+    }
+    return apiFetch(`${BASE}/profile-templates/${templateId}/install`, {
+      method: "POST",
+    });
+  },
+
   /* =====================================================
      WORKFLOWS (Event-Driven)
   ===================================================== */

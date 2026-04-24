@@ -365,7 +365,9 @@ export default function DashboardPage() {
       .finally(() => { setLoadingD(false); if (isRefresh) setRefreshing(false); });
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const greeting = (() => {
     const h = new Date().getHours();

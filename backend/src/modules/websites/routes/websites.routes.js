@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../../../../prisma");
 const { runSSH } = require("../../../lib/ssh");
+const { emitAutomationEvent } = require("../../automation/lib/runtime-events");
 
 const router = express.Router();
 
@@ -48,6 +49,18 @@ router.post("/create", async (req, res) => {
       },
     });
 
+    await emitAutomationEvent(
+      req,
+      "website.created",
+      {
+        websiteId: website.id,
+        domain: website.domain,
+        status: website.status,
+        userId: website.userId,
+      },
+      { source: "websites" }
+    );
+
     const command = `cyberpanel createWebsite --domain ${shellEscape(
       domain
     )} --email ${shellEscape(email)}`;
@@ -60,6 +73,18 @@ router.post("/create", async (req, res) => {
         data: { status: "active" },
       });
 
+      await emitAutomationEvent(
+        req,
+        "website.provisioned",
+        {
+          websiteId: activeWebsite.id,
+          domain: activeWebsite.domain,
+          status: activeWebsite.status,
+          userId: activeWebsite.userId,
+        },
+        { source: "websites" }
+      );
+
       return res.status(200).json({
         success: true,
         website: activeWebsite,
@@ -70,6 +95,19 @@ router.post("/create", async (req, res) => {
         where: { id: website.id },
         data: { status: "failed" },
       });
+
+      await emitAutomationEvent(
+        req,
+        "website.provisioning_failed",
+        {
+          websiteId: failedWebsite.id,
+          domain: failedWebsite.domain,
+          status: failedWebsite.status,
+          userId: failedWebsite.userId,
+          error: sshError.message,
+        },
+        { source: "websites" }
+      );
 
       return res.status(500).json({
         success: false,

@@ -16,6 +16,16 @@ const {
   getJobStatus,
 } = require("../queues/provisioning.queue");
 
+async function getOwnedAccountOrThrow(req, username) {
+  const account = await provisioningService.getAccountByUsername(username);
+  if (account.clientId !== req.user?.id) {
+    const err = new Error("Hosting account not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  return account;
+}
+
 /**
  * Get hosting account for order
  * GET /api/client/provisioning/accounts/:orderId
@@ -25,6 +35,9 @@ exports.getAccountByOrder = async (req, res) => {
     const account = await provisioningService.getAccountByOrderId(
       req.params.orderId
     );
+    if (account.clientId !== req.user?.id) {
+      return res.status(404).json({ error: "Hosting account not found" });
+    }
     res.json(account);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
@@ -37,9 +50,9 @@ exports.getAccountByOrder = async (req, res) => {
  */
 exports.getAccount = async (req, res) => {
   try {
-    const account = await provisioningService.getAccountByUsername(
-      req.params.username
-    );
+    const account = req.originalUrl?.includes("/api/admin/")
+      ? await provisioningService.getAccountByUsername(req.params.username)
+      : await getOwnedAccountOrThrow(req, req.params.username);
     res.json(account);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
@@ -65,6 +78,7 @@ exports.listClientAccounts = async (req, res) => {
  */
 exports.provisionDomain = async (req, res) => {
   try {
+    await getOwnedAccountOrThrow(req, req.params.username);
     const domain = await provisioningService.provisionDomain(
       req.params.username,
       req.body
@@ -81,6 +95,7 @@ exports.provisionDomain = async (req, res) => {
  */
 exports.provisionEmail = async (req, res) => {
   try {
+    await getOwnedAccountOrThrow(req, req.params.username);
     const email = await provisioningService.provisionEmail(
       req.params.username,
       req.body.domain,
@@ -98,9 +113,9 @@ exports.provisionEmail = async (req, res) => {
  */
 exports.getAccountStats = async (req, res) => {
   try {
-    const account = await provisioningService.getAccountByUsername(
-      req.params.username
-    );
+    const account = req.originalUrl?.includes("/api/admin/")
+      ? await provisioningService.getAccountByUsername(req.params.username)
+      : await getOwnedAccountOrThrow(req, req.params.username);
 
     // Return stored stats from DB
     res.json({
@@ -110,6 +125,40 @@ exports.getAccountStats = async (req, res) => {
       status: account.status,
       createdAt: account.provisionedAt,
     });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+exports.issueSSLClient = async (req, res) => {
+  try {
+    await getOwnedAccountOrThrow(req, req.params.username);
+    const result = await provisioningService.issueSSL(req.params.username, req.body.domain);
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+exports.createDatabaseClient = async (req, res) => {
+  try {
+    await getOwnedAccountOrThrow(req, req.params.username);
+    const result = await provisioningService.provisionDatabase(
+      req.params.username,
+      req.body.domain,
+      req.body
+    );
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+};
+
+exports.syncOwnedAccountStats = async (req, res) => {
+  try {
+    await getOwnedAccountOrThrow(req, req.params.username);
+    const stats = await provisioningService.syncAccountStats(req.params.username);
+    res.json({ message: "Stats synced", stats });
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
   }

@@ -27,6 +27,7 @@ const notifyActions  = require('./notify.action');
 const userActions    = require('./user.action');
 const dataActions    = require('./data.action');
 const flowActions    = require('./flow.action');
+const opsActions     = require('./ops.action');
 
 // ----------------------------------------------------------------
 // Build the map
@@ -49,6 +50,7 @@ for (const action of [
   ...userActions,
   ...dataActions,
   ...flowActions,
+  ...opsActions,
 ]) {
   if (!action.actionType) {
     console.warn('[builtin/index] Action missing actionType:', action.name);

@@ -626,6 +626,83 @@ const controller = {
       },
     });
   }),
+
+  syncAllDomains: withRegistrarErrors(async (req, res) => {
+    const { registrar = "porkbun" } = req.query;
+
+    const driver = loadRegistrar(registrar);
+
+    if (typeof driver.listDomains !== "function") {
+      throw new Error(`Registrar ${registrar} does not support listing domains`);
+    }
+
+    const result = await driver.listDomains();
+    const apiDomains = result.domains || [];
+
+    const firstUser = await prisma.user.findFirst();
+    if (!firstUser) {
+      throw new Error("No users found in database to assign domain ownership");
+    }
+
+    const synced = [];
+    const failed = [];
+
+    for (const apiDomain of apiDomains) {
+      try {
+        const existing = await prisma.domain.findUnique({
+          where: { name: apiDomain.domain }
+        });
+
+        if (existing) {
+          await prisma.domain.update({
+            where: { id: existing.id },
+            data: {
+              status: apiDomain.status,
+              expiryDate: apiDomain.expiryDate,
+              autoRenew: apiDomain.autoRenew,
+              metadata: {
+                ...(existing.metadata || {}),
+                locked: apiDomain.locked,
+                whoisPrivacy: apiDomain.whoisPrivacy,
+                lastSyncedAt: new Date().toISOString(),
+              }
+            }
+          });
+          synced.push({ domain: apiDomain.domain, action: "updated" });
+        } else {
+          const created = await prisma.domain.create({
+            data: {
+              name: apiDomain.domain,
+              registrar,
+              status: apiDomain.status,
+              expiryDate: apiDomain.expiryDate,
+              autoRenew: apiDomain.autoRenew,
+              ownerId: firstUser.id,
+              metadata: {
+                locked: apiDomain.locked,
+                whoisPrivacy: apiDomain.whoisPrivacy,
+                lastSyncedAt: new Date().toISOString(),
+              }
+            }
+          });
+          synced.push({ domain: apiDomain.domain, action: "created", id: created.id });
+        }
+      } catch (err) {
+        failed.push({ domain: apiDomain.domain, error: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      registrar,
+      synced: synced.length,
+      failed: failed.length,
+      details: {
+        synced,
+        failed
+      }
+    });
+  }),
 };
 
 module.exports = controller;

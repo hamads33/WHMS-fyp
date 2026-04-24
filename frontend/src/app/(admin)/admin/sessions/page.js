@@ -241,7 +241,7 @@ export default function SessionsPage() {
         </AlertTitle>
         <AlertDescription className="text-blue-700 dark:text-blue-300">
           If you see any unfamiliar sessions, revoke them immediately and change
-          your password. Each session represents a device where you're logged in.
+          your password. Each session represents a device where you are logged in.
         </AlertDescription>
       </Alert>
 
@@ -324,7 +324,7 @@ export default function SessionsPage() {
         <CardHeader>
           <CardTitle>All Active Sessions</CardTitle>
           <CardDescription>
-            Manage all devices where you're currently logged in
+            Manage all devices where you are currently logged in
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -483,7 +483,7 @@ export default function SessionsPage() {
             </AlertTitle>
             <AlertDescription className="text-amber-700 dark:text-amber-300">
               This will immediately end {otherSessionsCount} other session
-              {otherSessionsCount !== 1 ? "s" : ""}. You'll need to log in
+              {otherSessionsCount !== 1 ? "s" : ""}. You will need to log in
               again on those devices.
             </AlertDescription>
           </Alert>

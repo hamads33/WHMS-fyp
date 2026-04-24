@@ -18,6 +18,8 @@ const provisionDomainDto = Joi.object({
       "any.required": "Domain is required",
     }),
   ip: Joi.string().ip().optional(), // specific IP or "shared"
+  phpVersion: Joi.string().pattern(/^\d+\.\d+$/).optional(),
+  package: Joi.string().max(64).optional(),
   ns1: Joi.string().optional(),
   ns2: Joi.string().optional(),
   ns3: Joi.string().optional(),

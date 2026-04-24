@@ -4,7 +4,7 @@ import { SessionAPI } from "@/lib/sessions";
 
 export function useSession() {
   const { data, error, mutate, isLoading } = useSWR(
-    "/auth/session",
+    "/auth/sessions/current",
     SessionAPI.getCurrent
   );
 

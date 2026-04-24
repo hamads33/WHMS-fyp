@@ -77,18 +77,27 @@ export function BackupIntelligenceCharts() {
   const [activeChart, setActiveChart] = useState("activity");
 
   useEffect(() => {
-    setLoading(true);
-    Promise.allSettled([
-      backupApi(`/analytics/timeline?period=${period}`),
-      backupApi("/analytics/storage-usage"),
-    ]).then(([tRes, sRes]) => {
+    let active = true;
+
+    async function loadCharts() {
+      setLoading(true);
+      const [tRes, sRes] = await Promise.allSettled([
+        backupApi(`/analytics/timeline?period=${period}`),
+        backupApi("/analytics/storage-usage"),
+      ]);
+
+      if (!active) return;
       if (tRes.status === "fulfilled") setTimeline(tRes.value.data?.timeline || []);
       if (sRes.status === "fulfilled") {
         const raw  = sRes.value.data || [];
         const step = Math.max(1, Math.floor(raw.length / 30));
         setStorage(raw.filter((_, i) => i % step === 0).slice(-30));
       }
-    }).finally(() => setLoading(false));
+      setLoading(false);
+    }
+
+    void loadCharts();
+    return () => { active = false; };
   }, [period]);
 
   const totalSuccessful = timeline.reduce((s, d) => s + (d.successful || 0), 0);

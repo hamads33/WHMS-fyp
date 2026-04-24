@@ -9,6 +9,7 @@ const swaggerSpec = require("./docs/swagger.config");
 const prisma = require("./db/prisma");
 
 const app = express();
+global.__whmsApp = app;
 app.set("trust proxy", true);
 app.set("json replacer", (key, val) => (typeof val === "bigint" ? val.toString() : val));
 /* ================================================================
@@ -181,12 +182,7 @@ app.use("/api/ip-rules", ipRulesRoutes);
 app.use("/api/admin/dashboard", authGuard, adminPortalGuard, require("./modules/dashboard/dashboard.routes"));
 app.use("/api/admin/clients", authGuard, adminPortalGuard, require("./modules/clients/clients.routes"));
 
-// ✅ DOMAIN MODULE ROUTES (ALL DOMAINS - USER & ADMIN)
-// This is the FIX for: Cannot GET /api/admin/domains/stats error
-// We need to import both user routes and admin routes separately
-// and mount them at the correct endpoints
-const domainRoutes = require("./modules/domains/index");
-app.use("/api", domainRoutes);
+// Domain routes are mounted by the domain-registrar plugin (src/plugins/domain-registrar/plugin.js).
 
 /////services
 app.use("/api/admin", authGuard, adminPortalGuard, require("./modules/services").adminRoutes);
@@ -197,15 +193,7 @@ const ordersModule = require("./modules/orders");
 
 app.use("/api/client/orders", ordersModule.clientRoutes);
 app.use("/api/admin/orders", authGuard, adminPortalGuard, ordersModule.adminRoutes);
-/////billing////
-const billing = require('./modules/billing');
-app.use("/api/admin/billing", authGuard, adminPortalGuard, billing.adminRoutes);
-app.use('/api/client/billing', billing.clientRoutes);
-app.use('/api/billing/webhooks', billing.webhookRouter);
-
-// Start billing cron jobs (renewal processing, overdue detection)
-const { scheduleBillingJobs } = require('./modules/billing/jobs/billing.cron');
-scheduleBillingJobs();
+// Billing routes and cron jobs are mounted by the billing-core plugin (src/plugins/billing-core/plugin.js).
 
 // Client profile endpoints
 app.use('/api/client/profile', require('./modules/clients/client-portal.routes'));
@@ -304,12 +292,31 @@ app.post("/api/admin/installed-plugins/:name/disable", authGuard, adminPortalGua
 
 /* ================================================================
    PLUGIN UI MANIFEST
-   – Returns nav entries contributed by enabled plugins with ui capability
+   – Returns nav entries, settings tabs, and config schema for enabled plugins
 ================================================================ */
 app.get("/api/admin/plugin-ui-manifest", authGuard, adminPortalGuard, (_req, res) => {
   const pm = app.locals.pluginManager;
   if (!pm) return res.json({ success: true, data: [] });
   res.json({ success: true, data: pm.getPluginUiManifest() });
+});
+
+/* ================================================================
+   PLUGIN CONFIG (admin read / write)
+   – GET  returns config with password fields masked
+   – PATCH merges updates, skipping masked password placeholders
+================================================================ */
+app.get("/api/admin/plugins/:name/config", authGuard, adminPortalGuard, (req, res) => {
+  const pm = app.locals.pluginManager;
+  if (!pm) return res.json({ success: true, data: {} });
+  res.json({ success: true, data: pm.getMaskedPluginConfig(req.params.name) });
+});
+
+app.patch("/api/admin/plugins/:name/config", authGuard, adminPortalGuard, (req, res) => {
+  const pm = app.locals.pluginManager;
+  if (!pm) return res.status(503).json({ success: false, error: "Plugin manager not available" });
+  const result = pm.updatePluginConfig(req.params.name, req.body ?? {});
+  if (!result.ok) return res.status(404).json({ success: false, error: result.error });
+  res.json({ success: true });
 });
 
 /* ================================================================
@@ -443,6 +450,11 @@ async function init() {
 
     if (automation && automation.scheduler) {
       app.locals.scheduler = automation.scheduler;
+      app.locals.automation = automation;
+      app.locals.eventEmitter = automation.eventEmitter;
+      app.locals.automationEventEmitter = automation.eventEmitter;
+      app.locals.workflowService = automation.workflowService;
+      global.__whmsApp = app;
       console.log("✅ Automation module initialized successfully");
     } else {
       console.warn("⚠️ Automation initialization incomplete - some features may not work");

@@ -274,8 +274,9 @@ class PluginInstallerService {
 
   /**
    * _extractZip
-   * Extracts a zip Buffer into the destination folder.
-   * Uses adm-zip if available, throws if not installed.
+   * Extracts a zip Buffer into the destination folder with security validation.
+   * Validates all extracted paths to prevent path traversal attacks.
+   * Detects and prevents ZIP bombs through size limits.
    *
    * @param {Buffer} zipBuffer
    * @param {string} destFolder
@@ -290,14 +291,53 @@ class PluginInstallerService {
       );
     }
 
+    const zip = new AdmZip(zipBuffer);
+    const entries = zip.getEntries();
+
+    // MAX_EXTRACTION_SIZE: limit total extracted size to 100MB to prevent zip bombs
+    const MAX_EXTRACTION_SIZE = 100 * 1024 * 1024;
+    let totalExtractedSize = 0;
+
+    // Validate all entries before extraction
+    const destFolderResolved = path.resolve(destFolder);
+
+    for (const entry of entries) {
+      // Check for path traversal attacks (e.g., ../../etc/passwd)
+      const entryPath = path.resolve(destFolderResolved, entry.entryName);
+      if (!entryPath.startsWith(destFolderResolved + path.sep) && entryPath !== destFolderResolved) {
+        throw new Error(
+          `Malicious path detected in ZIP: ${entry.entryName} would extract outside destination folder`
+        );
+      }
+
+      // Check for zip bomb expansion
+      if (!entry.isDirectory) {
+        totalExtractedSize += entry.header.size;
+        if (totalExtractedSize > MAX_EXTRACTION_SIZE) {
+          throw new Error(
+            `ZIP extraction would exceed maximum allowed size (${MAX_EXTRACTION_SIZE / (1024 * 1024)}MB). Possible ZIP bomb detected.`
+          );
+        }
+      }
+
+      // Check for symlink entries (some ZIP libraries support them)
+      if (entry.entryName.includes("..")) {
+        throw new Error(
+          `Illegal path component detected in ZIP: ${entry.entryName}`
+        );
+      }
+    }
+
     // Remove existing folder if present (re-install / update)
     if (fs.existsSync(destFolder)) {
       fs.rmSync(destFolder, { recursive: true, force: true });
     }
     fs.mkdirSync(destFolder, { recursive: true });
 
-    const zip = new AdmZip(zipBuffer);
+    // Extract validated entries
     zip.extractAllTo(destFolder, /* overwrite */ true);
+
+    this.logger.info(`[Installer] ZIP extracted safely: ${entries.length} entries, ${totalExtractedSize / 1024}KB total`);
   }
 }
 

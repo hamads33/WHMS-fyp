@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { apiFetch } from '@/lib/api/client';
 import {
   Table,
   TableBody,
@@ -36,18 +36,9 @@ const Toast = ({ message, type, onClose }) => {
   );
 };
 
-// ===== API CONFIGURATION =====
-const getApiBase = () => {
-  if (typeof window === 'undefined') {
-    return 'http://localhost:4000/api/automation';
-  }
-  return (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000/api/automation').replace(/\/$/, '');
-};
-
 // ===== MAIN PAGE COMPONENT =====
 export default function WorkflowsListPage() {
   const router = useRouter();
-  const API_BASE = getApiBase();
 
   // ===== STATE =====
   const [workflows, setWorkflows] = useState([]);
@@ -66,25 +57,7 @@ export default function WorkflowsListPage() {
       setIsLoading(true);
       setError(null);
 
-      console.log('📤 Fetching workflows from:', `${API_BASE}/workflows`);
-
-      const response = await fetch(`${API_BASE}/workflows`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData?.error || errorData?.message || errorMessage;
-        } catch (e) {
-          errorMessage = response.statusText || errorMessage;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
+      const data = await apiFetch('/automation/workflows');
       console.log('✅ Response:', data);
 
       // Handle both array and wrapped responses
@@ -112,7 +85,7 @@ export default function WorkflowsListPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   // ===== SEARCH FILTER =====
   const handleSearch = useCallback(
@@ -142,15 +115,9 @@ export default function WorkflowsListPage() {
         setIsDeleting(workflowId);
         console.log('🗑️ Deleting workflow:', workflowId);
 
-        const response = await fetch(`${API_BASE}/workflows/${workflowId}`, {
+        await apiFetch(`/automation/workflows/${workflowId}`, {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
         });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData?.message || 'Failed to delete workflow');
-        }
 
         console.log('✅ Workflow deleted:', workflowId);
 
@@ -169,7 +136,7 @@ export default function WorkflowsListPage() {
         setIsDeleting(null);
       }
     },
-    [API_BASE]
+    []
   );
 
   // ===== EXECUTE WORKFLOW =====
@@ -179,17 +146,10 @@ export default function WorkflowsListPage() {
         setIsExecuting(workflowId);
         console.log('▶️ Executing workflow:', workflowId);
 
-        const response = await fetch(`${API_BASE}/workflows/${workflowId}/run`, {
+        const result = await apiFetch(`/automation/workflows/${workflowId}/run`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ input: {} }),
         });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result?.error || result?.message || 'Failed to execute workflow');
-        }
 
         const runId = result.data?.runId || result.runId || 'unknown';
         console.log('✅ Workflow executed:', runId);
@@ -211,7 +171,7 @@ export default function WorkflowsListPage() {
         setIsExecuting(null);
       }
     },
-    [API_BASE, loadWorkflows]
+    [loadWorkflows]
   );
 
   // ===== EDIT WORKFLOW =====

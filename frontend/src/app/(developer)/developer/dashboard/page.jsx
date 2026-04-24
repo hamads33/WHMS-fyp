@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Package, Download, DollarSign, Star, PlusCircle,
   TrendingUp, ArrowRight, RefreshCw, Puzzle, AlertCircle,
@@ -75,7 +76,7 @@ export default function DeveloperDashboardPage() {
           <h1 className="text-2xl font-semibold text-foreground">
             Welcome back{user?.email ? `, ${user.email.split("@")[0]}` : ""}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">Here's an overview of your plugins and performance.</p>
+          <p className="text-sm text-muted-foreground mt-1">Here&apos;s an overview of your plugins and performance.</p>
         </div>
         <Button asChild size="sm" className="gap-2 shrink-0">
           <Link href="/developer/plugins/new">
@@ -141,7 +142,7 @@ export default function DeveloperDashboardPage() {
               <Link key={p.id} href={`/developer/plugins/${p.id}`}
                 className="flex items-center gap-4 py-4 hover:bg-muted/50 -mx-4 px-4 transition-colors rounded-md">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted text-base font-bold text-muted-foreground">
-                  {p.iconUrl ? <img src={p.iconUrl} alt={p.name} className="h-8 w-8 object-contain rounded" /> : p.name?.[0] ?? "P"}
+                  {p.iconUrl ? <Image src={p.iconUrl} alt={p.name} width={32} height={32} className="object-contain rounded" /> : p.name?.[0] ?? "P"}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{p.name}</p>

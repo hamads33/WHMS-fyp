@@ -14,6 +14,7 @@ const BillingService = require("../services/billing.service");
 const invoiceService = require("../services/invoice.service");
 const emailTriggers = require("../../email/triggers/email.triggers");
 const prisma = require("../../../../prisma");
+const { emitAutomationEvent } = require("../../automation/lib/runtime-events");
 
 /**
  * Emit a billing event for external notification services (FR-13)
@@ -21,6 +22,7 @@ const prisma = require("../../../../prisma");
  */
 function emitBillingEvent(event, payload) {
   console.log(`[BILLING EVENT] ${event}`, JSON.stringify(payload));
+  emitAutomationEvent(global.__whmsApp, event, payload, { source: "billing_cron" }).catch(() => {});
   // Email notifications are handled per-invoice in processOverdueInvoices
 }
 

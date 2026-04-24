@@ -1,9 +1,0 @@
-{
-  "name": "service-health-monitor",
-  "version": "1.0.0",
-  "description": "Monitors service health status across provision/suspend/terminate lifecycle",
-  "main": "plugin.js",
-  "plugin": {
-    "dependencies": {}
-  }
-}

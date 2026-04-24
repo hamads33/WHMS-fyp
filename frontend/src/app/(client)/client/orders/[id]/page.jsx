@@ -109,6 +109,7 @@ function UsageBar({ used, total, unit = 'MB' }) {
 }
 
 function SSLBadge({ ssl }) {
+  const [nowMs] = useState(() => Date.now())
   if (!ssl || ssl.status === 'inactive' || ssl.status === 'none') {
     return (
       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
@@ -117,7 +118,7 @@ function SSLBadge({ ssl }) {
     )
   }
   const expiry = ssl.expiryDate ? new Date(ssl.expiryDate) : null
-  const daysLeft = expiry ? Math.ceil((expiry - Date.now()) / 86400000) : null
+  const daysLeft = expiry ? Math.ceil((expiry - nowMs) / 86400000) : null
   const color = daysLeft !== null && daysLeft < 7 ? 'red' : daysLeft !== null && daysLeft < 30 ? 'amber' : 'green'
   const cls = { green: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400 dark:border-green-900', amber: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-900', red: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900' }[color]
   return (

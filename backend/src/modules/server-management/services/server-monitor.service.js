@@ -2,6 +2,7 @@ const serverRepo = require("../repositories/server.repository");
 const metricsRepo = require("../repositories/server-metrics.repository");
 const serverLogRepo = require("../repositories/server-log.repository");
 const { resolveDriver } = require("../drivers");
+const { emitAutomationEvent } = require("../../automation/lib/runtime-events");
 
 const POLL_INTERVAL_MS = 60 * 1000;
 const CPU_ALERT_THRESHOLD = 90;
@@ -9,6 +10,7 @@ const CPU_ALERT_THRESHOLD = 90;
 let _timer = null;
 let _webhookService = null;
 let _io = null;
+let _app = null;
 
 function setWebhookService(svc) {
   _webhookService = svc;
@@ -18,7 +20,13 @@ function setIo(io) {
   _io = io;
 }
 
-async function _checkServer(server) {
+function setApp(app) {
+  _app = app;
+}
+
+async function _checkServer(server, options = {}) {
+  const app = options.app || _app || global.__whmsApp;
+  const source = options.source || "server_monitor";
   try {
     const driver = resolveDriver(server);
 
@@ -53,6 +61,28 @@ async function _checkServer(server) {
       if (_io) {
         _io.emit("server:status", { serverId: server.id, status: "active" });
       }
+      await emitAutomationEvent(
+        app,
+        "server.recovered",
+        {
+          serverId: server.id,
+          name: server.name,
+          previousStatus: "offline",
+          newStatus: "active",
+        },
+        { source }
+      );
+      await emitAutomationEvent(
+        app,
+        "server.status_changed",
+        {
+          serverId: server.id,
+          name: server.name,
+          previousStatus: "offline",
+          newStatus: "active",
+        },
+        { source }
+      );
     }
 
     // Broadcast real-time metrics to all connected admin clients
@@ -80,6 +110,17 @@ async function _checkServer(server) {
           cpuUsage: metrics.cpuUsage,
         });
       }
+      await emitAutomationEvent(
+        app,
+        "server.high_cpu",
+        {
+          serverId: server.id,
+          name: server.name,
+          cpuUsage: metrics.cpuUsage,
+          threshold: CPU_ALERT_THRESHOLD,
+        },
+        { source }
+      );
     }
 
     return record;
@@ -96,6 +137,18 @@ async function _checkServer(server) {
       if (_io) {
         _io.emit("server:status", { serverId: server.id, status: "offline" });
       }
+      await emitAutomationEvent(
+        app,
+        "server.status_changed",
+        {
+          serverId: server.id,
+          name: server.name,
+          previousStatus: "active",
+          newStatus: "offline",
+          error: e.message,
+        },
+        { source }
+      );
     }
 
     if (_webhookService) {
@@ -108,15 +161,27 @@ async function _checkServer(server) {
 }
 
 async function _tick() {
+  return runNow();
+}
+
+async function runNow(options = {}) {
   try {
     // Check active servers + poll offline ones so we detect recovery
     const [active, offline] = await Promise.all([
       serverRepo.findAll({ status: "active" }),
       serverRepo.findAll({ status: "offline" }),
     ]);
-    await Promise.allSettled([...active, ...offline].map(_checkServer));
+    const results = await Promise.allSettled(
+      [...active, ...offline].map((server) => _checkServer(server, options))
+    );
+    return {
+      checked: results.length,
+      successful: results.filter((item) => item.status === "fulfilled").length,
+      failed: results.filter((item) => item.status === "rejected").length,
+    };
   } catch (e) {
     console.error("[ServerMonitor] tick error:", e.message);
+    return { checked: 0, successful: 0, failed: 1, error: e.message };
   }
 }
 
@@ -142,4 +207,4 @@ function stop() {
   }
 }
 
-module.exports = { start, stop, setWebhookService, setIo, getMetricsHistory, getLatestMetrics };
+module.exports = { start, stop, setWebhookService, setIo, setApp, runNow, getMetricsHistory, getLatestMetrics };

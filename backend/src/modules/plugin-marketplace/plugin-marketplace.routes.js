@@ -35,6 +35,19 @@ const storagePathsService = require("../settings/storage-paths.service");
 const pluginStateService  = require("../../core/plugin-system/plugin-state.service");
 const pluginStats         = require("./plugin-stats.service");
 
+// CSRF protection middleware for state-changing operations
+const csrfProtection = (req, res, next) => {
+  // CSRF token from header or body
+  const token = req.headers["x-csrf-token"] || req.body?.csrfToken;
+  const sessionToken = req.session?.csrfToken;
+
+  if (!token || !sessionToken || token !== sessionToken) {
+    return res.status(403).json({ success: false, message: "CSRF token validation failed" });
+  }
+
+  next();
+};
+
 // ── Multer — zip uploads ─────────────────────────────────────────
 const zipStorage = multer.diskStorage({
   destination: async (req, file, cb) => {
@@ -110,11 +123,11 @@ const uploadScreenshots = multer({ storage: assetStorage, fileFilter: imageFilte
  */
 module.exports = function buildMarketplaceRouter({ app, prisma, logger = console } = {}) {
   // ── Bootstrap services ──────────────────────────────────────────
-  const marketplaceService = new PluginMarketplaceService({ prisma, logger });
-
-  const pluginManagerProxy = {
-    get pluginManager() { return app?.locals?.pluginManager ?? null; },
-  };
+  const marketplaceService = new PluginMarketplaceService({
+    prisma,
+    logger,
+    pluginManager: () => app?.locals?.pluginManager ?? null,
+  });
 
   // Billing service (for purchase/revenue tracking)
   const billingService = new PluginBillingService({
@@ -161,15 +174,15 @@ module.exports = function buildMarketplaceRouter({ app, prisma, logger = console
   router.get("/marketplace/stats/top",                  ctrl.getTopPlugins);
   router.get("/marketplace/stats/most-installed",       ctrl.getMostInstalled);
   router.get("/marketplace/stats/highest-rated",        ctrl.getHighestRated);
-  router.post("/marketplace/plugins/:slug/rate", authGuard, ctrl.submitRating);
+  router.post("/marketplace/plugins/:slug/rate", authGuard, csrfProtection, ctrl.submitRating);
 
   // ── Purchase (authenticated) ────────────────────────────────────
-  router.post("/marketplace/plugins/:id/purchase", authGuard, ctrl.purchasePlugin);
+  router.post("/marketplace/plugins/:id/purchase", authGuard, csrfProtection, ctrl.purchasePlugin);
 
   // ── Developer routes (must have developer role) ─────────────────
   router.post(
     "/developer/plugins",
-    authGuard, developerPortalGuard,
+    authGuard, developerPortalGuard, csrfProtection,
     ctrl.createPlugin
   );
 
@@ -179,36 +192,48 @@ module.exports = function buildMarketplaceRouter({ app, prisma, logger = console
     ctrl.listDeveloperPlugins
   );
 
+  router.get(
+    "/developer/plugins/:id",
+    authGuard, developerPortalGuard,
+    ctrl.getDeveloperPlugin
+  );
+
+  router.patch(
+    "/developer/plugins/:id",
+    authGuard, developerPortalGuard, csrfProtection,
+    ctrl.updateDeveloperPlugin
+  );
+
   router.post(
     "/developer/plugins/:id/version",
-    authGuard, developerPortalGuard,
+    authGuard, developerPortalGuard, csrfProtection,
     ctrl.submitPluginVersion
   );
 
   router.post(
     "/developer/plugins/:id/upload-zip",
-    authGuard, developerPortalGuard,
+    authGuard, developerPortalGuard, csrfProtection,
     uploadZip.single("plugin"),
     ctrl.uploadPluginZip
   );
 
   router.post(
     "/developer/plugins/:id/icon",
-    authGuard, developerPortalGuard,
+    authGuard, developerPortalGuard, csrfProtection,
     uploadIcon.single("icon"),
     ctrl.uploadPluginIcon
   );
 
   router.post(
     "/developer/plugins/:id/screenshots",
-    authGuard, developerPortalGuard,
+    authGuard, developerPortalGuard, csrfProtection,
     uploadScreenshots.array("screenshots", 10),
     ctrl.uploadPluginScreenshots
   );
 
   router.patch(
     "/developer/plugins/:id/pricing",
-    authGuard, developerPortalGuard,
+    authGuard, developerPortalGuard, csrfProtection,
     ctrl.updatePluginPricing
   );
 
@@ -228,20 +253,20 @@ module.exports = function buildMarketplaceRouter({ app, prisma, logger = console
   // ── Superadmin-only — approve / reject ──────────────────────────
   router.post(
     "/admin/plugins/:id/approve",
-    authGuard, superadminOnlyGuard,
+    authGuard, superadminOnlyGuard, csrfProtection,
     ctrl.approvePlugin
   );
 
   router.post(
     "/admin/plugins/:id/reject",
-    authGuard, superadminOnlyGuard,
+    authGuard, superadminOnlyGuard, csrfProtection,
     ctrl.rejectPlugin
   );
 
   // ── Install route (admin / superadmin) ──────────────────────────
   router.post(
     "/plugins/install/:slug",
-    authGuard, adminPortalGuard,
+    authGuard, adminPortalGuard, csrfProtection,
     ctrl.installPlugin
   );
 
@@ -249,7 +274,7 @@ module.exports = function buildMarketplaceRouter({ app, prisma, logger = console
   // Enqueue plugin installation (returns immediately with jobId)
   router.post(
     "/plugins/install/:slug/enqueue",
-    authGuard, adminPortalGuard,
+    authGuard, adminPortalGuard, csrfProtection,
     ctrl.enqueueInstall
   );
 
@@ -276,7 +301,7 @@ module.exports = function buildMarketplaceRouter({ app, prisma, logger = console
 
   router.post(
     "/plugins/update/:slug",
-    authGuard, adminPortalGuard,
+    authGuard, adminPortalGuard, csrfProtection,
     ctrl.updatePlugin
   );
 

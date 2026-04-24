@@ -6,6 +6,7 @@
 const invoiceService = require("../services/invoice.service");
 const { generateInvoicePDF } = require("../services/pdf.service");
 const invoiceSettingsService = require("../services/invoice-settings.service");
+const { settlePaidInvoice } = require("../services/invoice-settlement.service");
 
 const VALID_STATUSES = ["draft", "unpaid", "paid", "overdue", "cancelled", "refunded"];
 
@@ -155,6 +156,7 @@ exports.cancel = async (req, res) => {
 exports.markPaid = async (req, res) => {
   try {
     const invoice = await invoiceService.markPaid(req.params.id, req.user?.id);
+    await settlePaidInvoice(invoice.id);
     res.json({ success: true, message: "Invoice marked as paid", invoice });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, error: err.message });

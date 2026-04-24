@@ -8,11 +8,16 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ClientServicesAPI } from '@/lib/api/services'
 import { useCart } from '@/lib/context/CartContext'
+import { v4 as uuidv4 } from 'uuid'
 
 function fmt(amount, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency', currency, minimumFractionDigits: 2,
   }).format(amount ?? 0)
+}
+
+function createCartItemId(prefix) {
+  return `${prefix}-${uuidv4().slice(0, 8)}`
 }
 
 // ── Service Card ───────────────────────────────────────────────────────────────
@@ -29,7 +34,7 @@ function ServiceCard({ svc }) {
     if (!pricing) return
 
     addItem({
-      id:              `${pricing.id}-${Date.now()}`,
+      id:              createCartItemId(pricing.id),
       serviceId:       svc.id,
       serviceName:     svc.name,
       planId:          plan.id,

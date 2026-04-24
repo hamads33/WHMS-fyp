@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   BarChart3, Download, DollarSign, Star, RefreshCw,
@@ -39,7 +39,7 @@ function KpiCard({ label, value, icon: Icon, sub, color = "text-foreground", loa
   );
 }
 
-export default function DeveloperAnalyticsPage() {
+function DeveloperAnalyticsPageContent() {
   const searchParams  = useSearchParams();
   const initialPlugin = searchParams.get("plugin") ?? "all";
 
@@ -201,5 +201,13 @@ export default function DeveloperAnalyticsPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function DeveloperAnalyticsPage() {
+  return (
+    <Suspense fallback={null}>
+      <DeveloperAnalyticsPageContent />
+    </Suspense>
   );
 }

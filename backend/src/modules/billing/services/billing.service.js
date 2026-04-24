@@ -24,6 +24,19 @@ const {
 const provisioningHooks = require("../../provisioning/utils/provisioning-hooks");
 const emailTriggers = require("../../email/triggers/email.triggers");
 
+function getClientName(client) {
+  if (!client) return undefined;
+  if (client.clientProfile) {
+    const fullName = [client.clientProfile.firstName, client.clientProfile.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    if (fullName) return fullName;
+    if (client.clientProfile.company) return client.clientProfile.company;
+  }
+  return client.email;
+}
+
 // ============================================================
 // INVOICE TYPE CONSTANTS
 // ============================================================
@@ -524,7 +537,7 @@ class BillingService {
         // Fetch full invoice with client for email trigger
         const fullInvoice = await prisma.invoice.findUnique({
           where: { id: invoice.id },
-          include: { client: true },
+          include: { client: { include: { clientProfile: true } } },
         });
 
         // Fire overdue notification email
@@ -535,9 +548,9 @@ class BillingService {
             );
             await emailTriggers.fire('billing.payment_overdue', {
               clientEmail: fullInvoice.client.email,
-              clientName: fullInvoice.client.name,
+              clientName: getClientName(fullInvoice.client),
               invoiceId: fullInvoice.invoiceNumber,
-              invoiceTotal: fullInvoice.total,
+              invoiceTotal: fullInvoice.totalAmount,
               dueDate: fullInvoice.dueDate,
               daysOverdue: Math.max(0, daysOverdue),
               invoiceUrl: `${process.env.PORTAL_URL || 'https://portal.whms.local'}/invoices/${fullInvoice.id}`,

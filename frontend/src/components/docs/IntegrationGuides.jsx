@@ -220,13 +220,13 @@ function HostedStore() {
           <CodeBlock lang="text" code={`https://your-whms-domain.com/store?redirect_uri=https://yoursite.com/thank-you`} />
           <Callout type="info">
             The redirect happens 5 seconds after the confirmation screen. Users also see a
-            "Go now" link if they don't want to wait.
+            &quot;Go now&quot; link if they do not want to wait.
           </Callout>
         </Step>
 
         <Step n={3} title="Add a Buy Now button to your site">
           <p className="text-sm text-muted-foreground">
-            Simply link to your store URL. Style it however you like — it's just a hyperlink.
+            Simply link to your store URL. Style it however you like — it is just a hyperlink.
           </p>
           <CodeBlock lang="html" code={`<!-- Plain link -->
 <a href="https://your-whms-domain.com/store?redirect_uri=https://yoursite.com/thank-you">
@@ -336,8 +336,8 @@ function PlainHTML() {
 
         <Step n={2} title="(Optional) Link to a specific service">
           <p className="text-sm text-muted-foreground">
-            If you sell multiple products and want a "Buy Shared Hosting" button that goes
-            straight to that service's plans, add <code className="font-mono bg-muted px-1 rounded text-xs">serviceId</code>.
+            If you sell multiple products and want a &quot;Buy Shared Hosting&quot; button that goes
+            straight to that service&apos;s plans, add <code className="font-mono bg-muted px-1 rounded text-xs">serviceId</code>.
           </p>
           <CodeBlock lang="html" code={`<a href="https://your-whms-domain.com/store?serviceId=YOUR_SERVICE_ID&redirect_uri=https://yoursite.com/thank-you">
   Get Shared Hosting →
@@ -377,7 +377,7 @@ function WordPress() {
       <div>
         <h2 className="text-2xl font-bold text-foreground mb-2">WordPress Integration</h2>
         <p className="text-muted-foreground leading-relaxed">
-          Add a WHMS "Get Started" button to any WordPress page, post, or widget area.
+          Add a WHMS &quot;Get Started&quot; button to any WordPress page, post, or widget area.
           The simplest method needs no plugins — just a button linking to your hosted store.
         </p>
       </div>
@@ -606,14 +606,14 @@ function Webflow() {
         <Step n={3} title="Publish">
           <p className="text-sm text-muted-foreground">
             Click <strong>Publish</strong>. Users who click the button are taken to the WHMS
-            hosted store. After payment they're redirected back to your <code className="font-mono bg-muted px-1 rounded text-xs">/thank-you</code> page.
+            hosted store. After payment they are redirected back to your <code className="font-mono bg-muted px-1 rounded text-xs">/thank-you</code> page.
           </p>
         </Step>
       </div>
 
       <Callout type="tip">
         To link different buttons to different services (e.g. Shared Hosting vs VPS), set
-        a different <code className="font-mono">serviceId</code> query param on each button's URL.
+        a different <code className="font-mono">serviceId</code> query param on each button&apos;s URL.
       </Callout>
 
       <div>
@@ -690,7 +690,7 @@ function RestAPI() {
         <h2 className="text-2xl font-bold text-foreground mb-2">REST API — Headless Integration</h2>
         <p className="text-muted-foreground leading-relaxed">
           If you need to build a fully custom checkout UI, WHMS exposes a public REST API.
-          Use this when the hosted store doesn't fit your design requirements or when you
+          Use this when the hosted store does not fit your design requirements or when you
           need deep programmatic control.
         </p>
       </div>

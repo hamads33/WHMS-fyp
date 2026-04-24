@@ -555,6 +555,7 @@ model MarketplaceProduct {
   updatedAt     DateTime            @updatedAt
   category      String?
   description   String?
+  author        String?
   devId         String
   name          String
   published     Boolean             @default(false)
@@ -562,6 +563,11 @@ model MarketplaceProduct {
   slug          String              @unique
   iconUrl       String?
   screenshots   String[]
+  capabilities  String[]
+  permissions   String[]
+  ui            Json?
+  pluginMeta    Json?
+  pluginDependencies Json?
   pricingType   String              @default("free")
   price         Int                 @default(0)
   currency      String              @default("USD")

@@ -53,6 +53,8 @@ const AuditController = require("./controllers/audit.controller");
 const EventWorkflowController = require("./workflows/controllers/workflow_controller");
 const ActionsController = require("./controllers/actions.controller");
 const RegistryController = require("./controllers/registry.controller");
+const TemplatesController = require("./controllers/templates.controller");
+const { ProfileTemplatesController } = require("./controllers/profile-templates.controller");
 
 // ============================================================
 // MIDDLEWARE
@@ -218,6 +220,17 @@ module.exports = async function initAutomationModule({
       audit,
     });
 
+    const templatesCtrl = new TemplatesController({
+      prisma: prismaClient,
+      logger,
+    });
+
+    const profileTemplatesCtrl = new ProfileTemplatesController({
+      prisma: prismaClient,
+      logger,
+      scheduler,
+    });
+
     // ============================================================
     // ROUTER
     // ============================================================
@@ -269,6 +282,17 @@ module.exports = async function initAutomationModule({
     // ============================================================
     router.get("/actions", actionsCtrl.list.bind(actionsCtrl));
     router.get("/actions/:actionType", actionsCtrl.get.bind(actionsCtrl));
+
+    // ============================================================
+    // INSTALLABLE TEMPLATES
+    // ============================================================
+    router.get("/templates", templatesCtrl.list.bind(templatesCtrl));
+    router.get("/templates/:templateId", templatesCtrl.get.bind(templatesCtrl));
+    router.post("/templates/:templateId/install", templatesCtrl.install.bind(templatesCtrl));
+
+    router.get("/profile-templates", profileTemplatesCtrl.list.bind(profileTemplatesCtrl));
+    router.get("/profile-templates/:templateId", profileTemplatesCtrl.get.bind(profileTemplatesCtrl));
+    router.post("/profile-templates/:templateId/install", profileTemplatesCtrl.install.bind(profileTemplatesCtrl));
 
     // ============================================================
     // REGISTRY (events + actions catalogue for workflow builder)

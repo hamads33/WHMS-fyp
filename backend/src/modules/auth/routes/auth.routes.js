@@ -1,11 +1,5 @@
 const { Router } = require("express");
 
-// Debug logs for Jest
-console.log(
-  "🟦 DEBUG AUTH ROUTES LOADED — controller export:",
-  require("../controllers/auth.controller.js")
-);
-
 // Controllers
 const AuthController = require("../controllers/auth.controller.js");
 const EmailController = require("../controllers/email.controller.js");
@@ -26,8 +20,6 @@ const prisma = require("../../../../prisma");
 const TokenService = require("../services/token.service");
 const AuthService = require("../services/auth.service");
 const EmailTokenService = require("../services/emailToken.service");
-
-console.log("AuthController keys:", Object.keys(AuthController));
 
 const router = Router();
 

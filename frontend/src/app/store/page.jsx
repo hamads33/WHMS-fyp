@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { StoreCatalog } from './store-catalog'
 
 export const metadata = { title: 'Browse Plans — WHMS Store' }
@@ -13,5 +14,5 @@ export const metadata = { title: 'Browse Plans — WHMS Store' }
  *   </a>
  */
 export default function StorePage() {
-  return <StoreCatalog />
+  return <Suspense fallback={null}><StoreCatalog /></Suspense>
 }

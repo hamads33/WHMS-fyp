@@ -154,7 +154,7 @@ export function DomainsContent() {
               </div>
               <p className="text-sm font-semibold">No domains yet</p>
               <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                You haven't registered any domains yet.
+                You have not registered any domains yet.
               </p>
               <Button size="sm" asChild className="mt-3 gap-1.5">
                 <Link href="/client/domains/register">

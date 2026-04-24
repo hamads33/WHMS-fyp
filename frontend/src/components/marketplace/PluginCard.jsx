@@ -61,9 +61,9 @@ export function PluginCard({ plugin, onInstall, detailHref }) {
     <Link href={detailHref ?? `/marketplace/${plugin.slug || plugin.id}`}>
       <Card className="flex flex-col overflow-hidden hover:border-primary/50 transition-colors cursor-pointer h-full">
         <div className="h-40 bg-muted flex items-center justify-center relative">
-          {plugin.icon ? (
+          {(plugin.iconUrl || plugin.icon) ? (
             <img
-              src={plugin.icon}
+              src={plugin.iconUrl || plugin.icon}
               alt={plugin.name}
               className="w-20 h-20 object-contain"
             />

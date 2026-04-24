@@ -16,7 +16,6 @@ const { createOrderSnapshot, calculateOrderCost } = require("../utils/order.snap
 const { getNextRenewalDate } = require("../../billing/utils/billing.util");
 const provisioningHooks = require("../../provisioning/utils/provisioning-hooks");
 const BillingService = require("../../billing/services/billing.service");
-const invoiceService = require("../../billing/services/invoice.service");
 
 /**
  * Create new order with enhanced snapshot
@@ -70,20 +69,20 @@ async function createOrder(clientId, dto) {
     },
   });
 
-  // Auto-generate invoice for the new order (idempotent — return existing if already created)
   let invoice = null;
   try {
     const existingInvoice = await prisma.invoice.findFirst({
       where: { orderId: order.id, status: { notIn: ["cancelled"] } },
     });
-    if (existingInvoice) {
-      invoice = existingInvoice;
-    } else {
-      const draft = await BillingService.generateInvoiceFromOrder(order.id, { status: "draft" }, "system");
-      invoice = await invoiceService.send(draft.id); // draft → unpaid
-    }
+    invoice =
+      existingInvoice ||
+      await BillingService.generateInvoiceFromOrder(order.id, { status: "unpaid" }, "system");
   } catch (err) {
-    console.error("Failed to auto-generate invoice for order:", err.message);
+    await prisma.order.delete({ where: { id: order.id } }).catch(() => {});
+    await prisma.serviceSnapshot.delete({ where: { id: snapshot.id } }).catch(() => {});
+    err.statusCode = err.statusCode || 500;
+    err.message = `Failed to create invoice for order: ${err.message}`;
+    throw err;
   }
 
   // Trigger "order_created" automation (optional)
@@ -302,6 +301,7 @@ async function renew(orderId) {
  * Triggers suspension automation and adds suspension fee if configured
  */
 async function suspend(orderId, reason = "Payment required") {
+  const provisioningService = require("../../provisioning/services/provisioning.service");
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { snapshot: true },
@@ -328,6 +328,12 @@ async function suspend(orderId, reason = "Payment required") {
     include: { snapshot: true, client: { select: { id: true, email: true } } },
   });
 
+  try {
+    await provisioningService.suspendAccount(orderId, reason);
+  } catch (err) {
+    console.error("Failed to suspend hosting account:", err.message);
+  }
+
   // Trigger "order_suspended" automation
   try {
     await triggerServiceAutomation("order_suspended", order.snapshot, updated);
@@ -343,6 +349,7 @@ async function suspend(orderId, reason = "Payment required") {
  * suspended → active
  */
 async function resume(orderId) {
+  const provisioningService = require("../../provisioning/services/provisioning.service");
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { snapshot: true },
@@ -368,6 +375,12 @@ async function resume(orderId) {
     },
     include: { snapshot: true, client: { select: { id: true, email: true } } },
   });
+
+  try {
+    await provisioningService.unsuspendAccount(orderId);
+  } catch (err) {
+    console.error("Failed to unsuspend hosting account:", err.message);
+  }
 
   // Trigger "order_resumed" automation
   try {

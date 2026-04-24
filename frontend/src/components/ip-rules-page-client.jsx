@@ -312,7 +312,7 @@ export function IpRulesPageClient() {
             </div>
           ) : rules.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No IP rules configured. Click "Add Rule" to create one.
+              No IP rules configured. Click &quot;Add Rule&quot; to create one.
             </div>
           ) : (
             <div className="rounded-md border">

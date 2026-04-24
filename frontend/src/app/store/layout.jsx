@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { StoreCartProvider } from '@/lib/context/StoreCartContext'
 import { StoreHeader } from './store-header'
 
@@ -10,7 +11,9 @@ export default function StoreLayout({ children }) {
   return (
     <StoreCartProvider>
       <div className="min-h-screen bg-background flex flex-col">
-        <StoreHeader />
+        <Suspense fallback={null}>
+          <StoreHeader />
+        </Suspense>
         <main className="flex-1">
           {children}
         </main>

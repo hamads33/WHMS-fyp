@@ -128,6 +128,11 @@ function getActionDescription(key = "") {
   return "Run this automation action"
 }
 
+function renderActionIcon(key, className) {
+  const IconComponent = getActionIcon(key)
+  return <IconComponent className={className} />
+}
+
 function getModule(action) {
   if (action.module) return action.module
   const key = action.key || ""
@@ -140,7 +145,6 @@ function getModule(action) {
 function ActionCard({ action, onSelectAction }) {
   if (!action?.key) return null
 
-  const Icon = getActionIcon(action.key)
   const description = getActionDescription(action.key)
   const mod = getModule(action)
   const colorCls = MODULE_COLORS[mod] || MODULE_COLORS.core
@@ -158,7 +162,7 @@ function ActionCard({ action, onSelectAction }) {
     >
       <div className="flex items-start gap-3 p-3 rounded-lg border border-border bg-background hover:border-primary/60 hover:bg-primary/5 transition-all duration-150 cursor-pointer">
         <div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 group-hover:bg-primary/15 transition-colors mt-0.5 ${colorCls}`}>
-          <Icon className="w-4 h-4" />
+          {renderActionIcon(action.key, "w-4 h-4")}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold leading-tight group-hover:text-primary transition-colors">

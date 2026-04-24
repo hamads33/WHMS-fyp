@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   PlusCircle, ArrowRight, Package, RefreshCw, Puzzle, Upload,
   CheckCircle2, XCircle, Clock, Edit3,
@@ -13,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import MarketplaceAPI from "@/lib/api/marketplace";
+import { CapabilityBadges } from "@/components/plugins/PluginCapabilityBadges";
 import { formatDate, formatNumber } from "@/lib/utils";
 
 function StatusBadge({ status }) {
@@ -35,7 +37,7 @@ function PluginRow({ plugin }) {
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted text-base font-bold text-muted-foreground select-none">
         {plugin.iconUrl
-          ? <img src={plugin.iconUrl} alt={plugin.name} className="h-8 w-8 object-contain rounded" />
+          ? <Image src={plugin.iconUrl} alt={plugin.name} width={32} height={32} className="object-contain rounded" />
           : (plugin.name?.[0] ?? "P")}
       </div>
 
@@ -49,6 +51,9 @@ function PluginRow({ plugin }) {
           <p className="text-xs text-muted-foreground">Updated {formatDate(plugin.updatedAt ?? plugin.createdAt, "short")}</p>
           {plugin.salesCount > 0 && (
             <p className="text-xs text-muted-foreground">{formatNumber(plugin.salesCount)} installs</p>
+          )}
+          {plugin.capabilities?.length > 0 && (
+            <CapabilityBadges capabilities={plugin.capabilities} size="xs" max={3} />
           )}
           {plugin.pricingType === "free" ? (
             <span className="text-xs text-green-600 dark:text-green-400">Free</span>

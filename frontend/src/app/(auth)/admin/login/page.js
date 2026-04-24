@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,8 @@ import { Loader2, Shield, Lock } from "lucide-react";
 import { useAuth } from "@/lib/context/AuthContext";
 
 export default function AdminLoginPage() {
-  const router      = useRouter();
-  const searchParams = useSearchParams();
-  const { login }   = useAuth();
+  const router    = useRouter();
+  const { login } = useAuth();
 
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");

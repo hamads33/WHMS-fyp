@@ -2,6 +2,7 @@ const serverRepo = require("../repositories/server.repository");
 const serverLogRepo = require("../repositories/server-log.repository");
 const webhookService = require("./webhook.service");
 const { resolveDriver } = require("../drivers");
+const { emitAutomationEvent } = require("../../automation/lib/runtime-events");
 
 function notFound(msg = "Server not found") {
   const e = new Error(msg);
@@ -27,6 +28,17 @@ async function createServer(data) {
     message: `Server "${server.name}" created (${server.type})`,
   });
   webhookService.emit("SERVER_ADDED", { server: { id: server.id, name: server.name, type: server.type } });
+  await emitAutomationEvent(
+    global.__whmsApp,
+    "server.created",
+    {
+      serverId: server.id,
+      name: server.name,
+      type: server.type,
+      status: server.status,
+    },
+    { source: "server_management" }
+  );
   return server;
 }
 
@@ -37,13 +49,26 @@ async function getCapabilities(id) {
 }
 
 async function updateServer(id, data) {
-  await getServer(id);
+  const previous = await getServer(id);
   const server = await serverRepo.update(id, data);
   await serverLogRepo.create({
     serverId: server.id,
     action: "SERVER_UPDATED",
     message: `Server "${server.name}" updated`,
   });
+  if (data.status && data.status !== previous.status) {
+    await emitAutomationEvent(
+      global.__whmsApp,
+      "server.status_changed",
+      {
+        serverId: server.id,
+        name: server.name,
+        previousStatus: previous.status,
+        newStatus: data.status,
+      },
+      { source: "server_management" }
+    );
+  }
   return server;
 }
 
@@ -75,7 +100,7 @@ async function getMetrics(id) {
 }
 
 async function setMaintenanceMode(id, enabled) {
-  await getServer(id);
+  const previous = await getServer(id);
   const status = enabled ? "maintenance" : "active";
   const server = await serverRepo.update(id, { status });
   await serverLogRepo.create({
@@ -83,6 +108,17 @@ async function setMaintenanceMode(id, enabled) {
     action: "SERVER_UPDATED",
     message: `Server "${server.name}" set to ${status}`,
   });
+  await emitAutomationEvent(
+    global.__whmsApp,
+    "server.status_changed",
+    {
+      serverId: server.id,
+      name: server.name,
+      previousStatus: previous.status,
+      newStatus: status,
+    },
+    { source: "server_management" }
+  );
   return server;
 }
 

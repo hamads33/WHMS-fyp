@@ -1,7 +1,7 @@
 // lib/context/AuthContext.js
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, startTransition } from "react";
 import { AuthAPI } from "@/lib/api/auth";
 import { ImpersonationAPI } from "@/lib/impersonation";
 import { useRouter } from "next/navigation";
@@ -19,54 +19,59 @@ export function AuthProvider({ children }) {
   
   const router = useRouter();
 
+  const clearSessionState = useCallback(() => {
+    setSession(null);
+    setUser(null);
+    setPortal(null);
+    setImpersonating(false);
+    setImpersonator(null);
+  }, []);
+
+  const applySessionState = useCallback((data) => {
+    if (!data?.user) {
+      clearSessionState();
+      return null;
+    }
+
+    const nextUser = {
+      ...data.user,
+      permissions: data.user.permissions || [],
+      portals: data.portals || data.user.portals || [],
+    };
+
+    const nextSession = {
+      user: nextUser,
+      portal: data.portal || null,
+      portals: nextUser.portals,
+      impersonating: data.impersonating || false,
+      impersonator: data.impersonator || null,
+    };
+
+    setSession(nextSession);
+    setUser(nextUser);
+    setPortal(nextSession.portal);
+    setImpersonating(nextSession.impersonating);
+    setImpersonator(nextSession.impersonator);
+
+    return nextSession;
+  }, [clearSessionState]);
+
   // ===================================
   // LOAD SESSION
   // ===================================
   
-  const loadSession = useCallback(async () => {
+  const loadSession = useCallback(async (options = {}) => {
     try {
       setLoading(true);
       setError(null);
 
-      console.log("[AUTH] Loading session...");
-      const data = await AuthAPI.getSession();
-      console.log("[AUTH] Session loaded:", data);
-
-      // Only update state if we got valid session data
-      if (data) {
-        setSession(data);
-        // Merge portals array into user object so canAccessPortal() works
-        const userWithPortals = data.user
-          ? { ...data.user, portals: data.portals || data.user.portals || [] }
-          : null;
-        setUser(userWithPortals);
-        setPortal(data.portal || null);
-        setImpersonating(data.impersonating || false);
-        setImpersonator(data.impersonator || null);
-        console.log("[AUTH] Session state updated. User:", userWithPortals?.email, "Portal:", data.portal);
-      } else {
-        // No session found - clear state
-        console.log("[AUTH] No session data returned");
-        setSession(null);
-        setUser(null);
-        setPortal(null);
-        setImpersonating(false);
-        setImpersonator(null);
-      }
-      return data;
+      const data = await AuthAPI.getSession({
+        redirectOn401: false,
+        ...options,
+      });
+      return applySessionState(data);
     } catch (err) {
-      console.error("[AUTH] loadSession error:", err.message);
-      // Don't log 401 errors as they're expected when not logged in
-      if (err.message !== "UNAUTHENTICATED") {
-        console.error("Failed to load session:", err);
-      }
-
-      // Clear session on error
-      setSession(null);
-      setUser(null);
-      setPortal(null);
-      setImpersonating(false);
-      setImpersonator(null);
+      clearSessionState();
 
       // Only set error for unexpected errors
       if (err.message !== "UNAUTHENTICATED") {
@@ -76,7 +81,7 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applySessionState, clearSessionState]);
 
   // Load session on mount
   useEffect(() => {
@@ -87,99 +92,82 @@ export function AuthProvider({ children }) {
   // AUTHENTICATION METHODS
   // ===================================
   
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     try {
-      console.log("[AUTH] Login attempt:", email);
       const response = await AuthAPI.login(email, password);
-      console.log("[AUTH] Login response:", response?.user);
 
       // MFA required — return early so the login page can redirect to /mfa-verify
       if (response?.requiresMFA) {
-        console.log("[AUTH] MFA required, returning early");
         return response;
       }
 
-      // Reload session after login
-      console.log("[AUTH] MFA not required, loading session...");
-      try {
-        await loadSession();
-        console.log("[AUTH] Session loaded successfully");
-      } catch (sessionErr) {
-        console.error("[AUTH] Session load failed:", sessionErr.message);
-        throw sessionErr;
-      }
+      const portal = response.portal || getPortalName(response.user?.roles || []);
+      applySessionState({
+        user: response.user,
+        portal,
+        portals: response.user?.portals || getPortalsFromRoles(response.user?.roles || []),
+        impersonating: false,
+        impersonator: null,
+      });
 
-      // Redirect to appropriate portal
-      const defaultPortal = getDefaultPortal(response.user?.roles || []);
-      console.log("[AUTH] Redirecting to portal:", defaultPortal);
-      router.push(defaultPortal);
+      startTransition(() => {
+        router.push(getDefaultPortal(response.user?.roles || []));
+      });
+
+      loadSession().catch((sessionErr) => {
+        if (sessionErr?.message !== "UNAUTHENTICATED") {
+          setError(sessionErr.message);
+        }
+      });
 
       return response;
     } catch (err) {
-      console.error("[AUTH] Login error:", err.message);
       throw err;
     }
-  };
+  }, [applySessionState, loadSession]);
 
-  const register = async (data) => {
+  const register = useCallback(async (data) => {
     try {
       const response = await AuthAPI.register(data);
       return response;
     } catch (err) {
       throw err;
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await AuthAPI.logout();
-    } catch (err) {
-      console.error("Logout error:", err);
     } finally {
-      // Clear local state
-      setSession(null);
-      setUser(null);
-      setPortal(null);
-      setImpersonating(false);
-      setImpersonator(null);
-      
-      // Redirect to login
+      clearSessionState();
       router.push("/login");
     }
-  };
+  }, [clearSessionState]);
 
   // ===================================
   // IMPERSONATION METHODS
   // ===================================
   
-  const startImpersonation = async (targetUserId, reason) => {
+  const startImpersonation = useCallback(async (targetUserId, reason) => {
     try {
       const response = await ImpersonationAPI.start({ targetUserId, reason });
-
-      // Backend always sets portal = "client" during impersonation.
-      // Always redirect to client dashboard — the client layout allows
-      // impersonating admins regardless of the target user's roles.
       await loadSession();
       router.push("/client/dashboard");
-
       return response;
     } catch (err) {
       throw err;
     }
-  };
+  }, [loadSession]);
 
-  const stopImpersonation = async (sessionId) => {
+  const stopImpersonation = useCallback(async (sessionId) => {
     try {
       await ImpersonationAPI.stop({ sessionId });
-
-      // Backend already restored the admin cookie — just reload session
       await loadSession();
-
       router.push("/admin/dashboard");
     } catch (err) {
       throw err;
     }
-  };
+  }, [loadSession]);
 
   // ===================================
   // PERMISSION HELPERS
@@ -221,27 +209,10 @@ export function AuthProvider({ children }) {
   }, [user]);
 
   // ===================================
-  // COMPUTED PROPERTIES
-  // ===================================
-  
-  const isAuthenticated = Boolean(user);
-  
-  const isAdmin = hasAnyRole(["superadmin", "admin", "staff"]);
-  
-  const isClient = hasRole("client");
-  
-  const isReseller = hasRole("reseller");
-  
-  const isDeveloper = hasRole("developer");
-  
-  const isSuperAdmin = hasRole("superadmin");
-
-  // ===================================
   // CONTEXT VALUE
   // ===================================
   
-  const value = {
-    // Session state
+  const value = useMemo(() => ({
     session,
     user,
     portal,
@@ -249,18 +220,12 @@ export function AuthProvider({ children }) {
     impersonator,
     loading,
     error,
-    
-    // Auth methods
     login,
     register,
     logout,
     loadSession,
-    
-    // Impersonation
     startImpersonation,
     stopImpersonation,
-    
-    // Permission helpers
     hasRole,
     hasAnyRole,
     hasAllRoles,
@@ -268,15 +233,17 @@ export function AuthProvider({ children }) {
     hasAnyPermission,
     hasAllPermissions,
     canAccessPortal,
-    
-    // Computed flags
-    isAuthenticated,
-    isAdmin,
-    isClient,
-    isReseller,
-    isDeveloper,
-    isSuperAdmin,
-  };
+    isAuthenticated: Boolean(user),
+    isAdmin: hasAnyRole(["superadmin", "admin", "staff"]),
+    isClient: hasRole("client"),
+    isReseller: hasRole("reseller"),
+    isDeveloper: hasRole("developer"),
+    isSuperAdmin: hasRole("superadmin"),
+  }), [
+    session, user, portal, impersonating, impersonator, loading, error,
+    login, register, logout, loadSession, startImpersonation, stopImpersonation,
+    hasRole, hasAnyRole, hasAllRoles, hasPermission, hasAnyPermission, hasAllPermissions, canAccessPortal,
+  ]);
 
   return (
     <AuthContext.Provider value={value}>
@@ -298,21 +265,35 @@ export function useAuth() {
 // ===================================
 
 function getDefaultPortal(roles) {
-  if (!roles || roles.length === 0) return "/login";
-  
-  // Priority order: admin > reseller > developer > client
-  if (roles.includes("superadmin") || roles.includes("admin") || roles.includes("staff")) {
-    return "/admin/dashboard";
+  switch (getPortalName(roles)) {
+    case "admin":
+      return "/admin/dashboard";
+    case "reseller":
+      return "/reseller/dashboard";
+    case "developer":
+      return "/developer";
+    case "client":
+      return "/client/dashboard";
+    default:
+      return "/login";
   }
-  if (roles.includes("reseller")) {
-    return "/reseller/dashboard";
-  }
-  if (roles.includes("developer")) {
-    return "/developer";
-  }
-  if (roles.includes("client")) {
-    return "/client/dashboard";
-  }
-  
-  return "/login";
+}
+
+function getPortalName(roles) {
+  if (!roles || roles.length === 0) return null;
+  if (roles.includes("superadmin") || roles.includes("admin") || roles.includes("staff")) return "admin";
+  if (roles.includes("reseller")) return "reseller";
+  if (roles.includes("developer")) return "developer";
+  if (roles.includes("client")) return "client";
+  return null;
+}
+
+function getPortalsFromRoles(roles) {
+  const portals = [];
+  if (!roles || roles.length === 0) return portals;
+  if (roles.includes("superadmin") || roles.includes("admin") || roles.includes("staff")) portals.push("admin");
+  if (roles.includes("client")) portals.push("client");
+  if (roles.includes("reseller")) portals.push("reseller");
+  if (roles.includes("developer")) portals.push("developer");
+  return portals;
 }

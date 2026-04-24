@@ -12,7 +12,9 @@ const authGuard = require("../../auth/middlewares/auth.guard");
 const {
   provisionDomainDto,
   provisionEmailDto,
+  provisionDatabaseDto,
 } = require("../dtos/provisioning.dtos");
+const Joi = require("joi");
 
 // ============================================================
 // ACCOUNTS
@@ -51,12 +53,35 @@ router.post(
   ctrl.provisionEmail
 );
 
+// Install SSL for own domain
+router.post(
+  "/accounts/:username/ssl",
+  authGuard,
+  validate(Joi.object({ domain: Joi.string().domain().required() })),
+  ctrl.issueSSLClient
+);
+
+// Create database for own hosting account
+router.post(
+  "/accounts/:username/databases",
+  authGuard,
+  validate(
+    provisionDatabaseDto.keys({
+      domain: Joi.string().domain().required(),
+    })
+  ),
+  ctrl.createDatabaseClient
+);
+
 // ============================================================
 // USAGE STATS
 // ============================================================
 
 // Get account usage statistics
 router.get("/accounts/:username/stats", authGuard, ctrl.getAccountStats);
+
+// Sync account usage statistics
+router.post("/accounts/:username/sync", authGuard, ctrl.syncOwnedAccountStats);
 
 module.exports = router;
 
@@ -111,7 +136,7 @@ adminRouter.post("/accounts/:username/emails-async", ctrl.createEmailAsync);
 // Suspend account
 adminRouter.post(
   "/accounts/:username/suspend",
-  validate(require("joi").object({ reason: require("joi").string().optional() })),
+  validate(Joi.object({ reason: Joi.string().optional() })),
   ctrl.suspendAccount
 );
 

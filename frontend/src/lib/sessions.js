@@ -15,7 +15,7 @@ import { apiFetch } from "./api/client";
  * @returns {Promise<Object>} Current session information
  */
 async function getCurrent() {
-  return await apiFetch("/auth/session/current");
+  return await apiFetch("/auth/sessions/current");
 }
 
 /**
@@ -72,5 +72,7 @@ export const SessionsAPI = {
   getSecurityLogs,
   getStats,
 };
+
+export const SessionAPI = SessionsAPI;
 
 export default SessionsAPI;

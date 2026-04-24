@@ -224,7 +224,7 @@ export function DashboardContent() {
       value:    loading ? '—' : activeOrders,
       subtitle: loading ? null : `${orders.length} total order${orders.length !== 1 ? 's' : ''}`,
       icon:     Server,
-      href:     '/client/services',
+      href:     '/client/hosting',
     },
     {
       title:    'Total Orders',
@@ -246,7 +246,7 @@ export function DashboardContent() {
       value:    loading ? '—' : `${sslActive}/${sslTotal}`,
       subtitle: loading ? null : (sslAlert ? 'Some domains need attention' : sslTotal === 0 ? 'No active hosting' : 'All secured'),
       icon:     ShieldCheck,
-      href:     '/client/orders',
+      href:     '/client/hosting',
       alert:    !loading && sslAlert,
     },
   ]

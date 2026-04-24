@@ -60,7 +60,7 @@ function validatePlugin(plugin, source) {
     }
   }
 
-  // Optional ui — must have adminPages array if provided
+  // Optional ui — must have adminPages / settingsTabs arrays if provided
   if (plugin.meta.ui !== undefined) {
     if (typeof plugin.meta.ui !== "object" || Array.isArray(plugin.meta.ui)) {
       throw new Error(`Plugin "${source}" meta.ui must be an object`);
@@ -73,6 +73,38 @@ function validatePlugin(plugin, source) {
         if (!page.id || !page.label) {
           throw new Error(`Plugin "${source}" meta.ui.adminPages entries must have id and label`);
         }
+      }
+    }
+    if (plugin.meta.ui.settingsTabs !== undefined) {
+      if (!Array.isArray(plugin.meta.ui.settingsTabs)) {
+        throw new Error(`Plugin "${source}" meta.ui.settingsTabs must be an array`);
+      }
+      for (const tab of plugin.meta.ui.settingsTabs) {
+        if (!tab.id || !tab.label) {
+          throw new Error(`Plugin "${source}" meta.ui.settingsTabs entries must have id and label`);
+        }
+      }
+    }
+  }
+
+  // Optional configSchema — field definitions for auto-generated settings form
+  if (plugin.meta.configSchema !== undefined) {
+    if (!Array.isArray(plugin.meta.configSchema)) {
+      throw new Error(`Plugin "${source}" meta.configSchema must be an array`);
+    }
+    const VALID_TYPES = ["text", "password", "select", "toggle", "number"];
+    for (const field of plugin.meta.configSchema) {
+      if (!field.key || typeof field.key !== "string") {
+        throw new Error(`Plugin "${source}" meta.configSchema entries must have a string key`);
+      }
+      if (!field.label || typeof field.label !== "string") {
+        throw new Error(`Plugin "${source}" meta.configSchema entries must have a string label`);
+      }
+      if (field.type && !VALID_TYPES.includes(field.type)) {
+        throw new Error(`Plugin "${source}" meta.configSchema field "${field.key}" type must be one of: ${VALID_TYPES.join(", ")}`);
+      }
+      if (field.type === "select" && (!Array.isArray(field.options) || field.options.length === 0)) {
+        throw new Error(`Plugin "${source}" meta.configSchema field "${field.key}" of type "select" must have a non-empty options array`);
       }
     }
   }

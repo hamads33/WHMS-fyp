@@ -3,37 +3,45 @@
  * ------------------------------------------------------------------
  * Core business logic for the plugin marketplace.
  *
- * Now uses Prisma for persistent storage.
- * VERSION DATA: Stored directly on MarketplaceProduct (zipPath, downloadUrl, version, changelog, checksum)
+ * Aligns marketplace records with the runtime plugin contract used by
+ * backend/src/core/plugin-system by normalizing metadata like:
+ *   - capabilities
+ *   - permissions
+ *   - ui.adminPages
+ *   - plugin dependencies
  *
+ * VERSION DATA: Stored directly on MarketplaceProduct
  * STATUS FLOW:
- *   draft → submitted → under_review → approved | rejected
+ *   draft -> submitted -> under_review -> approved | rejected
  */
 
+const pluginState = require("../../core/plugin-system/plugin-state.service");
+
 const STATUSES = {
-  DRAFT        : "draft",
-  SUBMITTED    : "submitted",
-  UNDER_REVIEW : "under_review",
-  APPROVED     : "approved",
-  REJECTED     : "rejected",
+  DRAFT: "draft",
+  SUBMITTED: "submitted",
+  UNDER_REVIEW: "under_review",
+  APPROVED: "approved",
+  REJECTED: "rejected",
 };
 
 class PluginMarketplaceService {
   /**
    * @param {object} opts
    * @param {object} opts.prisma - Prisma client (required)
+   * @param {object|Function} [opts.pluginManager] - PluginManager or getter
    * @param {object} [opts.logger]
-   * @param {number} [opts.cacheMaxAge] - Max age of listing cache in ms (default: 60000ms = 60s)
+   * @param {number} [opts.cacheMaxAge]
    */
-  constructor({ prisma, logger = console, cacheMaxAge = 60000 } = {}) {
+  constructor({ prisma, pluginManager = null, logger = console, cacheMaxAge = 60000 } = {}) {
     if (!prisma) {
       throw new Error("PluginMarketplaceService requires a prisma client");
     }
+
     this.prisma = prisma;
+    this.pluginManager = pluginManager;
     this.logger = logger;
     this.cacheMaxAge = cacheMaxAge;
-
-    // Simple TTL cache for marketplace listing
     this._listingCache = {
       data: null,
       expiresAt: null,
@@ -44,18 +52,15 @@ class PluginMarketplaceService {
   // Plugins
   // ----------------------------------------------------------------
 
-  /**
-   * createPlugin
-   * Creates a new plugin entry in draft status.
-   *
-   * @param {{ name, slug, description, author, ownerId, category, pricingType, price, currency, interval, visibility }} data
-   * @returns {Promise<object>} plugin record
-   */
   async createPlugin({
     name,
     slug,
     description = "",
-    author,
+    author = null,
+    capabilities = [],
+    permissions = [],
+    ui = null,
+    pluginDependencies = null,
     ownerId = null,
     category = null,
     pricingType = "free",
@@ -65,13 +70,32 @@ class PluginMarketplaceService {
     visibility = "public",
   }) {
     try {
+      const developerProfile = await this._resolveDeveloperProfile(ownerId, {
+        createIfMissing: true,
+        author,
+      });
+
       const plugin = await this.prisma.marketplaceProduct.create({
         data: {
           name: name.trim(),
           slug: slug.trim(),
           description: description?.trim() || "",
-          devId: ownerId,
+          author: author?.trim() || developerProfile?.storeName || developerProfile?.displayName || null,
+          devId: developerProfile.id,
           category,
+          capabilities,
+          permissions,
+          ui,
+          pluginDependencies,
+          pluginMeta: {
+            name: name.trim(),
+            version: null,
+            description: description?.trim() || "",
+            capabilities,
+            permissions,
+            ui,
+            pluginDependencies,
+          },
           pricingType,
           price,
           currency,
@@ -82,7 +106,7 @@ class PluginMarketplaceService {
       });
 
       this.logger.info(`[Marketplace] Plugin created: ${slug} (${plugin.id})`);
-      return this._formatPluginRecord(plugin);
+      return this.getPluginById(plugin.id);
     } catch (err) {
       if (err.code === "P2002" && err.meta?.target?.includes("slug")) {
         const error = new Error(`A plugin with slug "${slug}" already exists`);
@@ -93,30 +117,60 @@ class PluginMarketplaceService {
     }
   }
 
-  /**
-   * updatePluginAssets
-   * Updates icon and screenshots for a plugin.
-   */
-  async updatePluginAssets(pluginId, { iconUrl, screenshots = null }) {
+  async updatePluginAssets(pluginId, { iconUrl, screenshots = null, ownerId = null }) {
     const updateData = {};
     if (iconUrl !== undefined) updateData.iconUrl = iconUrl;
     if (screenshots !== undefined) updateData.screenshots = screenshots;
 
-    const plugin = await this.prisma.marketplaceProduct.update({
+    // Always validate ownership — required for security
+    if (!ownerId) {
+      throw new Error("ownerId is required for updatePluginAssets");
+    }
+
+    const existing = await this.prisma.marketplaceProduct.findUnique({
+      where: { id: pluginId },
+      include: { dev: true },
+    });
+    if (!existing) {
+      const err = new Error(`Plugin not found: ${pluginId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    if (existing.dev?.userId !== ownerId) {
+      const err = new Error("You do not own this plugin");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    await this.prisma.marketplaceProduct.update({
       where: { id: pluginId },
       data: updateData,
     });
 
+    const plugin = await this.getPluginById(pluginId);
     this.logger.info(`[Marketplace] Plugin assets updated: ${plugin.slug}`);
-    return this._formatPluginRecord(plugin);
+    return plugin;
   }
 
-  /**
-   * updatePluginPricing
-   * Updates pricing for a plugin.
-   */
-  async updatePluginPricing(pluginId, { pricingType, price, currency = "USD", interval = null }) {
-    const plugin = await this.prisma.marketplaceProduct.update({
+  async updatePluginPricing(pluginId, { pricingType, price, currency = "USD", interval = null, ownerId = null }) {
+    if (ownerId) {
+      const existing = await this.prisma.marketplaceProduct.findUnique({
+        where: { id: pluginId },
+        include: { dev: true },
+      });
+      if (!existing) {
+        const err = new Error(`Plugin not found: ${pluginId}`);
+        err.statusCode = 404;
+        throw err;
+      }
+      if (existing.dev?.userId !== ownerId) {
+        const err = new Error("You do not own this plugin");
+        err.statusCode = 403;
+        throw err;
+      }
+    }
+
+    await this.prisma.marketplaceProduct.update({
       where: { id: pluginId },
       data: {
         pricingType,
@@ -126,40 +180,87 @@ class PluginMarketplaceService {
       },
     });
 
+    const plugin = await this.getPluginById(pluginId);
     this.logger.info(`[Marketplace] Plugin pricing updated: ${plugin.slug}`);
-    return this._formatPluginRecord(plugin);
+    return plugin;
   }
 
-  /**
-   * listPluginsByOwner
-   * Returns all plugins belonging to a specific developer user.
-   */
+  async updatePluginMetadata(pluginId, data, { ownerId = null } = {}) {
+    const existing = await this.prisma.marketplaceProduct.findUnique({
+      where: { id: pluginId },
+      include: { dev: true },
+    });
+
+    if (!existing) {
+      const err = new Error(`Plugin not found: ${pluginId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (ownerId && existing.dev?.userId !== ownerId) {
+      const err = new Error("You do not own this plugin");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const capabilities = data.capabilities ?? existing.capabilities ?? [];
+    const permissions = data.permissions ?? existing.permissions ?? [];
+    const ui = data.ui !== undefined ? data.ui : (existing.ui ?? null);
+    const pluginDependencies = data.pluginDependencies !== undefined
+      ? data.pluginDependencies
+      : (existing.pluginDependencies ?? null);
+
+    await this.prisma.marketplaceProduct.update({
+      where: { id: pluginId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.slug !== undefined ? { slug: data.slug } : {}),
+        ...(data.description !== undefined ? { description: data.description } : {}),
+        ...(data.author !== undefined ? { author: data.author } : {}),
+        ...(data.category !== undefined ? { category: data.category } : {}),
+        ...(data.visibility !== undefined ? { visibility: data.visibility } : {}),
+        ...(data.capabilities !== undefined ? { capabilities } : {}),
+        ...(data.permissions !== undefined ? { permissions } : {}),
+        ...(data.ui !== undefined ? { ui } : {}),
+        ...(data.pluginDependencies !== undefined ? { pluginDependencies } : {}),
+        pluginMeta: {
+          ...(existing.pluginMeta && typeof existing.pluginMeta === "object" ? existing.pluginMeta : {}),
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          capabilities,
+          permissions,
+          ui,
+          pluginDependencies,
+        },
+      },
+    });
+
+    const plugin = await this.getPluginById(pluginId);
+    this.logger.info(`[Marketplace] Plugin metadata updated: ${plugin.slug}`);
+    return plugin;
+  }
+
   async listPluginsByOwner(ownerId) {
     const plugins = await this.prisma.marketplaceProduct.findMany({
-      where: { devId: ownerId },
+      where: { dev: { userId: ownerId } },
       orderBy: { createdAt: "desc" },
+      include: { dev: true },
     });
-    return plugins.map((p) => this._formatPluginRecord(p));
+    return plugins.map((plugin) => this._formatPluginRecord(plugin));
   }
 
-  /**
-   * listAllPlugins
-   * Returns all plugins regardless of status (admin view).
-   */
   async listAllPlugins() {
     const plugins = await this.prisma.marketplaceProduct.findMany({
       orderBy: { createdAt: "desc" },
+      include: { dev: true },
     });
-    return plugins.map((p) => this._formatPluginRecord(p));
+    return plugins.map((plugin) => this._formatPluginRecord(plugin));
   }
 
-  /**
-   * submitZipVersion
-   * Updates version fields on the plugin and moves status to submitted.
-   */
-  async submitZipVersion(pluginId, { version, changelog = "", zipPath, originalName, ownerId }) {
+  async submitZipVersion(pluginId, { version, changelog = "", zipPath, ownerId }) {
     const plugin = await this.prisma.marketplaceProduct.findUnique({
       where: { id: pluginId },
+      include: { dev: true },
     });
 
     if (!plugin) {
@@ -168,8 +269,7 @@ class PluginMarketplaceService {
       throw err;
     }
 
-    // Only the owner may submit versions
-    if (plugin.devId && ownerId && plugin.devId !== ownerId) {
+    if (plugin.dev?.userId && ownerId && plugin.dev.userId !== ownerId) {
       const err = new Error("You do not own this plugin");
       err.statusCode = 403;
       throw err;
@@ -182,26 +282,27 @@ class PluginMarketplaceService {
         changelog: changelog?.trim() || "",
         zipPath,
         status: STATUSES.SUBMITTED,
+        pluginMeta: {
+          ...(plugin.pluginMeta && typeof plugin.pluginMeta === "object" ? plugin.pluginMeta : {}),
+          name: plugin.name,
+          version: version.trim(),
+          description: plugin.description || "",
+          capabilities: plugin.capabilities ?? [],
+          permissions: plugin.permissions ?? [],
+          ui: plugin.ui ?? null,
+          pluginDependencies: plugin.pluginDependencies ?? null,
+        },
       },
     });
 
     this.logger.info(`[Marketplace] Zip version submitted: ${updated.slug} v${version}`);
-
-    // Return in version record format for backward compatibility
     return this._formatVersionRecord(updated);
   }
 
-  /**
-   * submitPluginVersion
-   * Updates version fields on the plugin and moves status to submitted.
-   *
-   * @param {string} pluginId
-   * @param {{ version, download_url, changelog, checksum }} data
-   * @returns {Promise<object>} version record
-   */
-  async submitPluginVersion(pluginId, { version, download_url, changelog = "", checksum = "" }) {
+  async submitPluginVersion(pluginId, { version, download_url, changelog = "", checksum = "", ownerId = null }) {
     const plugin = await this.prisma.marketplaceProduct.findUnique({
       where: { id: pluginId },
+      include: { dev: true },
     });
 
     if (!plugin) {
@@ -216,6 +317,12 @@ class PluginMarketplaceService {
       throw err;
     }
 
+    if (plugin.dev?.userId && ownerId && plugin.dev.userId !== ownerId) {
+      const err = new Error("You do not own this plugin");
+      err.statusCode = 403;
+      throw err;
+    }
+
     const updated = await this.prisma.marketplaceProduct.update({
       where: { id: pluginId },
       data: {
@@ -224,6 +331,16 @@ class PluginMarketplaceService {
         downloadUrl: download_url.trim(),
         checksum: checksum?.trim() || "",
         status: STATUSES.SUBMITTED,
+        pluginMeta: {
+          ...(plugin.pluginMeta && typeof plugin.pluginMeta === "object" ? plugin.pluginMeta : {}),
+          name: plugin.name,
+          version: version.trim(),
+          description: plugin.description || "",
+          capabilities: plugin.capabilities ?? [],
+          permissions: plugin.permissions ?? [],
+          ui: plugin.ui ?? null,
+          pluginDependencies: plugin.pluginDependencies ?? null,
+        },
       },
     });
 
@@ -231,51 +348,108 @@ class PluginMarketplaceService {
     return this._formatVersionRecord(updated);
   }
 
-  /**
-   * listMarketplacePlugins
-   * Returns all approved plugins (public listing).
-   * Results are cached for 60 seconds to reduce computation.
-   *
-   * @returns {Promise<object[]>}
-   */
-  async listMarketplacePlugins() {
+  async listMarketplacePlugins(filters = {}) {
+    // Validate and sanitize filter inputs
+    const validatedFilters = this._validateListingFilters(filters);
+    const isUnfiltered = !validatedFilters.search && !validatedFilters.category && !validatedFilters.pricingType && !validatedFilters.minRating && !validatedFilters.capability;
     const now = Date.now();
 
-    // Return cached result if still valid
-    if (this._listingCache.data && this._listingCache.expiresAt > now) {
+    if (isUnfiltered && this._listingCache.data && this._listingCache.expiresAt > now) {
       this.logger.debug("[Marketplace] Returning cached plugin listing");
       return this._listingCache.data;
     }
 
-    // Compute fresh listing
     const plugins = await this.prisma.marketplaceProduct.findMany({
       where: {
         status: STATUSES.APPROVED,
         visibility: "public",
+        ...(validatedFilters.search ? {
+          OR: [
+            { name: { contains: validatedFilters.search, mode: "insensitive" } },
+            { slug: { contains: validatedFilters.search, mode: "insensitive" } },
+            { description: { contains: validatedFilters.search, mode: "insensitive" } },
+            { author: { contains: validatedFilters.search, mode: "insensitive" } },
+          ],
+        } : {}),
+        ...(validatedFilters.category ? { category: validatedFilters.category } : {}),
+        ...(validatedFilters.pricingType ? { pricingType: validatedFilters.pricingType } : {}),
+        ...(validatedFilters.capability ? { capabilities: { has: validatedFilters.capability } } : {}),
       },
       orderBy: { createdAt: "desc" },
+      include: { dev: true },
     });
 
-    const listing = plugins.map((p) => this._formatPluginRecord(p));
+    let listing = plugins.map((plugin) => this._formatPluginRecord(plugin));
+    if (validatedFilters.minRating) {
+      listing = listing.filter((plugin) => Number(plugin.rating || 0) >= Number(validatedFilters.minRating));
+    }
 
-    // Cache it
-    this._listingCache.data = listing;
-    this._listingCache.expiresAt = now + this.cacheMaxAge;
+    if (isUnfiltered) {
+      this._listingCache.data = listing;
+      this._listingCache.expiresAt = now + this.cacheMaxAge;
+      this.logger.debug(`[Marketplace] Cached plugin listing (expires in ${this.cacheMaxAge}ms)`);
+    }
 
-    this.logger.debug(`[Marketplace] Cached plugin listing (expires in ${this.cacheMaxAge}ms)`);
     return listing;
   }
 
   /**
-   * getPluginBySlug
-   * Returns a single plugin by slug (any status — callers filter if needed).
-   *
-   * @param {string} slug
-   * @returns {Promise<object>}
+   * _validateListingFilters
+   * Validates and sanitizes filter parameters to prevent injection attacks.
+   * @private
    */
+  _validateListingFilters(filters = {}) {
+    const validated = {};
+
+    // Validate search (must be string, max 200 chars)
+    if (filters.search) {
+      if (typeof filters.search !== "string") {
+        throw new Error("Invalid filter: search must be a string");
+      }
+      validated.search = filters.search.trim().slice(0, 200);
+    }
+
+    // Validate category (must be string, max 100 chars)
+    if (filters.category) {
+      if (typeof filters.category !== "string") {
+        throw new Error("Invalid filter: category must be a string");
+      }
+      validated.category = filters.category.trim().slice(0, 100);
+    }
+
+    // Validate pricingType (must be one of: free, one-time, subscription)
+    if (filters.pricingType) {
+      const validPricingTypes = ["free", "one-time", "subscription"];
+      if (!validPricingTypes.includes(filters.pricingType)) {
+        throw new Error(`Invalid filter: pricingType must be one of ${validPricingTypes.join(", ")}`);
+      }
+      validated.pricingType = filters.pricingType;
+    }
+
+    // Validate capability (must be string, max 100 chars)
+    if (filters.capability) {
+      if (typeof filters.capability !== "string") {
+        throw new Error("Invalid filter: capability must be a string");
+      }
+      validated.capability = filters.capability.trim().slice(0, 100);
+    }
+
+    // Validate minRating (must be number between 0-5)
+    if (filters.minRating !== undefined) {
+      const rating = Number(filters.minRating);
+      if (isNaN(rating) || rating < 0 || rating > 5) {
+        throw new Error("Invalid filter: minRating must be a number between 0 and 5");
+      }
+      validated.minRating = rating;
+    }
+
+    return validated;
+  }
+
   async getPluginBySlug(slug) {
     const plugin = await this.prisma.marketplaceProduct.findUnique({
       where: { slug },
+      include: { dev: true },
     });
 
     if (!plugin) {
@@ -287,13 +461,10 @@ class PluginMarketplaceService {
     return this._formatPluginRecord(plugin);
   }
 
-  /**
-   * getPluginById
-   * Returns a single plugin by id.
-   */
   async getPluginById(id) {
     const plugin = await this.prisma.marketplaceProduct.findUnique({
       where: { id },
+      include: { dev: true },
     });
 
     if (!plugin) {
@@ -305,69 +476,36 @@ class PluginMarketplaceService {
     return this._formatPluginRecord(plugin);
   }
 
-  /**
-   * _invalidateListingCache
-   * Clear the marketplace listing cache.
-   * Called whenever plugins are approved/rejected.
-   *
-   * @private
-   */
   _invalidateListingCache() {
     this._listingCache.data = null;
     this._listingCache.expiresAt = null;
     this.logger.debug("[Marketplace] Listing cache invalidated");
   }
 
-  /**
-   * approvePlugin
-   * Admin action — marks plugin as approved.
-   *
-   * @param {string} pluginId
-   * @param {string} [approvalNotes]
-   * @returns {Promise<object>} updated plugin
-   */
-  async approvePlugin(pluginId, approvalNotes = "") {
-    const plugin = await this.prisma.marketplaceProduct.update({
+  async approvePlugin(pluginId) {
+    await this.prisma.marketplaceProduct.update({
       where: { id: pluginId },
-      data: {
-        status: STATUSES.APPROVED,
-      },
+      data: { status: STATUSES.APPROVED },
     });
 
     this._invalidateListingCache();
+    const plugin = await this.getPluginById(pluginId);
     this.logger.info(`[Marketplace] Plugin approved: ${plugin.slug}`);
-    return this._formatPluginRecord(plugin);
+    return plugin;
   }
 
-  /**
-   * rejectPlugin
-   * Admin action — marks plugin as rejected.
-   *
-   * @param {string} pluginId
-   * @param {string} [rejectReason]
-   * @returns {Promise<object>} updated plugin
-   */
-  async rejectPlugin(pluginId, rejectReason = "") {
-    const plugin = await this.prisma.marketplaceProduct.update({
+  async rejectPlugin(pluginId) {
+    await this.prisma.marketplaceProduct.update({
       where: { id: pluginId },
-      data: {
-        status: STATUSES.REJECTED,
-      },
+      data: { status: STATUSES.REJECTED },
     });
 
     this._invalidateListingCache();
+    const plugin = await this.getPluginById(pluginId);
     this.logger.info(`[Marketplace] Plugin rejected: ${plugin.slug}`);
-    return this._formatPluginRecord(plugin);
+    return plugin;
   }
 
-  /**
-   * getApprovedVersion
-   * Returns the version info for an approved plugin.
-   * Throws if plugin is not approved or has no version submitted.
-   *
-   * @param {string} slug
-   * @returns {Promise<object>} version record (formatted from plugin)
-   */
   async getApprovedVersion(slug) {
     const plugin = await this.getPluginBySlug(slug);
 
@@ -390,13 +528,9 @@ class PluginMarketplaceService {
   // Reviews
   // ----------------------------------------------------------------
 
-  /**
-   * listReviews
-   * Returns all marketplace reviews (admin view), optionally filtered by product.
-   */
   async listReviews({ productId = null, limit = 50, offset = 0 } = {}) {
     const where = productId ? { productId } : {};
-    const reviews = await this.prisma.marketplaceReview.findMany({
+    return this.prisma.marketplaceReview.findMany({
       where,
       orderBy: { createdAt: "desc" },
       take: limit,
@@ -405,13 +539,8 @@ class PluginMarketplaceService {
         product: { select: { id: true, name: true, slug: true } },
       },
     });
-    return reviews;
   }
 
-  /**
-   * deleteReview
-   * Removes a review by ID (admin moderation).
-   */
   async deleteReview(reviewId) {
     return this.prisma.marketplaceReview.delete({ where: { id: reviewId } });
   }
@@ -420,71 +549,148 @@ class PluginMarketplaceService {
   // Developer Profile
   // ----------------------------------------------------------------
 
-  /**
-   * getDeveloperProfile
-   * Returns the developer profile for a given userId.
-   */
   async getDeveloperProfile(userId) {
     const profile = await this.prisma.developerProfile.findUnique({
       where: { userId },
     });
+
     if (!profile) {
       const err = new Error("Developer profile not found");
       err.statusCode = 404;
       throw err;
     }
+
     return profile;
   }
 
-  /**
-   * upsertDeveloperProfile
-   * Creates or updates the developer profile for a given userId.
-   */
   async upsertDeveloperProfile(userId, { displayName, website, github, payoutsEmail, storeName } = {}) {
-    const profile = await this.prisma.developerProfile.upsert({
+    return this.prisma.developerProfile.upsert({
       where: { userId },
       update: { displayName, website, github, payoutsEmail, storeName },
       create: { userId, displayName, website, github, payoutsEmail, storeName },
     });
-    return profile;
   }
 
   // ----------------------------------------------------------------
   // Private Helpers
   // ----------------------------------------------------------------
 
-  /**
-   * _formatPluginRecord
-   * Converts a Prisma MarketplaceProduct to the expected plugin format.
-   * Maps snake_case field names for backward compatibility.
-   */
+  async _resolveDeveloperProfile(userId, { createIfMissing = false, author = null } = {}) {
+    if (!userId) {
+      const err = new Error("Developer ownership is required");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let profile = await this.prisma.developerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!profile && createIfMissing) {
+      profile = await this.prisma.developerProfile.create({
+        data: {
+          userId,
+          displayName: author?.trim() || null,
+          storeName: author?.trim() || null,
+        },
+      });
+    }
+
+    if (!profile) {
+      const err = new Error("Developer profile not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    return profile;
+  }
+
+  _getPluginManager() {
+    if (!this.pluginManager) return null;
+    return typeof this.pluginManager === "function"
+      ? this.pluginManager()
+      : this.pluginManager;
+  }
+
+  _resolveRuntimePlugin(product) {
+    const pm = this._getPluginManager();
+    if (!pm || typeof pm.list !== "function") return null;
+
+    const installed = pm.list();
+    const candidates = [product.slug, product.name].filter(Boolean);
+    const runtime = installed.find((plugin) => candidates.includes(plugin.name) || candidates.includes(plugin.slug));
+    if (!runtime) return null;
+
+    return {
+      ...runtime,
+      installed: true,
+      enabled: pluginState.isEnabled(runtime.name),
+      state: pluginState.getState(runtime.name),
+      pluginDependencies: runtime.pluginDependencies ?? runtime.meta?.pluginDependencies ?? null,
+    };
+  }
+
   _formatPluginRecord(product) {
     if (!product) return null;
+
+    const runtime = this._resolveRuntimePlugin(product);
+    const rawMeta = product.pluginMeta && typeof product.pluginMeta === "object" ? product.pluginMeta : {};
+    const capabilities = Array.isArray(product.capabilities) && product.capabilities.length
+      ? product.capabilities
+      : (runtime?.capabilities ?? rawMeta.capabilities ?? []);
+    const permissions = Array.isArray(product.permissions) && product.permissions.length
+      ? product.permissions
+      : (runtime?.permissions ?? rawMeta.permissions ?? []);
+    const ui = product.ui ?? runtime?.ui ?? rawMeta.ui ?? null;
+    const pluginDependencies = product.pluginDependencies ?? runtime?.pluginDependencies ?? rawMeta.pluginDependencies ?? null;
+    const developer = product.dev?.storeName || product.dev?.displayName || product.author || null;
+    const rating = Number(product.rating?.toNumber?.() ?? product.rating ?? 0);
+    const totalRevenue = Number(product.totalRevenue?.toNumber?.() ?? product.totalRevenue ?? 0);
 
     return {
       id: product.id,
       name: product.name,
       slug: product.slug,
       description: product.description || "",
-      author: product.name, // Use name as author if not set separately
+      author: product.author || developer || product.name,
+      developer,
       owner_id: product.devId,
       devId: product.devId,
       status: product.status,
       category: product.category,
+      meta: {
+        name: product.name,
+        version: product.version || runtime?.version || null,
+        description: product.description || "",
+        capabilities,
+        permissions,
+        ui,
+        pluginDependencies,
+      },
+      capabilities,
+      permissions,
+      ui,
+      pluginDependencies,
       pricingType: product.pricingType,
       price: product.price,
       currency: product.currency,
       interval: product.interval,
       visibility: product.visibility,
       iconUrl: product.iconUrl,
+      icon: product.iconUrl,
       screenshots: product.screenshots || [],
-      totalRevenue: product.totalRevenue?.toNumber?.() || 0,
+      rating,
+      totalRevenue,
       salesCount: product.salesCount,
+      downloads: product.salesCount,
+      installed: runtime?.installed || false,
+      enabled: runtime?.enabled || false,
+      runtimeState: runtime?.state || "not_installed",
+      installedVersion: runtime?.version || null,
       created_at: product.createdAt.toISOString(),
       updated_at: product.updatedAt.toISOString(),
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
-      // Version fields
       version: product.version,
       changelog: product.changelog || "",
       zipPath: product.zipPath,
@@ -493,15 +699,11 @@ class PluginMarketplaceService {
     };
   }
 
-  /**
-   * _formatVersionRecord
-   * Converts a Prisma MarketplaceProduct to version record format.
-   */
   _formatVersionRecord(product) {
     if (!product) return null;
 
     return {
-      id: product.id, // Use product ID as version record ID
+      id: product.id,
       plugin_id: product.id,
       version: product.version || "1.0.0",
       changelog: product.changelog || "",
@@ -509,7 +711,7 @@ class PluginMarketplaceService {
       zip_path: product.zipPath,
       checksum: product.checksum || "",
       created_at: product.updatedAt.toISOString(),
-      original_name: null, // Not stored separately in new schema
+      original_name: null,
     };
   }
 }

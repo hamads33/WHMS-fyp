@@ -201,29 +201,32 @@ const DEFAULT_STATE = {
   designStyle: "default",
 };
 
+function getInitialThemeState() {
+  if (typeof window === "undefined") return DEFAULT_STATE;
+
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return DEFAULT_STATE;
+
+    const parsed = JSON.parse(saved);
+    return {
+      colorTheme: parsed.colorTheme && COLOR_PRESETS[parsed.colorTheme] ? parsed.colorTheme : DEFAULT_STATE.colorTheme,
+      radius: parsed.radius || DEFAULT_STATE.radius,
+      fontScale: parsed.fontScale || DEFAULT_STATE.fontScale,
+      designStyle: parsed.designStyle || DEFAULT_STATE.designStyle,
+    };
+  } catch {
+    return DEFAULT_STATE;
+  }
+}
+
 export function AdminThemeProvider({ children }) {
-  const [colorTheme,  setColorThemeState]  = useState(DEFAULT_STATE.colorTheme);
-  const [radius,      setRadiusState]      = useState(DEFAULT_STATE.radius);
-  const [fontScale,   setFontScaleState]   = useState(DEFAULT_STATE.fontScale);
-  const [designStyle, setDesignStyleState] = useState(DEFAULT_STATE.designStyle);
-  const [mounted,     setMounted]          = useState(false);
-
-  // Restore from localStorage on mount
-  useEffect(() => {
-    setMounted(true);
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const { colorTheme: c, radius: r, fontScale: f, designStyle: d } = JSON.parse(saved);
-        if (c && COLOR_PRESETS[c])  { applyColor(c);       setColorThemeState(c); }
-        if (r)                       { applyRadius(r);      setRadiusState(r); }
-        if (f && f !== "default")    { applyFontScale(f);   setFontScaleState(f); }
-        if (d && d !== "default")    { applyDesignStyle(d); setDesignStyleState(d); }
-      }
-    } catch { /* ignore */ }
-  }, []);
-
-  // ── DOM helpers ─────────────────────────────────────────────────────────────
+  const initialState = getInitialThemeState();
+  const [colorTheme,  setColorThemeState]  = useState(initialState.colorTheme);
+  const [radius,      setRadiusState]      = useState(initialState.radius);
+  const [fontScale,   setFontScaleState]   = useState(initialState.fontScale);
+  const [designStyle, setDesignStyleState] = useState(initialState.designStyle);
+  const [mounted]                        = useState(typeof window !== "undefined");
 
   function applyColor(theme) {
     document.documentElement.setAttribute("data-color-theme", theme);
@@ -245,6 +248,13 @@ export function AdminThemeProvider({ children }) {
       document.documentElement.setAttribute("data-design-style", style);
     }
   }
+
+  useEffect(() => {
+    applyColor(colorTheme);
+    applyRadius(radius);
+    applyFontScale(fontScale);
+    applyDesignStyle(designStyle);
+  }, [colorTheme, radius, fontScale, designStyle]);
 
   function persist(c, r, f, d) {
     try {

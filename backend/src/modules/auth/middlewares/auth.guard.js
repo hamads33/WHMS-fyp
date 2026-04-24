@@ -154,15 +154,11 @@ async function authGuard(req, res, next) {
       });
 
       if (!currentSession) {
-        console.error("[AUTH.GUARD] Session NOT found. Token:", token.slice(0, 20) + "...");
-        console.error("[AUTH.GUARD] UserId from JWT:", userId);
         return res.status(401).json({
           error: "Session not found or has been revoked",
           code: "SESSION_REVOKED",
         });
       }
-
-      console.log("[AUTH.GUARD] Session found. UserId:", currentSession.userId);
 
       if (currentSession.userId !== userId) {
         return res.status(401).json({
@@ -179,13 +175,10 @@ async function authGuard(req, res, next) {
         });
       }
 
-      // Update last activity (non-fatal)
-      try {
-        await prisma.session.update({
-          where: { id: currentSession.id },
-          data: { lastActivity: new Date() },
-        });
-      } catch {}
+      prisma.session.update({
+        where: { id: currentSession.id },
+        data: { lastActivity: new Date() },
+      }).catch(() => {});
     }
 
     /* ===================================================

@@ -1047,6 +1047,13 @@ export default function ProvisioningPage() {
   const active    = accounts.filter(a => a.status === "active").length;
   const suspended = accounts.filter(a => a.status === "suspended").length;
   const pending   = accounts.filter(a => a.status === "pending").length;
+  const totalDomains = accounts.reduce((sum, acc) => sum + (acc.domains?.length ?? 0), 0);
+  const totalEmails = accounts.reduce((sum, acc) => sum + (acc.emails?.length ?? 0), 0);
+  const totalDatabases = accounts.reduce((sum, acc) => sum + (acc.databases?.length ?? 0), 0);
+  const sslActive = accounts.reduce(
+    (sum, acc) => sum + (acc.domains?.filter((domain) => domain.sslStatus === "active").length ?? 0),
+    0
+  );
 
   const filtered = accounts.filter(a => {
     const matchStatus = statusFilter === "all" || a.status === statusFilter;
@@ -1085,11 +1092,15 @@ export default function ProvisioningPage() {
       <div className="px-6 py-6 space-y-6">
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
           <StatCard label="Total Accounts" value={total}     icon={Server}       />
           <StatCard label="Active"          value={active}    icon={CheckCircle2} color="text-green-600" />
           <StatCard label="Suspended"       value={suspended} icon={ShieldOff}    color="text-yellow-600" />
           <StatCard label="Pending"         value={pending}   icon={Clock}        color="text-blue-600" />
+          <StatCard label="Domains"         value={totalDomains} icon={Globe}     color="text-cyan-600" />
+          <StatCard label="SSL Active"      value={sslActive} icon={ShieldCheck}  color="text-emerald-600" />
+          <StatCard label="Databases"       value={totalDatabases} icon={Database} color="text-violet-600" />
+          <StatCard label="Emails"          value={totalEmails} icon={Mail}        color="text-fuchsia-600" />
         </div>
 
         {/* Accounts table */}

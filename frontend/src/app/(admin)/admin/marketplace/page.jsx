@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   RefreshCw, CheckCircle2, XCircle, Clock, Eye, Package,
   ChevronRight, AlertTriangle, Filter,
@@ -105,7 +106,7 @@ function SubmissionRow({ plugin, canApprove, onAction }) {
     <div className="flex items-start gap-4 py-4">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted text-lg font-bold text-muted-foreground">
         {plugin.iconUrl
-          ? <img src={plugin.iconUrl} alt={plugin.name} className="h-8 w-8 object-contain rounded" />
+          ? <Image src={plugin.iconUrl} alt={plugin.name} width={32} height={32} className="object-contain rounded" />
           : (plugin.name?.[0] ?? "P")}
       </div>
 

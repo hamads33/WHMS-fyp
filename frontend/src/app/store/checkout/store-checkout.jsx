@@ -567,7 +567,7 @@ function PaymentStep({ invoices = [], onPay, onBack, loading, error, paidIds = [
 
 function DoneStep({ invoices = [], redirectUri }) {
   const invList   = invoices || []
-  const total    = invList.reduce((s, i) => s + parseFloat(i?.amountDue || 0), 0)
+  const total    = invList.reduce((s, i) => s + parseFloat(i?.totalAmount ?? i?.amountDue ?? 0), 0)
   const currency = invList[0]?.currency || 'USD'
 
   useEffect(() => {
@@ -609,7 +609,7 @@ function DoneStep({ invoices = [], redirectUri }) {
             <div key={inv?.id} className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground font-mono text-xs">{inv?.invoiceNumber}</span>
               <div className="flex items-center gap-2">
-                <span className="font-semibold">{fmt(inv?.amountDue || 0, inv?.currency)}</span>
+                <span className="font-semibold">{fmt(inv?.totalAmount ?? inv?.amountDue ?? 0, inv?.currency)}</span>
                 <Badge className="bg-green-500 hover:bg-green-500 text-white text-[10px] px-1.5">PAID</Badge>
               </div>
             </div>
@@ -682,13 +682,14 @@ function StoreCheckoutContent() {
     const status    = searchParams.get('status')
     const sessionId = searchParams.get('session_id')
     if (status === 'success' && sessionId) {
+      clearCart()
       setStep(STEP_DONE)
     }
     if (status === 'cancelled') {
       setError('Payment was cancelled. Please try again.')
       setStep(STEP_PAYMENT)
     }
-  }, [searchParams])
+  }, [clearCart, searchParams])
 
   // ── Place orders after auth ────────────────────────────────────────────────
 

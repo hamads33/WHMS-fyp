@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { apiFetch } from "@/lib/api/client"
 import {
   Collapsible,
   CollapsibleContent,
@@ -52,12 +53,6 @@ const fmt = (d) => {
   catch { return "—" }
 }
 
-const API_BASE = () =>
-  (typeof window !== "undefined"
-    ? (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000/api/automation")
-    : "http://localhost:4000/api/automation"
-  ).replace(/\/$/, "")
-
 /* -------------------------------------------------------
    Component
 ------------------------------------------------------- */
@@ -69,17 +64,12 @@ export function WorkflowHistoryPanel({ workflowId }) {
   const [total, setTotal]     = useState(0)
   const [expanded, setExpanded] = useState(null)
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!workflowId) return
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(
-        `${API_BASE()}/workflows/${workflowId}/history?limit=50&offset=0`,
-        { headers: { "Content-Type": "application/json" } }
-      )
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = await res.json()
+      const json = await apiFetch(`/automation/workflows/${workflowId}/history?limit=50&offset=0`)
       const data = json?.data ?? {}
       const items = Array.isArray(data) ? data : (data.runs ?? [])
       setRuns(items)
@@ -89,9 +79,9 @@ export function WorkflowHistoryPanel({ workflowId }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [workflowId])
 
-  useEffect(() => { load() }, [workflowId])
+  useEffect(() => { load() }, [load])
 
   /* render */
   return (

@@ -32,9 +32,11 @@ export function InvoiceDetailContent({ invoiceId }) {
     setPayError(null)
     try {
       const result = await ClientBillingAPI.payInvoice(invoice.id, 'stripe')
-      if (result?.redirectUrl) {
-        window.location.href = result.redirectUrl
+      if (result?.checkoutUrl) {
+        window.location.href = result.checkoutUrl
+        return
       }
+      throw new Error('Payment session URL was not returned by the server')
     } catch (e) {
       setPayError(e.message)
     } finally {

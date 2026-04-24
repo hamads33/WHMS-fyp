@@ -121,6 +121,9 @@ class PluginManager {
       entry.ctx = ctx;
 
       try {
+        if (typeof entry.plugin.register !== "function") {
+          throw new Error(`plugin.register() is not a function (got ${typeof entry.plugin.register})`);
+        }
         await Promise.resolve(entry.plugin.register(ctx));
         this.logger.info(`[PluginManager] Registered: ${name}`);
       } catch (err) {
@@ -147,6 +150,9 @@ class PluginManager {
       }
 
       try {
+        if (typeof entry.plugin.boot !== "function") {
+          throw new Error(`plugin.boot() is not a function (got ${typeof entry.plugin.boot})`);
+        }
         await Promise.resolve(entry.plugin.boot(entry.ctx));
         this.logger.info(`[PluginManager] Booted: ${name}`);
       } catch (err) {
@@ -165,6 +171,10 @@ class PluginManager {
       if (!entry.ctx) continue;
 
       try {
+        if (typeof entry.plugin.shutdown !== "function") {
+          this.logger.debug(`[PluginManager] Plugin "${name}" has no shutdown() method — skipping`);
+          continue;
+        }
         await Promise.resolve(entry.plugin.shutdown(entry.ctx));
         this.logger.info(`[PluginManager] Shutdown: ${name}`);
       } catch (err) {
@@ -223,6 +233,9 @@ class PluginManager {
     const ctx = this._buildContext(plugin.meta.name);
     this._plugins.get(plugin.meta.name).ctx = ctx;
 
+    if (typeof plugin.register !== "function") {
+      throw new Error(`Hot-load failed: plugin.register() is not a function (got ${typeof plugin.register})`);
+    }
     await Promise.resolve(plugin.register(ctx));
 
     const { ok, errors } = this.checkDependencies(plugin);
@@ -233,6 +246,9 @@ class PluginManager {
       return;
     }
 
+    if (typeof plugin.boot !== "function") {
+      throw new Error(`Hot-load failed: plugin.boot() is not a function (got ${typeof plugin.boot})`);
+    }
     await Promise.resolve(plugin.boot(ctx));
     this.logger.info(`[PluginManager] Hot-loaded plugin: ${plugin.meta.name} v${plugin.meta.version}${capabilities.length ? ` [${capabilities.join(", ")}]` : ""}`);
   }
@@ -265,25 +281,92 @@ class PluginManager {
 
   /**
    * getPluginUiManifest
-   * Returns the UI manifest for all enabled plugins that have the 'ui' capability.
-   * Each entry contains the plugin name and its declared adminPages with resolved URLs.
+   * Returns the UI manifest for all enabled plugins that contribute UI.
+   * Includes adminPages (sidebar pages), settingsTabs (custom settings panels),
+   * and configSchema (auto-generated settings form fields).
    *
-   * @returns {{ plugin: string, pages: { id, label, icon, url }[] }[]}
+   * @returns {{ plugin, displayName, pages, settingsTabs, configSchema }[]}
    */
   getPluginUiManifest() {
     const manifest = [];
     for (const [name, entry] of this._plugins) {
       if (!pluginState.isEnabled(name)) continue;
-      if (!entry.capabilities.includes("ui")) continue;
-      const pages = (entry.ui?.adminPages ?? []).map(p => ({
-        id    : p.id,
-        label : p.label,
-        icon  : p.icon ?? "layout-dashboard",
-        url   : `/api/plugins/${name}/ui-data/${p.id}`,
-      }));
-      if (pages.length) manifest.push({ plugin: name, pages });
+
+      const hasUiCap = entry.capabilities.includes("ui");
+
+      const pages = hasUiCap
+        ? (entry.ui?.adminPages ?? []).map(p => ({
+            id    : p.id,
+            label : p.label,
+            icon  : p.icon ?? "layout-dashboard",
+            url   : `/api/plugins/${name}/ui-data/${p.id}`,
+          }))
+        : [];
+
+      const settingsTabs = hasUiCap
+        ? (entry.ui?.settingsTabs ?? []).map(t => ({
+            id   : t.id,
+            label: t.label,
+            icon : t.icon ?? "settings",
+          }))
+        : [];
+
+      const configSchema = entry.meta.configSchema ?? [];
+
+      if (pages.length || settingsTabs.length || configSchema.length) {
+        manifest.push({
+          plugin      : name,
+          displayName : entry.meta.displayName ?? name,
+          pages,
+          settingsTabs,
+          configSchema,
+        });
+      }
     }
     return manifest;
+  }
+
+  /**
+   * getMaskedPluginConfig
+   * Returns config for a plugin with password fields replaced by a placeholder.
+   *
+   * @param  {string} pluginName
+   * @returns {object}
+   */
+  getMaskedPluginConfig(pluginName) {
+    const config = pluginConfigStore.getAll(pluginName);
+    const schema = this._plugins.get(pluginName)?.meta?.configSchema ?? [];
+    const masked = { ...config };
+    for (const field of schema) {
+      if (field.type === "password" && masked[field.key]) {
+        masked[field.key] = "••••••••";
+      }
+    }
+    return masked;
+  }
+
+  /**
+   * updatePluginConfig
+   * Merges updates into the plugin's config, ignoring masked password placeholders.
+   *
+   * @param  {string} pluginName
+   * @param  {object} updates
+   * @returns {{ ok: boolean, error?: string }}
+   */
+  updatePluginConfig(pluginName, updates) {
+    if (!this._plugins.has(pluginName)) {
+      return { ok: false, error: `Plugin "${pluginName}" not found` };
+    }
+    const existing    = pluginConfigStore.getAll(pluginName);
+    const schema      = this._plugins.get(pluginName)?.meta?.configSchema ?? [];
+    const passwordKeys = new Set(schema.filter(f => f.type === "password").map(f => f.key));
+
+    for (const [key, val] of Object.entries(updates)) {
+      if (passwordKeys.has(key) && val === "••••••••") continue;
+      existing[key] = val;
+    }
+    pluginConfigStore.setAll(pluginName, existing);
+    return { ok: true };
   }
 
   /**

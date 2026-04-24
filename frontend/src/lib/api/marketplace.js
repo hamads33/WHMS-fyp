@@ -9,12 +9,13 @@ const MarketplaceAPI = {
   // ─────────────────────────────────────────────────────────────────
 
   /** GET /api/marketplace/plugins — approved plugins listing */
-  async listPlugins({ search, category, pricingType, minRating } = {}) {
+  async listPlugins({ search, category, pricingType, minRating, capability } = {}) {
     const params = new URLSearchParams();
     if (search)      params.set("search", search);
     if (category)    params.set("category", category);
     if (pricingType) params.set("pricingType", pricingType);
     if (minRating)   params.set("minRating", minRating);
+    if (capability)  params.set("capability", capability);
     const qs = params.toString();
     const res = await apiFetch(`/marketplace/plugins${qs ? `?${qs}` : ""}`);
     return res.data ?? [];
@@ -58,6 +59,24 @@ const MarketplaceAPI = {
   async getPluginUiManifest() {
     const res = await apiFetch("/admin/plugin-ui-manifest");
     return res;
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // PLUGIN CONFIG (admin settings)
+  // ─────────────────────────────────────────────────────────────────
+
+  /** GET /api/admin/plugins/:name/config — masked config for a plugin */
+  async getPluginConfig(name) {
+    const res = await apiFetch(`/admin/plugins/${encodeURIComponent(name)}/config`);
+    return res.data ?? {};
+  },
+
+  /** PATCH /api/admin/plugins/:name/config — merge updates into plugin config */
+  async updatePluginConfig(name, config) {
+    return apiFetch(`/admin/plugins/${encodeURIComponent(name)}/config`, {
+      method: "PATCH",
+      body: JSON.stringify(config),
+    });
   },
 
   // ─────────────────────────────────────────────────────────────────
@@ -178,10 +197,24 @@ const MarketplaceAPI = {
     return res.data ?? [];
   },
 
+  /** GET /api/developer/plugins/:id */
+  async getDeveloperPlugin(id) {
+    const res = await apiFetch(`/developer/plugins/${id}`);
+    return res.data ?? null;
+  },
+
   /** POST /api/developer/plugins — create new plugin draft */
   async createPlugin(data) {
     return apiFetch("/developer/plugins", {
       method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** PATCH /api/developer/plugins/:id */
+  async updateDeveloperPlugin(id, data) {
+    return apiFetch(`/developer/plugins/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },

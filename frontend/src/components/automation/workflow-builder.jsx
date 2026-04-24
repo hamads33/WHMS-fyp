@@ -46,6 +46,7 @@ import {
 import { EVENTS_REGISTRY as STATIC_EVENTS, findEventDef as staticFindEvent } from "@/lib/automation/events-registry"
 import { getFriendlyName } from "@/components/automation/task-flow"
 import { ConfirmDialog } from "@/components/automation/confirm-dialog"
+import { apiFetch as sharedApiFetch } from "@/lib/api/client"
 
 import {
   Plus, Trash2, Play, Save, Code2, GripVertical, X,
@@ -59,12 +60,6 @@ import {
 /* ─────────────────────────────────────────────────────────────
    Constants
 ───────────────────────────────────────────────────────────── */
-
-const API_BASE = () =>
-  (typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000/api/automation"
-    : "http://localhost:4000/api/automation"
-  ).replace(/\/$/, "")
 
 const MODULE_ICONS = {
   auth:         Shield,
@@ -245,15 +240,7 @@ const newTask = (overrides = {}) => ({
 ───────────────────────────────────────────────────────────── */
 
 async function apiFetch(path, opts = {}) {
-  const res = await fetch(`${API_BASE()}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err?.message || err?.error || `HTTP ${res.status}`)
-  }
-  return res.json()
+  return sharedApiFetch(`/automation${path}`, opts)
 }
 
 function ModuleIcon({ module: mod, size = "w-4 h-4" }) {
@@ -441,11 +428,6 @@ function TaskConfigPanel({ task, actions, onChange, onClose, eventDef, tasks: al
     typeof task.input === "object" ? JSON.stringify(task.input, null, 2) : (task.input || "{}")
   )
   const [inputErr, setInputErr] = useState(null)
-
-  useEffect(() => {
-    setRawInput(typeof task.input === "object" ? JSON.stringify(task.input, null, 2) : (task.input || "{}"))
-    setInputErr(null)
-  }, [task.id])
 
   const handleInputChange = (val) => {
     setRawInput(val)
@@ -1398,6 +1380,7 @@ export default function WorkflowBuilder({ onError }) {
           {selectedTask && (
             <div className="w-72 flex-shrink-0 border-l bg-card overflow-hidden flex flex-col">
               <TaskConfigPanel
+                key={selectedTask.id}
                 task={selectedTask}
                 actions={actions}
                 onChange={updateTask}
@@ -1460,7 +1443,7 @@ export default function WorkflowBuilder({ onError }) {
                     <ul className="text-xs text-muted-foreground space-y-1 mt-1 ml-1">
                       <li className="flex items-start gap-1.5"><Play className="w-3 h-3 mt-0.5 flex-shrink-0 text-foreground/60" /><span><strong className="text-foreground">Manual</strong> — run on-demand via the Run button or API call.</span></li>
                       <li className="flex items-start gap-1.5"><Radio className="w-3 h-3 mt-0.5 flex-shrink-0 text-foreground/60" /><span><strong className="text-foreground">Event</strong> — fires automatically when a system event occurs (e.g. an order is created, a payment fails).</span></li>
-                      <li className="flex items-start gap-1.5"><Globe className="w-3 h-3 mt-0.5 flex-shrink-0 text-foreground/60" /><span><strong className="text-foreground">Webhook</strong> — triggered by an external HTTP POST to the workflow's webhook URL.</span></li>
+                      <li className="flex items-start gap-1.5"><Globe className="w-3 h-3 mt-0.5 flex-shrink-0 text-foreground/60" /><span><strong className="text-foreground">Webhook</strong> — triggered by an external HTTP POST to the workflow&apos;s webhook URL.</span></li>
                     </ul>
                   </div>
                 </div>

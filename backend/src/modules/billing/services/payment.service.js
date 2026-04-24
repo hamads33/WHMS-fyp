@@ -10,8 +10,9 @@
 const prisma = require("../../../../prisma");
 const invoiceService = require("./invoice.service");
 const { toCurrency } = require("../utils/billing.util");
-const provisioningHooks = require("../../provisioning/utils/provisioning-hooks");
 const serviceContainer = require("../../../core/plugin-system/service.container");
+const hookRegistry = require("../../../core/plugin-system/hook.registry");
+const { settlePaidInvoice } = require("./invoice-settlement.service");
 
 class PaymentService {
   // ============================================================
@@ -33,6 +34,23 @@ class PaymentService {
    * @param {string} actor - User ID creating the payment
    */
   async create(invoiceId, data, actor) {
+    if (data.gatewayRef) {
+      const existingPayment = await prisma.payment.findFirst({
+        where: {
+          invoiceId,
+          gatewayRef: data.gatewayRef,
+          status: "completed",
+        },
+      });
+
+      if (existingPayment) {
+        return {
+          payment: existingPayment,
+          invoice: await invoiceService.getById(invoiceId, false),
+        };
+      }
+    }
+
     const invoice = await invoiceService.getById(invoiceId, false);
 
     // Validate invoice is payable
@@ -87,36 +105,23 @@ class PaymentService {
       description: `Payment via ${data.gateway || "manual"} - ${payment.id}`,
     });
 
+    // Notify plugin hooks when an invoice is fully settled
+    if (updatedInvoice.status === "paid") {
+      hookRegistry.trigger("invoice.paid", {
+        invoiceId : updatedInvoice.id,
+        clientId  : updatedInvoice.clientId,
+        orderId   : updatedInvoice.orderId ?? null,
+        amount    : updatedInvoice.totalAmount,
+        currency  : updatedInvoice.currency,
+        paidAt    : now,
+      }).catch(() => {});
+    }
+
     // If invoice is now fully paid, trigger post-payment pipeline
     if (updatedInvoice.status === "paid" && updatedInvoice.orderId) {
       setImmediate(async () => {
         try {
-          const order = await prisma.order.findUnique({
-            where: { id: updatedInvoice.orderId },
-            select: { id: true, status: true },
-          });
-
-          if (order?.status === "pending") {
-            // Auto-activate order on first payment
-            const { getNextRenewalDate } = require("../utils/billing.util");
-            const fullOrder = await prisma.order.findUnique({ where: { id: order.id }, select: { snapshotId: true } });
-            const snap = fullOrder?.snapshotId
-              ? await prisma.serviceSnapshot.findUnique({ where: { id: fullOrder.snapshotId } })
-              : null;
-            const cycle = snap?.pricing?.cycle || "monthly";
-            await prisma.order.update({
-              where: { id: order.id },
-              data: { status: "active", startedAt: new Date(), nextRenewalAt: getNextRenewalDate(new Date(), cycle) },
-            });
-            await provisioningHooks.onOrderActivated(order.id);
-          } else if (order?.status === "suspended") {
-            // Unsuspend on payment after suspension
-            await prisma.order.update({
-              where: { id: order.id },
-              data: { status: "active", suspendedAt: null },
-            });
-            await provisioningHooks.onInvoicePaid(updatedInvoice.id, order.id);
-          }
+          await settlePaidInvoice(updatedInvoice.id);
         } catch (err) {
           console.error("[PaymentService] Post-payment pipeline error:", err.message);
         }

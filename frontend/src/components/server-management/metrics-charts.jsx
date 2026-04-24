@@ -90,12 +90,14 @@ export function MetricsCharts({ serverId }) {
     if (!metrics || metrics === prevDataRef.current) return
     prevDataRef.current = metrics
 
-    setHistory(prev => ({
-      cpu:    [...prev.cpu.slice(-(MAX_POINTS - 1)),    metrics.cpuUsage  ?? 0],
-      ram:    [...prev.ram.slice(-(MAX_POINTS - 1)),    metrics.ramUsage  ?? 0],
-      disk:   [...prev.disk.slice(-(MAX_POINTS - 1)),   metrics.diskUsage ?? 0],
-      uptime: [...prev.uptime.slice(-(MAX_POINTS - 1)), (metrics.uptime ?? 0) % 100],
-    }))
+    queueMicrotask(() => {
+      setHistory(prev => ({
+        cpu:    [...prev.cpu.slice(-(MAX_POINTS - 1)),    metrics.cpuUsage  ?? 0],
+        ram:    [...prev.ram.slice(-(MAX_POINTS - 1)),    metrics.ramUsage  ?? 0],
+        disk:   [...prev.disk.slice(-(MAX_POINTS - 1)),   metrics.diskUsage ?? 0],
+        uptime: [...prev.uptime.slice(-(MAX_POINTS - 1)), (metrics.uptime ?? 0) % 100],
+      }))
+    })
   }, [metrics, dataUpdatedAt])
 
   const lastUpdated = dataUpdatedAt

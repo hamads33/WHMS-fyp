@@ -230,13 +230,135 @@ const TEMPLATES = [
       ],
     },
   },
+  {
+    id: 'website-provisioning-failure-escalation',
+    name: 'Website Provisioning Failure Escalation',
+    description: 'Create an urgent support ticket and notify operations whenever website provisioning fails.',
+    category: 'websites',
+    icon: 'Globe',
+    color: 'rose',
+    trigger: {
+      type: 'event',
+      eventType: 'website.provisioning_failed',
+    },
+    definition: {
+      name: 'Website Provisioning Failure Escalation',
+      version: 1,
+      tasks: [
+        {
+          id: 'write-audit-log',
+          type: 'action',
+          actionType: 'system.audit_log',
+          input: {
+            message: 'Website provisioning failed for {{input.domain}}: {{input.error}}',
+            level: 'ERROR',
+            entity: 'Website',
+            entityId: '{{input.websiteId}}',
+          },
+        },
+        {
+          id: 'notify-ops',
+          type: 'action',
+          actionType: 'notify.email',
+          input: {
+            to: 'ops@whms.local',
+            subject: 'Website provisioning failed: {{input.domain}}',
+            body: 'Website {{input.domain}} failed provisioning with error: {{input.error}}',
+          },
+        },
+      ],
+    },
+  },
+  {
+    id: 'server-down-incident-response',
+    name: 'Server Down Incident Response',
+    description: 'Open an incident workflow and alert operations when a monitored server goes offline.',
+    category: 'infrastructure',
+    icon: 'ServerCrash',
+    color: 'red',
+    trigger: {
+      type: 'event',
+      eventType: 'server.status_changed',
+      filter: { newStatus: 'offline' },
+    },
+    definition: {
+      name: 'Server Down Incident Response',
+      version: 1,
+      tasks: [
+        {
+          id: 'write-audit-log',
+          type: 'action',
+          actionType: 'system.audit_log',
+          input: {
+            message: 'Server {{input.name}} changed from {{input.previousStatus}} to {{input.newStatus}}. Error: {{input.error}}',
+            level: 'ERROR',
+            entity: 'Server',
+            entityId: '{{input.serverId}}',
+          },
+        },
+        {
+          id: 'slack-alert',
+          type: 'action',
+          actionType: 'notify.slack',
+          input: {
+            webhookUrl: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL',
+            text: 'Server {{input.name}} is offline. Previous status: {{input.previousStatus}}. Error: {{input.error}}',
+            username: 'WHMS Infrastructure',
+            iconEmoji: ':rotating_light:',
+          },
+        },
+      ],
+    },
+  },
+  {
+    id: 'domain-status-change-review',
+    name: 'Domain Status Change Review',
+    description: 'Notify billing/support when registrar sync reports a domain status change.',
+    category: 'domains',
+    icon: 'Globe2',
+    color: 'blue',
+    trigger: {
+      type: 'event',
+      eventType: 'domain.status_changed',
+    },
+    definition: {
+      name: 'Domain Status Change Review',
+      version: 1,
+      tasks: [
+        {
+          id: 'audit',
+          type: 'action',
+          actionType: 'system_log',
+          input: {
+            message: 'Domain {{input.domain}} status changed from {{input.previousStatus}} to {{input.newStatus}}',
+            level: 'WARN',
+          },
+        },
+        {
+          id: 'notify-billing',
+          type: 'action',
+          actionType: 'notify.email',
+          input: {
+            to: 'billing@whms.local',
+            subject: 'Domain status changed: {{input.domain}}',
+            body: 'Registrar sync changed {{input.domain}} from {{input.previousStatus}} to {{input.newStatus}}.',
+          },
+        },
+      ],
+    },
+  },
 ];
 
 class TemplatesController {
+  constructor({ prisma, logger }) {
+    this.prisma = prisma;
+    this.logger = logger;
+  }
+
   /**
    * List all available templates
    */
-  static async list(req, res) {
+  async list(req, res) {
     try {
       const templates = TEMPLATES.map(t => ({
         id: t.id,
@@ -258,7 +380,7 @@ class TemplatesController {
   /**
    * Get single template by ID
    */
-  static async get(req, res) {
+  async get(req, res) {
     try {
       const { templateId } = req.params;
       const template = TEMPLATES.find(t => t.id === templateId);
@@ -278,7 +400,7 @@ class TemplatesController {
    * Install template: create workflow + trigger rule
    * Checks if workflow with same name already exists
    */
-  static async install(req, res) {
+  async install(req, res) {
     try {
       const { templateId } = req.params;
       const prisma = this.prisma;
@@ -319,6 +441,9 @@ class TemplatesController {
           description: template.description,
           definition: template.definition,
           enabled: true,
+          trigger: template.trigger?.type || 'event',
+          type: 'sequential',
+          eventType: template.trigger?.eventType || null,
           version: 1,
         },
       });
@@ -328,6 +453,7 @@ class TemplatesController {
         data: {
           workflowId: workflow.id,
           eventType: template.trigger.eventType,
+          filter: template.trigger.filter || undefined,
           enabled: true,
         },
       });

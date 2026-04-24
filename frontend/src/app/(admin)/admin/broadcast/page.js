@@ -64,7 +64,12 @@ function useSystemTime() {
       })
   }, [])
 
-  useEffect(() => { fetchTime() }, [fetchTime])
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchTime()
+    }, 0)
+    return () => clearTimeout(timeoutId)
+  }, [fetchTime])
 
   function getNow() {
     if (baseMs !== null && capturedAt !== null) {

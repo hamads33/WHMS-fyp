@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowLeft, Download, ShoppingCart, RefreshCw, Star,
   Package, BadgeCheck, Sparkles, ExternalLink, Calendar, Tag,
@@ -15,10 +16,19 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { StarRating } from "@/components/marketplace/StarRating";
 import { CapabilityBadges } from "@/components/plugins/PluginCapabilityBadges";
 import MarketplaceAPI from "@/lib/api/marketplace";
 import { formatNumber, formatDate } from "@/lib/utils";
+
+// Simple HTML sanitizer: remove script tags and dangerous attributes
+const sanitizeText = (text) => {
+  if (!text || typeof text !== "string") return "";
+  return text
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, "");
+};
 
 // ── Install dialog (same as marketplace page) ─────────────────────────────────
 
@@ -95,8 +105,8 @@ function Screenshots({ images }) {
   if (!images?.length) return null;
   return (
     <div className="space-y-2">
-      <div className="overflow-hidden rounded-lg border bg-muted aspect-video flex items-center justify-center">
-        <img src={images[current]} alt={`Screenshot ${current + 1}`} className="max-h-full object-contain" />
+      <div className="overflow-hidden rounded-lg border bg-muted aspect-video flex items-center justify-center relative">
+        <Image src={images[current]} alt={`Screenshot ${current + 1}`} fill className="object-contain" />
       </div>
       {images.length > 1 && (
         <div className="flex gap-1.5 justify-center">
@@ -115,7 +125,7 @@ function Screenshots({ images }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function PluginDetailPage({ params }) {
+function PluginDetailPage({ params }) {
   const { slug } = use(params);
   const [plugin, setPlugin]       = useState(null);
   const [stats, setStats]         = useState(null);
@@ -124,15 +134,29 @@ export default function PluginDetailPage({ params }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      MarketplaceAPI.getPluginBySlug(slug),
-      MarketplaceAPI.getPluginStats(slug).catch(() => ({})),
-    ])
-      .then(([p, s]) => { setPlugin(p); setStats(s); })
-      .catch(err => toast({ variant: "destructive", title: "Not found", description: err.message }))
-      .finally(() => setLoading(false));
-  }, [slug]);
+    let active = true;
+
+    async function loadPlugin() {
+      setLoading(true);
+      try {
+        const [p, s] = await Promise.all([
+          MarketplaceAPI.getPluginBySlug(slug),
+          MarketplaceAPI.getPluginStats(slug).catch(() => ({})),
+        ]);
+        if (!active) return;
+        setPlugin(p);
+        setStats(s);
+      } catch (err) {
+        if (!active) return;
+        toast({ variant: "destructive", title: "Not found", description: err.message });
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadPlugin();
+    return () => { active = false; };
+  }, [slug, toast]);
 
   if (loading) {
     return (
@@ -185,7 +209,7 @@ export default function PluginDetailPage({ params }) {
           <Card className="overflow-hidden">
             <div className="h-48 bg-muted flex items-center justify-center relative">
               {plugin.iconUrl ? (
-                <img src={plugin.iconUrl} alt={plugin.name} className="h-24 w-24 object-contain" />
+                <Image src={plugin.iconUrl} alt={plugin.name} width={96} height={96} className="object-contain" />
               ) : (
                 <div className="h-24 w-24 rounded-2xl bg-primary/10 flex items-center justify-center">
                   <span className="text-4xl font-bold text-primary">{plugin.name?.[0] ?? "P"}</span>
@@ -199,7 +223,7 @@ export default function PluginDetailPage({ params }) {
             <CardContent className="p-6 space-y-4">
               <div>
                 <h1 className="text-2xl font-bold text-foreground">{plugin.name}</h1>
-                <p className="text-muted-foreground mt-1">{plugin.description}</p>
+                <p className="text-muted-foreground mt-1">{sanitizeText(plugin.description)}</p>
               </div>
 
               {plugin.capabilities?.length > 0 && (
@@ -224,7 +248,7 @@ export default function PluginDetailPage({ params }) {
             <Card>
               <CardHeader><CardTitle className="text-base">Changelog</CardTitle></CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{plugin.changelog}</p>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{sanitizeText(plugin.changelog)}</p>
               </CardContent>
             </Card>
           )}
@@ -306,5 +330,13 @@ export default function PluginDetailPage({ params }) {
         onClose={() => setInstalling(false)}
       />
     </div>
+  );
+}
+
+export default function Page(props) {
+  return (
+    <ErrorBoundary>
+      <PluginDetailPage {...props} />
+    </ErrorBoundary>
   );
 }

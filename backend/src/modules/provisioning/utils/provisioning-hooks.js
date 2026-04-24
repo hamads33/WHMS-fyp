@@ -10,6 +10,19 @@ const provisioningService = require("../services/provisioning.service");
 const prisma = require("../../../../prisma");
 const emailTriggers = require("../../email/triggers/email.triggers");
 
+function getClientName(client) {
+  if (!client) return undefined;
+  if (client.clientProfile) {
+    const fullName = [client.clientProfile.firstName, client.clientProfile.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    if (fullName) return fullName;
+    if (client.clientProfile.company) return client.clientProfile.company;
+  }
+  return client.email;
+}
+
 async function isAutoProvisioningEnabled() {
   try {
     const setting = await prisma.systemSetting.findUnique({ where: { key: "provisioning.auto" } });
@@ -52,13 +65,13 @@ async function onOrderActivated(orderId) {
         try {
           const order = await prisma.order.findUnique({
             where: { id: orderId },
-            include: { client: true, snapshot: true },
+            include: { client: { include: { clientProfile: true } }, snapshot: true },
           });
 
           if (order?.client && order?.snapshot?.service) {
             await emailTriggers.fire('service.activated', {
               clientEmail: order.client.email,
-              clientName: order.client.name,
+              clientName: getClientName(order.client),
               serviceName: order.snapshot.service.name,
               plan: order.snapshot.planData?.name,
               activatedAt: new Date(),
@@ -102,13 +115,13 @@ async function onOrderTerminated(orderId) {
         try {
           const order = await prisma.order.findUnique({
             where: { id: orderId },
-            include: { client: true, snapshot: true },
+            include: { client: { include: { clientProfile: true } }, snapshot: true },
           });
 
           if (order?.client && order?.snapshot?.service) {
             await emailTriggers.fire('service.terminated', {
               clientEmail: order.client.email,
-              clientName: order.client.name,
+              clientName: getClientName(order.client),
               serviceName: order.snapshot.service.name,
               terminatedAt: new Date(),
               portalUrl: process.env.PORTAL_URL || 'https://portal.whms.local',
@@ -152,13 +165,13 @@ async function onInvoiceOverdue(invoiceId, orderId) {
         try {
           const order = await prisma.order.findUnique({
             where: { id: orderId },
-            include: { client: true, snapshot: true },
+            include: { client: { include: { clientProfile: true } }, snapshot: true },
           });
 
           if (order?.client && order?.snapshot?.service) {
             await emailTriggers.fire('service.suspended', {
               clientEmail: order.client.email,
-              clientName: order.client.name,
+              clientName: getClientName(order.client),
               serviceName: order.snapshot.service.name,
               reason: 'Payment overdue',
               suspendedAt: new Date(),
@@ -203,13 +216,13 @@ async function onInvoicePaid(invoiceId, orderId) {
         try {
           const order = await prisma.order.findUnique({
             where: { id: orderId },
-            include: { client: true, snapshot: true },
+            include: { client: { include: { clientProfile: true } }, snapshot: true },
           });
 
           if (order?.client && order?.snapshot?.service) {
             await emailTriggers.fire('service.activated', {
               clientEmail: order.client.email,
-              clientName: order.client.name,
+              clientName: getClientName(order.client),
               serviceName: order.snapshot.service.name,
               plan: order.snapshot.planData?.name,
               activatedAt: new Date(),
